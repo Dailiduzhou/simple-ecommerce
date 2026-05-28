@@ -20,8 +20,6 @@ type Category struct {
 type Event struct {
 	ID          int64
 	Name        string
-	Price       pgtype.Numeric
-	Stock       int32
 	Status      int16
 	StartAt     pgtype.Timestamptz
 	EndAt       pgtype.Timestamptz

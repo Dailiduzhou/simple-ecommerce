@@ -12,15 +12,13 @@ import (
 )
 
 const createEvent = `-- name: CreateEvent :one
-INSERT INTO events (name, price, stock, status, start_at, end_at, cover_image, media_assets, description)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, name, price, stock, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
+INSERT INTO events (name, status, start_at, end_at, cover_image, media_assets, description)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
 `
 
 type CreateEventParams struct {
 	Name        string
-	Price       pgtype.Numeric
-	Stock       int32
 	Status      int16
 	StartAt     pgtype.Timestamptz
 	EndAt       pgtype.Timestamptz
@@ -32,8 +30,6 @@ type CreateEventParams struct {
 func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error) {
 	row := q.db.QueryRow(ctx, createEvent,
 		arg.Name,
-		arg.Price,
-		arg.Stock,
 		arg.Status,
 		arg.StartAt,
 		arg.EndAt,
@@ -45,8 +41,6 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Price,
-		&i.Stock,
 		&i.Status,
 		&i.StartAt,
 		&i.EndAt,
@@ -60,26 +54,8 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 	return i, err
 }
 
-const decrEventStock = `-- name: DecrEventStock :one
-UPDATE events SET stock = stock - $2, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND stock >= $2 AND deleted_at IS NULL
-RETURNING stock
-`
-
-type DecrEventStockParams struct {
-	ID    int64
-	Stock int32
-}
-
-func (q *Queries) DecrEventStock(ctx context.Context, arg DecrEventStockParams) (int32, error) {
-	row := q.db.QueryRow(ctx, decrEventStock, arg.ID, arg.Stock)
-	var stock int32
-	err := row.Scan(&stock)
-	return stock, err
-}
-
 const getEvent = `-- name: GetEvent :one
-SELECT id, name, price, stock, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events WHERE id = $1 AND deleted_at IS NULL
+SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetEvent(ctx context.Context, id int64) (Event, error) {
@@ -88,8 +64,6 @@ func (q *Queries) GetEvent(ctx context.Context, id int64) (Event, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Price,
-		&i.Stock,
 		&i.Status,
 		&i.StartAt,
 		&i.EndAt,
@@ -104,7 +78,7 @@ func (q *Queries) GetEvent(ctx context.Context, id int64) (Event, error) {
 }
 
 const listActiveEvents = `-- name: ListActiveEvents :many
-SELECT id, name, price, stock, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
+SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
 WHERE status = 1 AND deleted_at IS NULL
 ORDER BY start_at ASC
 LIMIT $1 OFFSET $2
@@ -127,8 +101,6 @@ func (q *Queries) ListActiveEvents(ctx context.Context, arg ListActiveEventsPara
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
-			&i.Price,
-			&i.Stock,
 			&i.Status,
 			&i.StartAt,
 			&i.EndAt,
@@ -150,7 +122,7 @@ func (q *Queries) ListActiveEvents(ctx context.Context, arg ListActiveEventsPara
 }
 
 const listUpcomingEvents = `-- name: ListUpcomingEvents :many
-SELECT id, name, price, stock, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
+SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
 WHERE status = 0 AND start_at > CURRENT_TIMESTAMP AND deleted_at IS NULL
 ORDER BY start_at ASC
 `
@@ -167,8 +139,6 @@ func (q *Queries) ListUpcomingEvents(ctx context.Context) ([]Event, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
-			&i.Price,
-			&i.Stock,
 			&i.Status,
 			&i.StartAt,
 			&i.EndAt,
@@ -200,17 +170,15 @@ func (q *Queries) SoftDeleteEvent(ctx context.Context, id int64) error {
 
 const updateEvent = `-- name: UpdateEvent :one
 UPDATE events
-SET name = $2, price = $3, stock = $4, start_at = $5, end_at = $6,
-    cover_image = $7, media_assets = $8, description = $9, updated_at = CURRENT_TIMESTAMP
+SET name = $2, start_at = $3, end_at = $4,
+    cover_image = $5, media_assets = $6, description = $7, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, price, stock, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
+RETURNING id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
 `
 
 type UpdateEventParams struct {
 	ID          int64
 	Name        string
-	Price       pgtype.Numeric
-	Stock       int32
 	StartAt     pgtype.Timestamptz
 	EndAt       pgtype.Timestamptz
 	CoverImage  string
@@ -222,8 +190,6 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 	row := q.db.QueryRow(ctx, updateEvent,
 		arg.ID,
 		arg.Name,
-		arg.Price,
-		arg.Stock,
 		arg.StartAt,
 		arg.EndAt,
 		arg.CoverImage,
@@ -234,8 +200,6 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Price,
-		&i.Stock,
 		&i.Status,
 		&i.StartAt,
 		&i.EndAt,
