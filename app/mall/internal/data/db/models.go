@@ -35,7 +35,7 @@ type Order struct {
 	ID          int64
 	UserID      int64
 	AddressID   int64
-	TotalAmount pgtype.Numeric
+	TotalAmount int32
 	Status      string
 	IsCompleted bool
 	CreatedAt   pgtype.Timestamptz
