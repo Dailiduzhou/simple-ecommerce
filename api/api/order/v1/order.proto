@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package api.order.v1;
+
+option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/order/v1;v1";
+option java_multiple_files = true;
+option java_package = "api.order.v1";
+
+service Order {
+	rpc CreateOrder (CreateOrderRequest) returns (CreateOrderReply);
+	rpc UpdateOrder (UpdateOrderRequest) returns (UpdateOrderReply);
+	rpc DeleteOrder (DeleteOrderRequest) returns (DeleteOrderReply);
+	rpc GetOrder (GetOrderRequest) returns (GetOrderReply);
+	rpc ListOrder (ListOrderRequest) returns (ListOrderReply);
+}
+
+message CreateOrderRequest {}
+message CreateOrderReply {}
+
+message UpdateOrderRequest {}
+message UpdateOrderReply {}
+
+message DeleteOrderRequest {}
+message DeleteOrderReply {}
+
+message GetOrderRequest {}
+message GetOrderReply {}
+
+message ListOrderRequest {}
+message ListOrderReply {}

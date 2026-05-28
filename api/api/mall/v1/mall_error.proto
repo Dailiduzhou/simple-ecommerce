@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package api.mall.v1;
+
+option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1;v1";
+option java_multiple_files = true;
+option java_package = "api.mall.v1";
+
+service MallError {
+	rpc CreateMallError (CreateMallErrorRequest) returns (CreateMallErrorReply);
+	rpc UpdateMallError (UpdateMallErrorRequest) returns (UpdateMallErrorReply);
+	rpc DeleteMallError (DeleteMallErrorRequest) returns (DeleteMallErrorReply);
+	rpc GetMallError (GetMallErrorRequest) returns (GetMallErrorReply);
+	rpc ListMallError (ListMallErrorRequest) returns (ListMallErrorReply);
+}
+
+message CreateMallErrorRequest {}
+message CreateMallErrorReply {}
+
+message UpdateMallErrorRequest {}
+message UpdateMallErrorReply {}
+
+message DeleteMallErrorRequest {}
+message DeleteMallErrorReply {}
+
+message GetMallErrorRequest {}
+message GetMallErrorReply {}
+
+message ListMallErrorRequest {}
+message ListMallErrorReply {}

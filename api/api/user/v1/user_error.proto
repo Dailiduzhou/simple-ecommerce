@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package api.user.v1;
+
+option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1";
+option java_multiple_files = true;
+option java_package = "api.user.v1";
+
+service UserError {
+	rpc CreateUserError (CreateUserErrorRequest) returns (CreateUserErrorReply);
+	rpc UpdateUserError (UpdateUserErrorRequest) returns (UpdateUserErrorReply);
+	rpc DeleteUserError (DeleteUserErrorRequest) returns (DeleteUserErrorReply);
+	rpc GetUserError (GetUserErrorRequest) returns (GetUserErrorReply);
+	rpc ListUserError (ListUserErrorRequest) returns (ListUserErrorReply);
+}
+
+message CreateUserErrorRequest {}
+message CreateUserErrorReply {}
+
+message UpdateUserErrorRequest {}
+message UpdateUserErrorReply {}
+
+message DeleteUserErrorRequest {}
+message DeleteUserErrorReply {}
+
+message GetUserErrorRequest {}
+message GetUserErrorReply {}
+
+message ListUserErrorRequest {}
+message ListUserErrorReply {}
