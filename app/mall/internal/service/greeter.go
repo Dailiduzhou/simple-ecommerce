@@ -4,7 +4,7 @@ import (
 	"context"
 
 	v1 "github.com/Dailiduzhou/simple-ecommerce/api/helloworld/v1"
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/biz"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 )
 
 // GreeterService is a greeter service.
