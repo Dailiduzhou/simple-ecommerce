@@ -2,29 +2,84 @@ syntax = "proto3";
 
 package api.payment.v1;
 
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1;v1";
 option java_multiple_files = true;
 option java_package = "api.payment.v1";
 
 service Payment {
-	rpc CreatePayment (CreatePaymentRequest) returns (CreatePaymentReply);
-	rpc UpdatePayment (UpdatePaymentRequest) returns (UpdatePaymentReply);
-	rpc DeletePayment (DeletePaymentRequest) returns (DeletePaymentReply);
-	rpc GetPayment (GetPaymentRequest) returns (GetPaymentReply);
-	rpc ListPayment (ListPaymentRequest) returns (ListPaymentReply);
+  rpc CreatePayment (CreatePaymentRequest) returns (PaymentInfo) {
+    option (google.api.http) = {
+      post: "/v1/payments"
+      body: "*"
+    };
+  }
+  rpc GetPayment (GetPaymentRequest) returns (PaymentInfo) {
+    option (google.api.http) = {
+      get: "/v1/payments/{id}"
+    };
+  }
+  rpc GetPaymentByOrder (GetPaymentByOrderRequest) returns (PaymentInfo) {
+    option (google.api.http) = {
+      get: "/v1/orders/{order_id}/payment"
+    };
+  }
+  // 第三方支付回调
+  rpc NotifyPayment (NotifyPaymentRequest) returns (NotifyPaymentReply) {
+    option (google.api.http) = {
+      post: "/v1/payments/notify"
+      body: "*"
+    };
+  }
+  rpc RefundPayment (RefundPaymentRequest) returns (RefundPaymentReply) {
+    option (google.api.http) = {
+      post: "/v1/payments/{id}/refund"
+      body: "*"
+    };
+  }
 }
 
-message CreatePaymentRequest {}
-message CreatePaymentReply {}
+message PaymentInfo {
+  int64  id               = 1;
+  int64  order_id         = 2;
+  int64  user_id          = 3;
+  int64  merchant_id      = 4;
+  string amount           = 5;
+  string status           = 6; // pending/success/failed/refunded
+  string pay_channel      = 7;
+  string third_party_tx_id = 8;
+  google.protobuf.Timestamp paid_at    = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
 
-message UpdatePaymentRequest {}
-message UpdatePaymentReply {}
+message CreatePaymentRequest {
+  int64  order_id    = 1;
+  int64  user_id     = 2;
+  int64  merchant_id = 3;
+  string pay_channel = 4; // wechat/alipay
+}
 
-message DeletePaymentRequest {}
-message DeletePaymentReply {}
+message GetPaymentRequest {
+  int64 id = 1;
+}
 
-message GetPaymentRequest {}
-message GetPaymentReply {}
+message GetPaymentByOrderRequest {
+  int64 order_id = 1;
+}
 
-message ListPaymentRequest {}
-message ListPaymentReply {}
+message NotifyPaymentRequest {
+  string third_party_tx_id = 1;
+  string pay_channel       = 2;
+  string status            = 3; // success/failed
+  int64  payment_id        = 4;
+}
+message NotifyPaymentReply {
+  string result = 1; // "success" 告知第三方已处理
+}
+
+message RefundPaymentRequest {
+  int64 id = 1;
+}
+message RefundPaymentReply {}
