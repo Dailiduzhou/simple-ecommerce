@@ -1,30 +1,13 @@
 syntax = "proto3";
 
 package api.order.v1;
+import "errors/errors.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/order/v1;v1";
 option java_multiple_files = true;
 option java_package = "api.order.v1";
 
-service OrderError {
-	rpc CreateOrderError (CreateOrderErrorRequest) returns (CreateOrderErrorReply);
-	rpc UpdateOrderError (UpdateOrderErrorRequest) returns (UpdateOrderErrorReply);
-	rpc DeleteOrderError (DeleteOrderErrorRequest) returns (DeleteOrderErrorReply);
-	rpc GetOrderError (GetOrderErrorRequest) returns (GetOrderErrorReply);
-	rpc ListOrderError (ListOrderErrorRequest) returns (ListOrderErrorReply);
+enum ErrorReason {
+  option (errors.default_code) = 500;
+
 }
-
-message CreateOrderErrorRequest {}
-message CreateOrderErrorReply {}
-
-message UpdateOrderErrorRequest {}
-message UpdateOrderErrorReply {}
-
-message DeleteOrderErrorRequest {}
-message DeleteOrderErrorReply {}
-
-message GetOrderErrorRequest {}
-message GetOrderErrorReply {}
-
-message ListOrderErrorRequest {}
-message ListOrderErrorReply {}

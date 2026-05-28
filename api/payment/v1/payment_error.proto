@@ -1,30 +1,13 @@
 syntax = "proto3";
 
-package api.payment.v1;
+package api.mall.v1;
+import "errors/errors.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1;v1";
 option java_multiple_files = true;
 option java_package = "api.payment.v1";
 
-service PaymentError {
-	rpc CreatePaymentError (CreatePaymentErrorRequest) returns (CreatePaymentErrorReply);
-	rpc UpdatePaymentError (UpdatePaymentErrorRequest) returns (UpdatePaymentErrorReply);
-	rpc DeletePaymentError (DeletePaymentErrorRequest) returns (DeletePaymentErrorReply);
-	rpc GetPaymentError (GetPaymentErrorRequest) returns (GetPaymentErrorReply);
-	rpc ListPaymentError (ListPaymentErrorRequest) returns (ListPaymentErrorReply);
+enum ErrorReason {
+  option (errors.default_code) = 500;
+
 }
-
-message CreatePaymentErrorRequest {}
-message CreatePaymentErrorReply {}
-
-message UpdatePaymentErrorRequest {}
-message UpdatePaymentErrorReply {}
-
-message DeletePaymentErrorRequest {}
-message DeletePaymentErrorReply {}
-
-message GetPaymentErrorRequest {}
-message GetPaymentErrorReply {}
-
-message ListPaymentErrorRequest {}
-message ListPaymentErrorReply {}
