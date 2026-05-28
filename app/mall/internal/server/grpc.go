@@ -1,7 +1,10 @@
 package server
 
 import (
-	v1 "github.com/Dailiduzhou/simple-ecommerce/api/helloworld/v1"
+	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
+	orderv1 "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
+	paymentv1 "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
+	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 
@@ -11,8 +14,8 @@ import (
 )
 
 // NewGRPCServer new a gRPC server.
-func NewGRPCServer(c *conf.Server, greeter *service.GreeterService, logger log.Logger) *grpc.Server {
-	var opts = []grpc.ServerOption{
+func NewGRPCServer(c *conf.Server, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, logger log.Logger) *grpc.Server {
+	opts := []grpc.ServerOption{
 		grpc.Middleware(
 			recovery.Recovery(),
 		),
@@ -27,6 +30,9 @@ func NewGRPCServer(c *conf.Server, greeter *service.GreeterService, logger log.L
 		opts = append(opts, grpc.Timeout(c.Grpc.Timeout.AsDuration()))
 	}
 	srv := grpc.NewServer(opts...)
-	v1.RegisterGreeterServer(srv, greeter)
+	mallv1.RegisterMallServer(srv, mall)
+	userv1.RegisterUserServer(srv, user)
+	orderv1.RegisterOrderServer(srv, order)
+	paymentv1.RegisterPaymentServer(srv, payment)
 	return srv
 }
