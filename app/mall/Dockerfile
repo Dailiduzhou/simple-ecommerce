@@ -1,24 +1,35 @@
-FROM golang:1.19 AS builder
+FROM golang:1.25-alpine AS builder
 
-COPY . /src
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
+    apk add --no-cache git make
+
 WORKDIR /src
 
-RUN GOPROXY=https://goproxy.cn make build
+ENV GOPROXY=https://goproxy.cn,direct
 
-FROM debian:stable-slim
+COPY go.mod go.sum ./
+RUN go mod download
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-		ca-certificates  \
-        netbase \
-        && rm -rf /var/lib/apt/lists/ \
-        && apt-get autoremove -y && apt-get autoclean -y
+COPY api/ ./api/
+COPY app/mall/ ./app/mall/
+COPY pkg/ ./pkg/
 
-COPY --from=builder /src/bin /app
+# 编译二进制文件
+RUN cd app/mall/cmd/mall && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/mall .
+
+FROM alpine:3.21 AS runner
+
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
+    apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
-EXPOSE 8000
-EXPOSE 9000
+COPY --from=builder /bin/mall /app/mall
+
+RUN mkdir -p /app/logs
+
+EXPOSE 8000 9000
 VOLUME /data/conf
 
-CMD ["./server", "-conf", "/data/conf"]
+CMD ["./mall", "-conf", "/data/conf"]
