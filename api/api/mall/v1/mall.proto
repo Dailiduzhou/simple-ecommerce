@@ -2,29 +2,260 @@ syntax = "proto3";
 
 package api.mall.v1;
 
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1;v1";
 option java_multiple_files = true;
 option java_package = "api.mall.v1";
 
 service Mall {
-	rpc CreateMall (CreateMallRequest) returns (CreateMallReply);
-	rpc UpdateMall (UpdateMallRequest) returns (UpdateMallReply);
-	rpc DeleteMall (DeleteMallRequest) returns (DeleteMallReply);
-	rpc GetMall (GetMallRequest) returns (GetMallReply);
-	rpc ListMall (ListMallRequest) returns (ListMallReply);
+  // Categories
+  rpc CreateCategory (CreateCategoryRequest) returns (Category) {
+    option (google.api.http) = {
+      post: "/v1/categories"
+      body: "*"
+    };
+  }
+  rpc ListCategories (ListCategoriesRequest) returns (ListCategoriesReply) {
+    option (google.api.http) = {
+      get: "/v1/categories"
+    };
+  }
+  rpc UpdateCategory (UpdateCategoryRequest) returns (Category) {
+    option (google.api.http) = {
+      put: "/v1/categories/{id}"
+      body: "*"
+    };
+  }
+  rpc DeleteCategory (DeleteCategoryRequest) returns (DeleteCategoryReply) {
+    option (google.api.http) = {
+      delete: "/v1/categories/{id}"
+    };
+  }
+
+  // Products
+  rpc CreateProduct (CreateProductRequest) returns (Product) {
+    option (google.api.http) = {
+      post: "/v1/products"
+      body: "*"
+    };
+  }
+  rpc GetProduct (GetProductRequest) returns (Product) {
+    option (google.api.http) = {
+      get: "/v1/products/{id}"
+    };
+  }
+  rpc ListProducts (ListProductsRequest) returns (ListProductsReply) {
+    option (google.api.http) = {
+      get: "/v1/products"
+    };
+  }
+  rpc UpdateProduct (UpdateProductRequest) returns (Product) {
+    option (google.api.http) = {
+      put: "/v1/products/{id}"
+      body: "*"
+    };
+  }
+  rpc UpdateProductStatus (UpdateProductStatusRequest) returns (UpdateProductStatusReply) {
+    option (google.api.http) = {
+      patch: "/v1/products/{id}/status"
+      body: "*"
+    };
+  }
+  rpc DeleteProduct (DeleteProductRequest) returns (DeleteProductReply) {
+    option (google.api.http) = {
+      delete: "/v1/products/{id}"
+    };
+  }
+
+  // Events
+  rpc CreateEvent (CreateEventRequest) returns (Event) {
+    option (google.api.http) = {
+      post: "/v1/events"
+      body: "*"
+    };
+  }
+  rpc GetEvent (GetEventRequest) returns (Event) {
+    option (google.api.http) = {
+      get: "/v1/events/{id}"
+    };
+  }
+  rpc ListEvents (ListEventsRequest) returns (ListEventsReply) {
+    option (google.api.http) = {
+      get: "/v1/events"
+    };
+  }
+  rpc UpdateEvent (UpdateEventRequest) returns (Event) {
+    option (google.api.http) = {
+      put: "/v1/events/{id}"
+      body: "*"
+    };
+  }
+  rpc UpdateEventStatus (UpdateEventStatusRequest) returns (UpdateEventStatusReply) {
+    option (google.api.http) = {
+      patch: "/v1/events/{id}/status"
+      body: "*"
+    };
+  }
+  rpc DeleteEvent (DeleteEventRequest) returns (DeleteEventReply) {
+    option (google.api.http) = {
+      delete: "/v1/events/{id}"
+    };
+  }
 }
 
-message CreateMallRequest {}
-message CreateMallReply {}
+message Category {
+  int64  id         = 1;
+  int64  parent_id  = 2;
+  string name       = 3;
+  int32  sort_order = 4;
+}
 
-message UpdateMallRequest {}
-message UpdateMallReply {}
+message CreateCategoryRequest {
+  int64  parent_id  = 1;
+  string name       = 2;
+  int32  sort_order = 3;
+}
 
-message DeleteMallRequest {}
-message DeleteMallReply {}
+message ListCategoriesRequest {
+  int64 parent_id = 1; // 0 表示查顶级分类
+}
+message ListCategoriesReply {
+  repeated Category categories = 1;
+}
 
-message GetMallRequest {}
-message GetMallReply {}
+message UpdateCategoryRequest {
+  int64  id         = 1;
+  string name       = 2;
+  int32  sort_order = 3;
+}
 
-message ListMallRequest {}
-message ListMallReply {}
+message DeleteCategoryRequest {
+  int64 id = 1;
+}
+message DeleteCategoryReply {}
+
+message Product {
+  int64  id          = 1;
+  int64  category_id = 2;
+  string name        = 3;
+  string price       = 4; // NUMERIC as string to avoid float precision
+  string discount    = 5;
+  int32  stock       = 6;
+  int32  status      = 7;
+  string cover_image = 8;
+  google.protobuf.Struct media_assets = 9;
+  string description = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+message CreateProductRequest {
+  int64  category_id  = 1;
+  string name         = 2;
+  string price        = 3;
+  string discount     = 4;
+  int32  stock        = 5;
+  string cover_image  = 6;
+  google.protobuf.Struct media_assets = 7;
+  string description  = 8;
+}
+
+message GetProductRequest {
+  int64 id = 1;
+}
+
+message ListProductsRequest {
+  int64 category_id = 1;
+  int32 page_size   = 2;
+  int32 page        = 3;
+}
+message ListProductsReply {
+  repeated Product products = 1;
+  int32 total               = 2;
+}
+
+message UpdateProductRequest {
+  int64  id           = 1;
+  int64  category_id  = 2;
+  string name         = 3;
+  string price        = 4;
+  string discount     = 5;
+  int32  stock        = 6;
+  string cover_image  = 7;
+  google.protobuf.Struct media_assets = 8;
+  string description  = 9;
+}
+
+message UpdateProductStatusRequest {
+  int64 id     = 1;
+  int32 status = 2;
+}
+message UpdateProductStatusReply {}
+
+message DeleteProductRequest {
+  int64 id = 1;
+}
+message DeleteProductReply {}
+
+message Event {
+  int64  id          = 1;
+  string name        = 2;
+  string price       = 3;
+  int32  stock       = 4;
+  int32  status      = 5;
+  string cover_image = 6;
+  google.protobuf.Struct media_assets = 7;
+  string description = 8;
+  google.protobuf.Timestamp start_at   = 9;
+  google.protobuf.Timestamp end_at     = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+message CreateEventRequest {
+  string name        = 1;
+  string price       = 2;
+  int32  stock       = 3;
+  string cover_image = 4;
+  google.protobuf.Struct media_assets = 5;
+  string description = 6;
+  google.protobuf.Timestamp start_at = 7;
+  google.protobuf.Timestamp end_at   = 8;
+}
+
+message GetEventRequest {
+  int64 id = 1;
+}
+
+message ListEventsRequest {
+  int32 status    = 1; // 0-未开始 1-进行中，不传则全部
+  int32 page_size = 2;
+  int32 page      = 3;
+}
+message ListEventsReply {
+  repeated Event events = 1;
+}
+
+message UpdateEventRequest {
+  int64  id          = 1;
+  string name        = 2;
+  string price       = 3;
+  int32  stock       = 4;
+  string cover_image = 5;
+  google.protobuf.Struct media_assets = 6;
+  string description = 7;
+  google.protobuf.Timestamp start_at = 8;
+  google.protobuf.Timestamp end_at   = 9;
+}
+
+message UpdateEventStatusRequest {
+  int64 id     = 1;
+  int32 status = 2;
+}
+message UpdateEventStatusReply {}
+
+message DeleteEventRequest {
+  int64 id = 1;
+}
+message DeleteEventReply {}

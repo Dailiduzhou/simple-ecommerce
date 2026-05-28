@@ -2,29 +2,86 @@ syntax = "proto3";
 
 package api.order.v1;
 
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/order/v1;v1";
 option java_multiple_files = true;
 option java_package = "api.order.v1";
 
 service Order {
-	rpc CreateOrder (CreateOrderRequest) returns (CreateOrderReply);
-	rpc UpdateOrder (UpdateOrderRequest) returns (UpdateOrderReply);
-	rpc DeleteOrder (DeleteOrderRequest) returns (DeleteOrderReply);
-	rpc GetOrder (GetOrderRequest) returns (GetOrderReply);
-	rpc ListOrder (ListOrderRequest) returns (ListOrderReply);
+  rpc CreateOrder (CreateOrderRequest) returns (OrderInfo) {
+    option (google.api.http) = {
+      post: "/v1/orders"
+      body: "*"
+    };
+  }
+  rpc GetOrder (GetOrderRequest) returns (OrderInfo) {
+    option (google.api.http) = {
+      get: "/v1/orders/{id}"
+    };
+  }
+  rpc ListOrders (ListOrdersRequest) returns (ListOrdersReply) {
+    option (google.api.http) = {
+      get: "/v1/users/{user_id}/orders"
+    };
+  }
+  rpc CancelOrder (CancelOrderRequest) returns (CancelOrderReply) {
+    option (google.api.http) = {
+      post: "/v1/orders/{id}/cancel"
+      body: "*"
+    };
+  }
 }
 
-message CreateOrderRequest {}
-message CreateOrderReply {}
+message OrderItem {
+  int64  product_id   = 1;
+  string product_name = 2;
+  string cover_image  = 3;
+  int32  quantity     = 4;
+  string unit_price   = 5;
+}
 
-message UpdateOrderRequest {}
-message UpdateOrderReply {}
+message OrderInfo {
+  int64  id           = 1;
+  int64  user_id      = 2;
+  int64  address_id   = 3;
+  string total_amount = 4;
+  string status       = 5;
+  bool   is_completed = 6;
+  repeated OrderItem items = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
 
-message DeleteOrderRequest {}
-message DeleteOrderReply {}
+message CreateOrderRequest {
+  int64 user_id    = 1;
+  int64 address_id = 2;
+  repeated OrderItemInput items = 3;
+}
+message OrderItemInput {
+  int64 product_id = 1;
+  int32 quantity   = 2;
+}
 
-message GetOrderRequest {}
-message GetOrderReply {}
+message GetOrderRequest {
+  int64 id      = 1;
+  int64 user_id = 2;
+}
 
-message ListOrderRequest {}
-message ListOrderReply {}
+message ListOrdersRequest {
+  int64 user_id    = 1;
+  bool  ongoing    = 2; // true 只查未完成
+  int32 page_size  = 3;
+  int32 page       = 4;
+}
+message ListOrdersReply {
+  repeated OrderInfo orders = 1;
+  int32 total               = 2;
+}
+
+message CancelOrderRequest {
+  int64 id      = 1;
+  int64 user_id = 2;
+}
+message CancelOrderReply {}

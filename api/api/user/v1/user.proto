@@ -2,29 +2,169 @@ syntax = "proto3";
 
 package api.user.v1;
 
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1";
 option java_multiple_files = true;
 option java_package = "api.user.v1";
 
 service User {
-	rpc CreateUser (CreateUserRequest) returns (CreateUserReply);
-	rpc UpdateUser (UpdateUserRequest) returns (UpdateUserReply);
-	rpc DeleteUser (DeleteUserRequest) returns (DeleteUserReply);
-	rpc GetUser (GetUserRequest) returns (GetUserReply);
-	rpc ListUser (ListUserRequest) returns (ListUserReply);
+  rpc Register (RegisterRequest) returns (RegisterReply) {
+    option (google.api.http) = {
+      post: "/v1/users/register"
+      body: "*"
+    };
+  }
+  rpc Login (LoginRequest) returns (LoginReply) {
+    option (google.api.http) = {
+      post: "/v1/users/login"
+      body: "*"
+    };
+  }
+  rpc GetUser (GetUserRequest) returns (UserInfo) {
+    option (google.api.http) = {
+      get: "/v1/users/{id}"
+    };
+  }
+  rpc UpdateUser (UpdateUserRequest) returns (UserInfo) {
+    option (google.api.http) = {
+      put: "/v1/users/{id}"
+      body: "*"
+    };
+  }
+  rpc DeleteUser (DeleteUserRequest) returns (DeleteUserReply) {
+    option (google.api.http) = {
+      delete: "/v1/users/{id}"
+    };
+  }
+
+  // Shipping Addresses
+  rpc CreateShippingAddress (CreateShippingAddressRequest) returns (ShippingAddress) {
+    option (google.api.http) = {
+      post: "/v1/users/{user_id}/addresses"
+      body: "*"
+    };
+  }
+  rpc ListShippingAddresses (ListShippingAddressesRequest) returns (ListShippingAddressesReply) {
+    option (google.api.http) = {
+      get: "/v1/users/{user_id}/addresses"
+    };
+  }
+  rpc UpdateShippingAddress (UpdateShippingAddressRequest) returns (ShippingAddress) {
+    option (google.api.http) = {
+      put: "/v1/users/{user_id}/addresses/{id}"
+      body: "*"
+    };
+  }
+  rpc SetDefaultShippingAddress (SetDefaultShippingAddressRequest) returns (SetDefaultShippingAddressReply) {
+    option (google.api.http) = {
+      post: "/v1/users/{user_id}/addresses/{id}/default"
+      body: "*"
+    };
+  }
+  rpc DeleteShippingAddress (DeleteShippingAddressRequest) returns (DeleteShippingAddressReply) {
+    option (google.api.http) = {
+      delete: "/v1/users/{user_id}/addresses/{id}"
+    };
+  }
 }
 
-message CreateUserRequest {}
-message CreateUserReply {}
+message RegisterRequest {
+  string phone     = 1;
+  string password  = 2;
+  string nickname  = 3;
+}
+message RegisterReply {
+  int64  id    = 1;
+  string token = 2;
+}
 
-message UpdateUserRequest {}
-message UpdateUserReply {}
+message LoginRequest {
+  string phone    = 1;
+  string password = 2;
+}
+message LoginReply {
+  int64  id    = 1;
+  string token = 2;
+}
 
-message DeleteUserRequest {}
+message GetUserRequest {
+  int64 id = 1;
+}
+
+message UpdateUserRequest {
+  int64  id        = 1;
+  string nickname  = 2;
+  string real_name = 3;
+}
+
+message DeleteUserRequest {
+  int64 id = 1;
+}
 message DeleteUserReply {}
 
-message GetUserRequest {}
-message GetUserReply {}
+message UserInfo {
+  int64  id         = 1;
+  string nickname   = 2;
+  string real_name  = 3;
+  string phone      = 4; // 解密后展示
+  string role       = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
 
-message ListUserRequest {}
-message ListUserReply {}
+message ShippingAddress {
+  int64  id                     = 1;
+  int64  user_id                = 2;
+  string receiver_name          = 3;
+  string receiver_phone         = 4; // 解密后展示
+  string province               = 5;
+  string city                   = 6;
+  string district               = 7;
+  string detail_address         = 8;
+  string address_tag            = 9;
+  bool   is_default             = 10;
+}
+
+message CreateShippingAddressRequest {
+  int64  user_id        = 1;
+  string receiver_name  = 2;
+  string receiver_phone = 3;
+  string province       = 4;
+  string city           = 5;
+  string district       = 6;
+  string detail_address = 7;
+  string address_tag    = 8;
+  bool   is_default     = 9;
+}
+
+message ListShippingAddressesRequest {
+  int64 user_id = 1;
+}
+message ListShippingAddressesReply {
+  repeated ShippingAddress addresses = 1;
+}
+
+message UpdateShippingAddressRequest {
+  int64  id             = 1;
+  int64  user_id        = 2;
+  string receiver_name  = 3;
+  string receiver_phone = 4;
+  string province       = 5;
+  string city           = 6;
+  string district       = 7;
+  string detail_address = 8;
+  string address_tag    = 9;
+}
+
+message SetDefaultShippingAddressRequest {
+  int64 user_id = 1;
+  int64 id      = 2;
+}
+message SetDefaultShippingAddressReply {}
+
+message DeleteShippingAddressRequest {
+  int64 user_id = 1;
+  int64 id      = 2;
+}
+message DeleteShippingAddressReply {}
