@@ -5,7 +5,7 @@ CREATE TABLE users (
     nickname VARCHAR(50) NOT NULL DEFAULT '',
     real_name VARCHAR(50) NOT NULL DEFAULT '',
 
-    phone_hash VARCHAR(128) NOT NULL,       -- 用于登录查询的手机号摘要 (HMAC-SHA256)
+    phone_hash VARCHAR(128) NOT NULL UNIQUE,       -- 用于登录查询的手机号摘要 (HMAC-SHA256)
     phone_encrypt VARCHAR(255) NOT NULL,    -- 用于业务展示的手机号密文 (AES-GCM)
 
     password_hash VARCHAR(255) NOT NULL,    -- 用户密码的单向哈希 (Bcrypt)
