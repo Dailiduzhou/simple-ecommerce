@@ -6,11 +6,11 @@
 package main
 
 import (
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/biz"
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/conf"
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/data"
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/server"
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/service"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 
 	"github.com/go-kratos/kratos/v2"
 	"github.com/go-kratos/kratos/v2/log"

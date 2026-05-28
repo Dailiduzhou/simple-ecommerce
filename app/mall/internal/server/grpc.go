@@ -2,8 +2,8 @@ package server
 
 import (
 	v1 "github.com/Dailiduzhou/simple-ecommerce/api/helloworld/v1"
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/conf"
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/service"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/middleware/recovery"

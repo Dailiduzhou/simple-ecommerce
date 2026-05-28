@@ -1,7 +1,7 @@
 package data
 
 import (
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/conf"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/google/wire"

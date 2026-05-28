@@ -3,7 +3,7 @@ package data
 import (
 	"context"
 
-	"github.com/Dailiduzhou/simple-ecommerce/app/app/mall/internal/biz"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 
 	"github.com/go-kratos/kratos/v2/log"
 )
