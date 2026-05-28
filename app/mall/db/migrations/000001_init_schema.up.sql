@@ -92,7 +92,7 @@ CREATE TABLE orders (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL,
   address_id BIGINT NOT NULL,
-  total_amount NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+  total_amount INTEGER NOT NULL DEFAULT 0,
   status VARCHAR(20) NOT NULL DEFAULT 'creating', -- creating/paid/shipped/completed/cancelled
   is_completed BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -7,8 +7,6 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const cancelOrder = `-- name: CancelOrder :exec
@@ -38,7 +36,7 @@ RETURNING id, user_id, address_id, total_amount, status, is_completed, created_a
 type CreateOrderParams struct {
 	UserID      int64
 	AddressID   int64
-	TotalAmount pgtype.Numeric
+	TotalAmount int32
 	Status      string
 }
 
