@@ -14,4 +14,5 @@ enum ErrorReason {
   USER_NOT_FOUND = 0 [(errors.code) = 404];
   UNAUTHORIZED = 1 [(errors.code) = 401];
   TOKEN_EXPIRED = 2 [(errors.code) = 401];
+  INVALID_PHONE = 3 [(errors.code) = 400];
 }

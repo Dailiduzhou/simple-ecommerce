@@ -46,3 +46,15 @@ func IsTokenExpired(err error) bool {
 func ErrorTokenExpired(format string, args ...interface{}) *errors.Error {
 	return errors.New(401, ErrorReason_TOKEN_EXPIRED.String(), fmt.Sprintf(format, args...))
 }
+
+func IsInvalidPhone(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_INVALID_PHONE.String() && e.Code == 400
+}
+
+func ErrorInvalidPhone(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_INVALID_PHONE.String(), fmt.Sprintf(format, args...))
+}
