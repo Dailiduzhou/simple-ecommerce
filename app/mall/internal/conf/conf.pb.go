@@ -26,6 +26,7 @@ type Bootstrap struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Server        *Server                `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
 	Data          *Data                  `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	Auth          *Auth                  `protobuf:"bytes,3,opt,name=auth,proto3" json:"auth,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -70,6 +71,13 @@ func (x *Bootstrap) GetServer() *Server {
 func (x *Bootstrap) GetData() *Data {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *Bootstrap) GetAuth() *Auth {
+	if x != nil {
+		return x.Auth
 	}
 	return nil
 }
@@ -491,10 +499,11 @@ var File_conf_conf_proto protoreflect.FileDescriptor
 const file_conf_conf_proto_rawDesc = "" +
 	"\n" +
 	"\x0fconf/conf.proto\x12\n" +
-	"kratos.api\x1a\x1egoogle/protobuf/duration.proto\"]\n" +
+	"kratos.api\x1a\x1egoogle/protobuf/duration.proto\"\x83\x01\n" +
 	"\tBootstrap\x12*\n" +
 	"\x06server\x18\x01 \x01(\v2\x12.kratos.api.ServerR\x06server\x12$\n" +
-	"\x04data\x18\x02 \x01(\v2\x10.kratos.api.DataR\x04data\"\x84\x02\n" +
+	"\x04data\x18\x02 \x01(\v2\x10.kratos.api.DataR\x04data\x12$\n" +
+	"\x04auth\x18\x03 \x01(\v2\x10.kratos.api.AuthR\x04auth\"\x84\x02\n" +
 	"\x04Auth\x12.\n" +
 	"\x13access_token_secret\x18\x01 \x01(\tR\x11accessTokenSecret\x12K\n" +
 	"\x14access_token_timeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x12accessTokenTimeout\x120\n" +
@@ -550,21 +559,22 @@ var file_conf_conf_proto_goTypes = []any{
 var file_conf_conf_proto_depIdxs = []int32{
 	2,  // 0: kratos.api.Bootstrap.server:type_name -> kratos.api.Server
 	3,  // 1: kratos.api.Bootstrap.data:type_name -> kratos.api.Data
-	8,  // 2: kratos.api.Auth.access_token_timeout:type_name -> google.protobuf.Duration
-	8,  // 3: kratos.api.Auth.refresh_token_timeout:type_name -> google.protobuf.Duration
-	4,  // 4: kratos.api.Server.http:type_name -> kratos.api.Server.HTTP
-	5,  // 5: kratos.api.Server.grpc:type_name -> kratos.api.Server.GRPC
-	6,  // 6: kratos.api.Data.database:type_name -> kratos.api.Data.Database
-	7,  // 7: kratos.api.Data.redis:type_name -> kratos.api.Data.Redis
-	8,  // 8: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
-	8,  // 9: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	8,  // 10: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
-	8,  // 11: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	1,  // 2: kratos.api.Bootstrap.auth:type_name -> kratos.api.Auth
+	8,  // 3: kratos.api.Auth.access_token_timeout:type_name -> google.protobuf.Duration
+	8,  // 4: kratos.api.Auth.refresh_token_timeout:type_name -> google.protobuf.Duration
+	4,  // 5: kratos.api.Server.http:type_name -> kratos.api.Server.HTTP
+	5,  // 6: kratos.api.Server.grpc:type_name -> kratos.api.Server.GRPC
+	6,  // 7: kratos.api.Data.database:type_name -> kratos.api.Data.Database
+	7,  // 8: kratos.api.Data.redis:type_name -> kratos.api.Data.Redis
+	8,  // 9: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
+	8,  // 10: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	8,  // 11: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
+	8,  // 12: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_conf_conf_proto_init() }
