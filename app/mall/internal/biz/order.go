@@ -3,6 +3,8 @@ package biz
 import (
 	"context"
 	"time"
+
+	"github.com/go-kratos/kratos/v2/log"
 )
 
 type Order struct {
@@ -15,6 +17,7 @@ type Order struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
+
 type OrderRepo interface {
 	CancelOrder(ctx context.Context, id int64) error
 	CompleteOrder(ctx context.Context, id int64) error
@@ -24,4 +27,10 @@ type OrderRepo interface {
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
 	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)
 	ListOrdersByUser(ctx context.Context, userID int64, limit int32, offset int32) ([]Order, error)
+	UpdateOrderStatus(ctx context.Context, id int64, status string) (Order, error)
+}
+
+type OrderUsecase struct {
+	repo OrderRepo
+	log  *log.Helper
 }
