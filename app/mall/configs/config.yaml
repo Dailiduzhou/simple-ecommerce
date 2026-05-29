@@ -19,3 +19,7 @@ auth:
   access_token_timeout: 3600s
   refresh_token_secret: d28f4ebe77f916b60cd33898db39b5cbb49d78a97badd6f5498f152a578e1fbd
   refresh_token_timeout: 86400s
+  phone_secret: 8a8390d0fecd4df1365888607c3897a3dd8096fe13afe9357b0df8c8969703d5
+
+trace:
+  endpoint: jaeger:4317

@@ -16,6 +16,7 @@ message Auth {
   google.protobuf.Duration access_token_timeout = 2;
   string refresh_token_secret = 3;
   google.protobuf.Duration refresh_token_timeout = 4;
+  string phone_secret = 5;
 }
 
 message Server {
