@@ -5,9 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"time"
 
+	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
+	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
+	"github.com/Dailiduzhou/simple-ecommerce/pkg/pwdhash"
+
+	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -30,6 +36,20 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
+type UserUsecase struct {
+	userRepo    UserRepo
+	phoneSecret string
+	log         *log.Helper
+}
+
+func NewUserUsecase(userRepo UserRepo, ac *conf.Auth, logger log.Logger) *UserUsecase {
+	return &UserUsecase{
+		userRepo:    userRepo,
+		phoneSecret: ac.PhoneSecret,
+		log:         log.NewHelper(logger),
+	}
+}
+
 type AuthRepo interface {
 	SetBlacklist(ctx context.Context, tokenID string, expiration time.Duration) error
 	IsBlacklisted(ctx context.Context, tokenID string) (bool, error)
@@ -42,12 +62,12 @@ type EcommerceClaims struct {
 }
 
 type AuthUsecase struct {
-	userRepo        UserRepo
-	authRepo        AuthRepo
-	accessSecret    string
-	accessTimeout   time.Duration
-	refreshSecret   string
-	refreshTimeout  time.Duration
+	userRepo       UserRepo
+	authRepo       AuthRepo
+	accessSecret   string
+	accessTimeout  time.Duration
+	refreshSecret  string
+	refreshTimeout time.Duration
 }
 
 func NewAuthUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth) *AuthUsecase {
@@ -134,4 +154,73 @@ func generateTokenID() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func (uc *UserUsecase) Register(ctx context.Context, phone string, password string) (*User, error) {
+	if !IsValidCNMobile(phone) {
+		return nil, userv1.ErrorInvalidPhone("invalid phone number: %s", phone)
+	}
+
+	secret := []byte(uc.phoneSecret)
+	phoneHash := phonecrypto.HashPhone(phone, secret)
+
+	passwordHash, err := pwdhash.HashPassword(password)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("hash password failed: %v", err)
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	existing, err := uc.userRepo.GetUserByPhoneHash(ctx, phoneHash)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("check phone hash failed: %v", err)
+		return nil, fmt.Errorf("check phone hash: %w", err)
+	}
+	if existing != nil {
+		return nil, userv1.ErrorUserAlreadyExists("phone already registered")
+	}
+
+	phoneEncrypt, err := phonecrypto.EncryptPhone(phone, secret)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("encrypt phone failed: %v", err)
+		return nil, fmt.Errorf("encrypt phone: %w", err)
+	}
+
+	nickname := "u" + phoneHash[:8]
+	u, err := uc.userRepo.CreateUser(ctx, nickname, phoneHash, phoneEncrypt, passwordHash)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("create user failed: %v", err)
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+
+	return u, nil
+}
+
+func (uc *UserUsecase) Login(ctx context.Context, phone string, password string) (*User, error) {
+	if !IsValidCNMobile(phone) {
+		return nil, userv1.ErrorInvalidPhone("invalid phone number: %s", phone)
+	}
+
+	secret := []byte(uc.phoneSecret)
+	phoneHash := phonecrypto.HashPhone(phone, secret)
+
+	u, err := uc.userRepo.GetUserByPhoneHash(ctx, phoneHash)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("get user by phone hash failed: %v", err)
+		return nil, fmt.Errorf("get user by phone hash: %w", err)
+	}
+	if u == nil {
+		return nil, userv1.ErrorUserNotFound("phone not registered")
+	}
+
+	if err := pwdhash.ComparePassword(u.PasswordHash, password); err != nil {
+		return nil, userv1.ErrorInvalidPassword("wrong password")
+	}
+
+	return u, nil
+}
+
+func IsValidCNMobile(phone string) bool {
+	// 匹配规则：1开头，第二位3-9，后面9位数字
+	re := regexp.MustCompile(`^1[3-9]\d{9}$`)
+	return re.MatchString(phone)
 }

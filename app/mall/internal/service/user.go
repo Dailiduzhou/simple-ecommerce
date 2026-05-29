@@ -90,14 +90,16 @@ func (s *UserService) DeleteShippingAddress(ctx context.Context, req *pb.DeleteS
 	return &pb.DeleteShippingAddressReply{}, nil
 }
 
-func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) (*pb.RegisterReply, error) {
+func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) (*pb.RefreshReply, error) {
 	claims, err := s.authUc.ParseRefreshToken(req.RefreshToken)
 	if err != nil {
+		s.log.WithContext(ctx).Errorf("refresh token invalid or expired: %v", err)
 		return nil, pb.ErrorTokenExpired("refresh token invalid or expired")
 	}
 
 	blacklisted, err := s.authUc.IsTokenBlacklisted(ctx, claims.ID)
 	if err != nil {
+		s.log.WithContext(ctx).Errorf("check blacklist failed: %v", err)
 		return nil, pb.ErrorUnauthorized("check blacklist failed")
 	}
 	if blacklisted {
@@ -110,11 +112,15 @@ func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) 
 
 	accessToken, err := s.authUc.GenerateAccessToken(claims.UserID, claims.Role)
 	if err != nil {
+		s.log.WithContext(ctx).Errorf("generate access token failed: %v", err)
 		return nil, pb.ErrorUnauthorized("generate access token failed")
 	}
 
-	return &pb.RegisterReply{
-		Id:    claims.UserID,
-		Token: accessToken,
-	}, nil
+	refreshToken, err := s.authUc.GenerateRefreshToken(claims.UserID, claims.Role)
+	if err != nil {
+		s.log.WithContext(ctx).Errorf("generate refresh token failed: %v", err)
+		return nil, pb.ErrorUnauthorized("generate refresh token failed")
+	}
+
+	return &pb.RefreshReply{AccessToken: accessToken, RefreshToken: refreshToken}, nil
 }

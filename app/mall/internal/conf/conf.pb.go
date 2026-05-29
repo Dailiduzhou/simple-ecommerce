@@ -88,6 +88,7 @@ type Auth struct {
 	AccessTokenTimeout  *durationpb.Duration   `protobuf:"bytes,2,opt,name=access_token_timeout,json=accessTokenTimeout,proto3" json:"access_token_timeout,omitempty"`
 	RefreshTokenSecret  string                 `protobuf:"bytes,3,opt,name=refresh_token_secret,json=refreshTokenSecret,proto3" json:"refresh_token_secret,omitempty"`
 	RefreshTokenTimeout *durationpb.Duration   `protobuf:"bytes,4,opt,name=refresh_token_timeout,json=refreshTokenTimeout,proto3" json:"refresh_token_timeout,omitempty"`
+	PhoneSecret         string                 `protobuf:"bytes,5,opt,name=phone_secret,json=phoneSecret,proto3" json:"phone_secret,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -148,6 +149,13 @@ func (x *Auth) GetRefreshTokenTimeout() *durationpb.Duration {
 		return x.RefreshTokenTimeout
 	}
 	return nil
+}
+
+func (x *Auth) GetPhoneSecret() string {
+	if x != nil {
+		return x.PhoneSecret
+	}
+	return ""
 }
 
 type Server struct {
@@ -503,12 +511,13 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\tBootstrap\x12*\n" +
 	"\x06server\x18\x01 \x01(\v2\x12.kratos.api.ServerR\x06server\x12$\n" +
 	"\x04data\x18\x02 \x01(\v2\x10.kratos.api.DataR\x04data\x12$\n" +
-	"\x04auth\x18\x03 \x01(\v2\x10.kratos.api.AuthR\x04auth\"\x84\x02\n" +
+	"\x04auth\x18\x03 \x01(\v2\x10.kratos.api.AuthR\x04auth\"\xa7\x02\n" +
 	"\x04Auth\x12.\n" +
 	"\x13access_token_secret\x18\x01 \x01(\tR\x11accessTokenSecret\x12K\n" +
 	"\x14access_token_timeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x12accessTokenTimeout\x120\n" +
 	"\x14refresh_token_secret\x18\x03 \x01(\tR\x12refreshTokenSecret\x12M\n" +
-	"\x15refresh_token_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x13refreshTokenTimeout\"\xb8\x02\n" +
+	"\x15refresh_token_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x13refreshTokenTimeout\x12!\n" +
+	"\fphone_secret\x18\x05 \x01(\tR\vphoneSecret\"\xb8\x02\n" +
 	"\x06Server\x12+\n" +
 	"\x04http\x18\x01 \x01(\v2\x17.kratos.api.Server.HTTPR\x04http\x12+\n" +
 	"\x04grpc\x18\x02 \x01(\v2\x17.kratos.api.Server.GRPCR\x04grpc\x1ai\n" +

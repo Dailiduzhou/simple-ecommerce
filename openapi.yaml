@@ -47,7 +47,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/RegisterReply'
+                                $ref: '#/components/schemas/RefreshReply'
                 default:
                     description: Default error response
                     content:
@@ -364,6 +364,13 @@ components:
                     type: string
                 password:
                     type: string
+        RefreshReply:
+            type: object
+            properties:
+                accessToken:
+                    type: string
+                refreshToken:
+                    type: string
         RefreshRequest:
             type: object
             properties:
@@ -374,16 +381,12 @@ components:
             properties:
                 id:
                     type: string
-                token:
-                    type: string
         RegisterRequest:
             type: object
             properties:
                 phone:
                     type: string
                 password:
-                    type: string
-                nickname:
                     type: string
         SetDefaultShippingAddressReply:
             type: object
