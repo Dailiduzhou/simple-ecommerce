@@ -58,3 +58,27 @@ func IsInvalidPhone(err error) bool {
 func ErrorInvalidPhone(format string, args ...interface{}) *errors.Error {
 	return errors.New(400, ErrorReason_INVALID_PHONE.String(), fmt.Sprintf(format, args...))
 }
+
+func IsUserAlreadyExists(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_USER_ALREADY_EXISTS.String() && e.Code == 409
+}
+
+func ErrorUserAlreadyExists(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_USER_ALREADY_EXISTS.String(), fmt.Sprintf(format, args...))
+}
+
+func IsInvalidPassword(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_INVALID_PASSWORD.String() && e.Code == 400
+}
+
+func ErrorInvalidPassword(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_INVALID_PASSWORD.String(), fmt.Sprintf(format, args...))
+}

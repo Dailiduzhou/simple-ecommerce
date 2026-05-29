@@ -1270,7 +1270,7 @@ const file_api_user_v1_user_proto_rawDesc = "" +
 	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"V\n" +
 	"\fRefreshReply\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken2\xc5\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken2\xc4\n" +
 	"\n" +
 	"\x04User\x12c\n" +
 	"\bRegister\x12\x1c.api.user.v1.RegisterRequest\x1a\x1a.api.user.v1.RegisterReply\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/users/register\x12W\n" +
@@ -1284,8 +1284,8 @@ const file_api_user_v1_user_proto_rawDesc = "" +
 	"\x15ListShippingAddresses\x12).api.user.v1.ListShippingAddressesRequest\x1a'.api.user.v1.ListShippingAddressesReply\"%\x82\xd3\xe4\x93\x02\x1f\x12\x1d/v1/users/{user_id}/addresses\x12\x8f\x01\n" +
 	"\x15UpdateShippingAddress\x12).api.user.v1.UpdateShippingAddressRequest\x1a\x1c.api.user.v1.ShippingAddress\"-\x82\xd3\xe4\x93\x02':\x01*\x1a\"/v1/users/{user_id}/addresses/{id}\x12\xae\x01\n" +
 	"\x19SetDefaultShippingAddress\x12-.api.user.v1.SetDefaultShippingAddressRequest\x1a+.api.user.v1.SetDefaultShippingAddressReply\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/v1/users/{user_id}/addresses/{id}/default\x12\x97\x01\n" +
-	"\x15DeleteShippingAddress\x12).api.user.v1.DeleteShippingAddressRequest\x1a'.api.user.v1.DeleteShippingAddressReply\"*\x82\xd3\xe4\x93\x02$*\"/v1/users/{user_id}/addresses/{id}\x12e\n" +
-	"\fRefreshToken\x12\x1b.api.user.v1.RefreshRequest\x1a\x1a.api.user.v1.RegisterReply\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/users/refreshBG\n" +
+	"\x15DeleteShippingAddress\x12).api.user.v1.DeleteShippingAddressRequest\x1a'.api.user.v1.DeleteShippingAddressReply\"*\x82\xd3\xe4\x93\x02$*\"/v1/users/{user_id}/addresses/{id}\x12d\n" +
+	"\fRefreshToken\x12\x1b.api.user.v1.RefreshRequest\x1a\x19.api.user.v1.RefreshReply\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/users/refreshBG\n" +
 	"\vapi.user.v1P\x01Z6github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1b\x06proto3"
 
 var (
@@ -1348,7 +1348,7 @@ var file_api_user_v1_user_proto_depIdxs = []int32{
 	9,  // 20: api.user.v1.User.UpdateShippingAddress:output_type -> api.user.v1.ShippingAddress
 	15, // 21: api.user.v1.User.SetDefaultShippingAddress:output_type -> api.user.v1.SetDefaultShippingAddressReply
 	17, // 22: api.user.v1.User.DeleteShippingAddress:output_type -> api.user.v1.DeleteShippingAddressReply
-	1,  // 23: api.user.v1.User.RefreshToken:output_type -> api.user.v1.RegisterReply
+	19, // 23: api.user.v1.User.RefreshToken:output_type -> api.user.v1.RefreshReply
 	13, // [13:24] is the sub-list for method output_type
 	2,  // [2:13] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name

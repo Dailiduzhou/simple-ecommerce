@@ -60,7 +60,7 @@ service User {
   rpc DeleteShippingAddress(DeleteShippingAddressRequest) returns (DeleteShippingAddressReply) {
     option (google.api.http) = {delete: "/v1/users/{user_id}/addresses/{id}"};
   }
-  rpc RefreshToken(RefreshRequest) returns (RegisterReply) {
+  rpc RefreshToken(RefreshRequest) returns (RefreshReply) {
     option (google.api.http) = {
       post: "/v1/users/refresh"
       body: "*"

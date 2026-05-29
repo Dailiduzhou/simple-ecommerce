@@ -39,7 +39,7 @@ type UserHTTPServer interface {
 	GetUser(context.Context, *GetUserRequest) (*UserInfo, error)
 	ListShippingAddresses(context.Context, *ListShippingAddressesRequest) (*ListShippingAddressesReply, error)
 	Login(context.Context, *LoginRequest) (*LoginReply, error)
-	RefreshToken(context.Context, *RefreshRequest) (*RegisterReply, error)
+	RefreshToken(context.Context, *RefreshRequest) (*RefreshReply, error)
 	Register(context.Context, *RegisterRequest) (*RegisterReply, error)
 	SetDefaultShippingAddress(context.Context, *SetDefaultShippingAddressRequest) (*SetDefaultShippingAddressReply, error)
 	UpdateShippingAddress(context.Context, *UpdateShippingAddressRequest) (*ShippingAddress, error)
@@ -310,7 +310,7 @@ func _User_RefreshToken0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context)
 		if err != nil {
 			return err
 		}
-		reply := out.(*RegisterReply)
+		reply := out.(*RefreshReply)
 		return ctx.Result(200, reply)
 	}
 }
@@ -323,7 +323,7 @@ type UserHTTPClient interface {
 	GetUser(ctx context.Context, req *GetUserRequest, opts ...http.CallOption) (rsp *UserInfo, err error)
 	ListShippingAddresses(ctx context.Context, req *ListShippingAddressesRequest, opts ...http.CallOption) (rsp *ListShippingAddressesReply, err error)
 	Login(ctx context.Context, req *LoginRequest, opts ...http.CallOption) (rsp *LoginReply, err error)
-	RefreshToken(ctx context.Context, req *RefreshRequest, opts ...http.CallOption) (rsp *RegisterReply, err error)
+	RefreshToken(ctx context.Context, req *RefreshRequest, opts ...http.CallOption) (rsp *RefreshReply, err error)
 	Register(ctx context.Context, req *RegisterRequest, opts ...http.CallOption) (rsp *RegisterReply, err error)
 	SetDefaultShippingAddress(ctx context.Context, req *SetDefaultShippingAddressRequest, opts ...http.CallOption) (rsp *SetDefaultShippingAddressReply, err error)
 	UpdateShippingAddress(ctx context.Context, req *UpdateShippingAddressRequest, opts ...http.CallOption) (rsp *ShippingAddress, err error)
@@ -417,8 +417,8 @@ func (c *UserHTTPClientImpl) Login(ctx context.Context, in *LoginRequest, opts .
 	return &out, nil
 }
 
-func (c *UserHTTPClientImpl) RefreshToken(ctx context.Context, in *RefreshRequest, opts ...http.CallOption) (*RegisterReply, error) {
-	var out RegisterReply
+func (c *UserHTTPClientImpl) RefreshToken(ctx context.Context, in *RefreshRequest, opts ...http.CallOption) (*RefreshReply, error) {
+	var out RefreshReply
 	pattern := "/v1/users/refresh"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationUserRefreshToken))
