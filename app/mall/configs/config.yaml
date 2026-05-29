@@ -7,9 +7,15 @@ server:
     timeout: 1s
 data:
   database:
-    driver: mysql
-    source: root:root@tcp(127.0.0.1:3306)/test?parseTime=True&loc=Local
+    driver: postgres
+    source: postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable
   redis:
-    addr: 127.0.0.1:6379
+    addr: redis:6379
     read_timeout: 0.2s
     write_timeout: 0.2s
+
+auth:
+  access_token_secret: 3525dadc141743407139bad20029f004b57bbba5bcb81f8d090142c4b90050d3
+  access_token_timeout: 3600s
+  refresh_token_secret: d28f4ebe77f916b60cd33898db39b5cbb49d78a97badd6f5498f152a578e1fbd
+  refresh_token_timeout: 86400s
