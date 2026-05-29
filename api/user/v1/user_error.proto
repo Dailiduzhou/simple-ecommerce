@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package api.user.v1;
+
 import "errors/errors.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1";
@@ -10,4 +11,7 @@ option java_package = "api.user.v1";
 enum ErrorReason {
   option (errors.default_code) = 500;
 
+  USER_NOT_FOUND = 0 [(errors.code) = 404];
+  UNAUTHORIZED = 1 [(errors.code) = 401];
+  TOKEN_EXPIRED = 2 [(errors.code) = 401];
 }

@@ -1103,6 +1103,102 @@ func (*DeleteShippingAddressReply) Descriptor() ([]byte, []int) {
 	return file_api_user_v1_user_proto_rawDescGZIP(), []int{17}
 }
 
+type RefreshRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshRequest) Reset() {
+	*x = RefreshRequest{}
+	mi := &file_api_user_v1_user_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshRequest) ProtoMessage() {}
+
+func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_user_v1_user_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshRequest.ProtoReflect.Descriptor instead.
+func (*RefreshRequest) Descriptor() ([]byte, []int) {
+	return file_api_user_v1_user_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RefreshRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+type RefreshReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AccessToken   string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	RefreshToken  string                 `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshReply) Reset() {
+	*x = RefreshReply{}
+	mi := &file_api_user_v1_user_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshReply) ProtoMessage() {}
+
+func (x *RefreshReply) ProtoReflect() protoreflect.Message {
+	mi := &file_api_user_v1_user_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshReply.ProtoReflect.Descriptor instead.
+func (*RefreshReply) Descriptor() ([]byte, []int) {
+	return file_api_user_v1_user_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RefreshReply) GetAccessToken() string {
+	if x != nil {
+		return x.AccessToken
+	}
+	return ""
+}
+
+func (x *RefreshReply) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
 var File_api_user_v1_user_proto protoreflect.FileDescriptor
 
 const file_api_user_v1_user_proto_rawDesc = "" +
@@ -1187,7 +1283,13 @@ const file_api_user_v1_user_proto_rawDesc = "" +
 	"\x1cDeleteShippingAddressRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\x03R\x02id\"\x1c\n" +
-	"\x1aDeleteShippingAddressReply2\xde\t\n" +
+	"\x1aDeleteShippingAddressReply\"5\n" +
+	"\x0eRefreshRequest\x12#\n" +
+	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"V\n" +
+	"\fRefreshReply\x12!\n" +
+	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12#\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken2\xc5\n" +
+	"\n" +
 	"\x04User\x12c\n" +
 	"\bRegister\x12\x1c.api.user.v1.RegisterRequest\x1a\x1a.api.user.v1.RegisterReply\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/users/register\x12W\n" +
 	"\x05Login\x12\x19.api.user.v1.LoginRequest\x1a\x17.api.user.v1.LoginReply\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/users/login\x12U\n" +
@@ -1200,7 +1302,8 @@ const file_api_user_v1_user_proto_rawDesc = "" +
 	"\x15ListShippingAddresses\x12).api.user.v1.ListShippingAddressesRequest\x1a'.api.user.v1.ListShippingAddressesReply\"%\x82\xd3\xe4\x93\x02\x1f\x12\x1d/v1/users/{user_id}/addresses\x12\x8f\x01\n" +
 	"\x15UpdateShippingAddress\x12).api.user.v1.UpdateShippingAddressRequest\x1a\x1c.api.user.v1.ShippingAddress\"-\x82\xd3\xe4\x93\x02':\x01*\x1a\"/v1/users/{user_id}/addresses/{id}\x12\xae\x01\n" +
 	"\x19SetDefaultShippingAddress\x12-.api.user.v1.SetDefaultShippingAddressRequest\x1a+.api.user.v1.SetDefaultShippingAddressReply\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/v1/users/{user_id}/addresses/{id}/default\x12\x97\x01\n" +
-	"\x15DeleteShippingAddress\x12).api.user.v1.DeleteShippingAddressRequest\x1a'.api.user.v1.DeleteShippingAddressReply\"*\x82\xd3\xe4\x93\x02$*\"/v1/users/{user_id}/addresses/{id}BG\n" +
+	"\x15DeleteShippingAddress\x12).api.user.v1.DeleteShippingAddressRequest\x1a'.api.user.v1.DeleteShippingAddressReply\"*\x82\xd3\xe4\x93\x02$*\"/v1/users/{user_id}/addresses/{id}\x12e\n" +
+	"\fRefreshToken\x12\x1b.api.user.v1.RefreshRequest\x1a\x1a.api.user.v1.RegisterReply\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/users/refreshBG\n" +
 	"\vapi.user.v1P\x01Z6github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1b\x06proto3"
 
 var (
@@ -1215,7 +1318,7 @@ func file_api_user_v1_user_proto_rawDescGZIP() []byte {
 	return file_api_user_v1_user_proto_rawDescData
 }
 
-var file_api_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_api_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_api_user_v1_user_proto_goTypes = []any{
 	(*RegisterRequest)(nil),                  // 0: api.user.v1.RegisterRequest
 	(*RegisterReply)(nil),                    // 1: api.user.v1.RegisterReply
@@ -1235,10 +1338,12 @@ var file_api_user_v1_user_proto_goTypes = []any{
 	(*SetDefaultShippingAddressReply)(nil),   // 15: api.user.v1.SetDefaultShippingAddressReply
 	(*DeleteShippingAddressRequest)(nil),     // 16: api.user.v1.DeleteShippingAddressRequest
 	(*DeleteShippingAddressReply)(nil),       // 17: api.user.v1.DeleteShippingAddressReply
-	(*timestamppb.Timestamp)(nil),            // 18: google.protobuf.Timestamp
+	(*RefreshRequest)(nil),                   // 18: api.user.v1.RefreshRequest
+	(*RefreshReply)(nil),                     // 19: api.user.v1.RefreshReply
+	(*timestamppb.Timestamp)(nil),            // 20: google.protobuf.Timestamp
 }
 var file_api_user_v1_user_proto_depIdxs = []int32{
-	18, // 0: api.user.v1.UserInfo.created_at:type_name -> google.protobuf.Timestamp
+	20, // 0: api.user.v1.UserInfo.created_at:type_name -> google.protobuf.Timestamp
 	9,  // 1: api.user.v1.ListShippingAddressesReply.addresses:type_name -> api.user.v1.ShippingAddress
 	0,  // 2: api.user.v1.User.Register:input_type -> api.user.v1.RegisterRequest
 	2,  // 3: api.user.v1.User.Login:input_type -> api.user.v1.LoginRequest
@@ -1250,18 +1355,20 @@ var file_api_user_v1_user_proto_depIdxs = []int32{
 	13, // 9: api.user.v1.User.UpdateShippingAddress:input_type -> api.user.v1.UpdateShippingAddressRequest
 	14, // 10: api.user.v1.User.SetDefaultShippingAddress:input_type -> api.user.v1.SetDefaultShippingAddressRequest
 	16, // 11: api.user.v1.User.DeleteShippingAddress:input_type -> api.user.v1.DeleteShippingAddressRequest
-	1,  // 12: api.user.v1.User.Register:output_type -> api.user.v1.RegisterReply
-	3,  // 13: api.user.v1.User.Login:output_type -> api.user.v1.LoginReply
-	8,  // 14: api.user.v1.User.GetUser:output_type -> api.user.v1.UserInfo
-	8,  // 15: api.user.v1.User.UpdateUser:output_type -> api.user.v1.UserInfo
-	7,  // 16: api.user.v1.User.DeleteUser:output_type -> api.user.v1.DeleteUserReply
-	9,  // 17: api.user.v1.User.CreateShippingAddress:output_type -> api.user.v1.ShippingAddress
-	12, // 18: api.user.v1.User.ListShippingAddresses:output_type -> api.user.v1.ListShippingAddressesReply
-	9,  // 19: api.user.v1.User.UpdateShippingAddress:output_type -> api.user.v1.ShippingAddress
-	15, // 20: api.user.v1.User.SetDefaultShippingAddress:output_type -> api.user.v1.SetDefaultShippingAddressReply
-	17, // 21: api.user.v1.User.DeleteShippingAddress:output_type -> api.user.v1.DeleteShippingAddressReply
-	12, // [12:22] is the sub-list for method output_type
-	2,  // [2:12] is the sub-list for method input_type
+	18, // 12: api.user.v1.User.RefreshToken:input_type -> api.user.v1.RefreshRequest
+	1,  // 13: api.user.v1.User.Register:output_type -> api.user.v1.RegisterReply
+	3,  // 14: api.user.v1.User.Login:output_type -> api.user.v1.LoginReply
+	8,  // 15: api.user.v1.User.GetUser:output_type -> api.user.v1.UserInfo
+	8,  // 16: api.user.v1.User.UpdateUser:output_type -> api.user.v1.UserInfo
+	7,  // 17: api.user.v1.User.DeleteUser:output_type -> api.user.v1.DeleteUserReply
+	9,  // 18: api.user.v1.User.CreateShippingAddress:output_type -> api.user.v1.ShippingAddress
+	12, // 19: api.user.v1.User.ListShippingAddresses:output_type -> api.user.v1.ListShippingAddressesReply
+	9,  // 20: api.user.v1.User.UpdateShippingAddress:output_type -> api.user.v1.ShippingAddress
+	15, // 21: api.user.v1.User.SetDefaultShippingAddress:output_type -> api.user.v1.SetDefaultShippingAddressReply
+	17, // 22: api.user.v1.User.DeleteShippingAddress:output_type -> api.user.v1.DeleteShippingAddressReply
+	1,  // 23: api.user.v1.User.RefreshToken:output_type -> api.user.v1.RegisterReply
+	13, // [13:24] is the sub-list for method output_type
+	2,  // [2:13] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -1278,7 +1385,7 @@ func file_api_user_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_user_v1_user_proto_rawDesc), len(file_api_user_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

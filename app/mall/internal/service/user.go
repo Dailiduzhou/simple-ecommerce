@@ -44,3 +44,6 @@ func (s *UserService) SetDefaultShippingAddress(ctx context.Context, req *pb.Set
 func (s *UserService) DeleteShippingAddress(ctx context.Context, req *pb.DeleteShippingAddressRequest) (*pb.DeleteShippingAddressReply, error) {
     return &pb.DeleteShippingAddressReply{}, nil
 }
+func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) (*pb.RegisterReply, error) {
+    return &pb.RegisterReply{}, nil
+}

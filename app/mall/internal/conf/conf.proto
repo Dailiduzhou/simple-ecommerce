@@ -1,13 +1,20 @@
 syntax = "proto3";
 package kratos.api;
 
-option go_package = "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf;conf";
-
 import "google/protobuf/duration.proto";
+
+option go_package = "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf;conf";
 
 message Bootstrap {
   Server server = 1;
   Data data = 2;
+}
+
+message Auth {
+  string access_token_secret = 1;
+  google.protobuf.Duration access_token_timeout = 2;
+  string refresh_token_secret = 3;
+  google.protobuf.Duration refresh_token_timeout = 4;
 }
 
 message Server {

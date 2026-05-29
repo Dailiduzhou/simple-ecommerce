@@ -17,7 +17,7 @@ import (
 )
 
 // ProviderSet is data providers.
-var ProviderSet = wire.NewSet(NewData)
+var ProviderSet = wire.NewSet(NewData, NewRedisClient)
 
 // Data .
 type Data struct {
@@ -29,19 +29,8 @@ type Data struct {
 }
 
 // NewData .
-func NewData(c *conf.Data, pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx]) (*Data, func(), error) {
+func NewData(c *conf.Data, pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx], rdb *redis.Client) (*Data, func(), error) {
 	ctx := context.Background()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     c.Redis.Addr,
-		Password: "",
-		DB:       0,
-	})
-
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		rdb.Close()
-		return nil, nil, fmt.Errorf("ping redis: %w", err)
-	}
 
 	cleanup := func() {
 		riverClient.Stop(ctx)
@@ -57,4 +46,19 @@ func NewData(c *conf.Data, pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx]
 		q:           db.New(pool),
 		sg:          &singleflight.Group{},
 	}, cleanup, nil
+}
+
+func NewRedisClient(c *conf.Data) (*redis.Client, error) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     c.Redis.Addr,
+		Password: "",
+		DB:       0,
+	})
+
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		rdb.Close()
+		return nil, fmt.Errorf("ping redis: %w", err)
+	}
+
+	return rdb, nil
 }

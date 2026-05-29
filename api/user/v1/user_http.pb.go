@@ -25,6 +25,7 @@ const OperationUserDeleteUser = "/api.user.v1.User/DeleteUser"
 const OperationUserGetUser = "/api.user.v1.User/GetUser"
 const OperationUserListShippingAddresses = "/api.user.v1.User/ListShippingAddresses"
 const OperationUserLogin = "/api.user.v1.User/Login"
+const OperationUserRefreshToken = "/api.user.v1.User/RefreshToken"
 const OperationUserRegister = "/api.user.v1.User/Register"
 const OperationUserSetDefaultShippingAddress = "/api.user.v1.User/SetDefaultShippingAddress"
 const OperationUserUpdateShippingAddress = "/api.user.v1.User/UpdateShippingAddress"
@@ -38,6 +39,7 @@ type UserHTTPServer interface {
 	GetUser(context.Context, *GetUserRequest) (*UserInfo, error)
 	ListShippingAddresses(context.Context, *ListShippingAddressesRequest) (*ListShippingAddressesReply, error)
 	Login(context.Context, *LoginRequest) (*LoginReply, error)
+	RefreshToken(context.Context, *RefreshRequest) (*RegisterReply, error)
 	Register(context.Context, *RegisterRequest) (*RegisterReply, error)
 	SetDefaultShippingAddress(context.Context, *SetDefaultShippingAddressRequest) (*SetDefaultShippingAddressReply, error)
 	UpdateShippingAddress(context.Context, *UpdateShippingAddressRequest) (*ShippingAddress, error)
@@ -56,6 +58,7 @@ func RegisterUserHTTPServer(s *http.Server, srv UserHTTPServer) {
 	r.PUT("/v1/users/{user_id}/addresses/{id}", _User_UpdateShippingAddress0_HTTP_Handler(srv))
 	r.POST("/v1/users/{user_id}/addresses/{id}/default", _User_SetDefaultShippingAddress0_HTTP_Handler(srv))
 	r.DELETE("/v1/users/{user_id}/addresses/{id}", _User_DeleteShippingAddress0_HTTP_Handler(srv))
+	r.POST("/v1/users/refresh", _User_RefreshToken0_HTTP_Handler(srv))
 }
 
 func _User_Register0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context) error {
@@ -290,6 +293,28 @@ func _User_DeleteShippingAddress0_HTTP_Handler(srv UserHTTPServer) func(ctx http
 	}
 }
 
+func _User_RefreshToken0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in RefreshRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationUserRefreshToken)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.RefreshToken(ctx, req.(*RefreshRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*RegisterReply)
+		return ctx.Result(200, reply)
+	}
+}
+
 type UserHTTPClient interface {
 	// CreateShippingAddress Shipping Addresses
 	CreateShippingAddress(ctx context.Context, req *CreateShippingAddressRequest, opts ...http.CallOption) (rsp *ShippingAddress, err error)
@@ -298,6 +323,7 @@ type UserHTTPClient interface {
 	GetUser(ctx context.Context, req *GetUserRequest, opts ...http.CallOption) (rsp *UserInfo, err error)
 	ListShippingAddresses(ctx context.Context, req *ListShippingAddressesRequest, opts ...http.CallOption) (rsp *ListShippingAddressesReply, err error)
 	Login(ctx context.Context, req *LoginRequest, opts ...http.CallOption) (rsp *LoginReply, err error)
+	RefreshToken(ctx context.Context, req *RefreshRequest, opts ...http.CallOption) (rsp *RegisterReply, err error)
 	Register(ctx context.Context, req *RegisterRequest, opts ...http.CallOption) (rsp *RegisterReply, err error)
 	SetDefaultShippingAddress(ctx context.Context, req *SetDefaultShippingAddressRequest, opts ...http.CallOption) (rsp *SetDefaultShippingAddressReply, err error)
 	UpdateShippingAddress(ctx context.Context, req *UpdateShippingAddressRequest, opts ...http.CallOption) (rsp *ShippingAddress, err error)
@@ -383,6 +409,19 @@ func (c *UserHTTPClientImpl) Login(ctx context.Context, in *LoginRequest, opts .
 	pattern := "/v1/users/login"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationUserLogin))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *UserHTTPClientImpl) RefreshToken(ctx context.Context, in *RefreshRequest, opts ...http.CallOption) (*RegisterReply, error) {
+	var out RegisterReply
+	pattern := "/v1/users/refresh"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationUserRefreshToken))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
