@@ -23,18 +23,38 @@ import (
 // Injectors from wire.go:
 
 // wireApp init kratos application.
-func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*kratos.App, func(), error) {
-	dataData, cleanup, err := data.NewData(confData)
+func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logger log.Logger) (*kratos.App, func(), error) {
+	pool, cleanup, err := data.NewPgxPool(confData)
 	if err != nil {
 		return nil, nil, err
 	}
-	greeterRepo := data.NewGreeterRepo(dataData, logger)
-	greeterUsecase := biz.NewGreeterUsecase(greeterRepo)
-	greeterService := service.NewGreeterService(greeterUsecase)
-	grpcServer := server.NewGRPCServer(confServer, greeterService, logger)
-	httpServer := server.NewHTTPServer(confServer, greeterService, logger)
+	client, err := data.NewRiverClient(pool)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	redisClient, err := data.NewRedisClient(confData)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	dataData, cleanup2, err := data.NewData(confData, pool, client, redisClient)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	userRepo := data.NewUserRepo(dataData, logger)
+	authRepo := data.NewAuthRepo(redisClient, logger)
+	authUsecase := biz.NewAuthUsecase(userRepo, authRepo, auth)
+	mallService := service.NewMallService()
+	userService := service.NewUserService(authUsecase, userRepo, logger)
+	orderService := service.NewOrderService()
+	paymentService := service.NewPaymentService()
+	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
+	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	app := newApp(logger, grpcServer, httpServer)
 	return app, func() {
+		cleanup2()
 		cleanup()
 	}, nil
 }

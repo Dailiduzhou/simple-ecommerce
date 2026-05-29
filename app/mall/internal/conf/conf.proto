@@ -8,6 +8,7 @@ option go_package = "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/c
 message Bootstrap {
   Server server = 1;
   Data data = 2;
+  Auth auth = 3;
 }
 
 message Auth {
