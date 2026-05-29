@@ -47,7 +47,7 @@ type UserClient interface {
 	UpdateShippingAddress(ctx context.Context, in *UpdateShippingAddressRequest, opts ...grpc.CallOption) (*ShippingAddress, error)
 	SetDefaultShippingAddress(ctx context.Context, in *SetDefaultShippingAddressRequest, opts ...grpc.CallOption) (*SetDefaultShippingAddressReply, error)
 	DeleteShippingAddress(ctx context.Context, in *DeleteShippingAddressRequest, opts ...grpc.CallOption) (*DeleteShippingAddressReply, error)
-	RefreshToken(ctx context.Context, in *RefreshRequest, opts ...grpc.CallOption) (*RegisterReply, error)
+	RefreshToken(ctx context.Context, in *RefreshRequest, opts ...grpc.CallOption) (*RefreshReply, error)
 }
 
 type userClient struct {
@@ -158,9 +158,9 @@ func (c *userClient) DeleteShippingAddress(ctx context.Context, in *DeleteShippi
 	return out, nil
 }
 
-func (c *userClient) RefreshToken(ctx context.Context, in *RefreshRequest, opts ...grpc.CallOption) (*RegisterReply, error) {
+func (c *userClient) RefreshToken(ctx context.Context, in *RefreshRequest, opts ...grpc.CallOption) (*RefreshReply, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RegisterReply)
+	out := new(RefreshReply)
 	err := c.cc.Invoke(ctx, User_RefreshToken_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -183,7 +183,7 @@ type UserServer interface {
 	UpdateShippingAddress(context.Context, *UpdateShippingAddressRequest) (*ShippingAddress, error)
 	SetDefaultShippingAddress(context.Context, *SetDefaultShippingAddressRequest) (*SetDefaultShippingAddressReply, error)
 	DeleteShippingAddress(context.Context, *DeleteShippingAddressRequest) (*DeleteShippingAddressReply, error)
-	RefreshToken(context.Context, *RefreshRequest) (*RegisterReply, error)
+	RefreshToken(context.Context, *RefreshRequest) (*RefreshReply, error)
 	mustEmbedUnimplementedUserServer()
 }
 
@@ -224,7 +224,7 @@ func (UnimplementedUserServer) SetDefaultShippingAddress(context.Context, *SetDe
 func (UnimplementedUserServer) DeleteShippingAddress(context.Context, *DeleteShippingAddressRequest) (*DeleteShippingAddressReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteShippingAddress not implemented")
 }
-func (UnimplementedUserServer) RefreshToken(context.Context, *RefreshRequest) (*RegisterReply, error) {
+func (UnimplementedUserServer) RefreshToken(context.Context, *RefreshRequest) (*RefreshReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method RefreshToken not implemented")
 }
 func (UnimplementedUserServer) mustEmbedUnimplementedUserServer() {}

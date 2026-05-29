@@ -25,10 +25,12 @@ const (
 type ErrorReason int32
 
 const (
-	ErrorReason_USER_NOT_FOUND ErrorReason = 0
-	ErrorReason_UNAUTHORIZED   ErrorReason = 1
-	ErrorReason_TOKEN_EXPIRED  ErrorReason = 2
-	ErrorReason_INVALID_PHONE  ErrorReason = 3
+	ErrorReason_USER_NOT_FOUND      ErrorReason = 0
+	ErrorReason_UNAUTHORIZED        ErrorReason = 1
+	ErrorReason_TOKEN_EXPIRED       ErrorReason = 2
+	ErrorReason_INVALID_PHONE       ErrorReason = 3
+	ErrorReason_USER_ALREADY_EXISTS ErrorReason = 4
+	ErrorReason_INVALID_PASSWORD    ErrorReason = 5
 )
 
 // Enum value maps for ErrorReason.
@@ -38,12 +40,16 @@ var (
 		1: "UNAUTHORIZED",
 		2: "TOKEN_EXPIRED",
 		3: "INVALID_PHONE",
+		4: "USER_ALREADY_EXISTS",
+		5: "INVALID_PASSWORD",
 	}
 	ErrorReason_value = map[string]int32{
-		"USER_NOT_FOUND": 0,
-		"UNAUTHORIZED":   1,
-		"TOKEN_EXPIRED":  2,
-		"INVALID_PHONE":  3,
+		"USER_NOT_FOUND":      0,
+		"UNAUTHORIZED":        1,
+		"TOKEN_EXPIRED":       2,
+		"INVALID_PHONE":       3,
+		"USER_ALREADY_EXISTS": 4,
+		"INVALID_PASSWORD":    5,
 	}
 )
 
@@ -78,12 +84,14 @@ var File_api_user_v1_user_error_proto protoreflect.FileDescriptor
 
 const file_api_user_v1_user_error_proto_rawDesc = "" +
 	"\n" +
-	"\x1capi/user/v1/user_error.proto\x12\vapi.user.v1\x1a\x13errors/errors.proto*w\n" +
+	"\x1capi/user/v1/user_error.proto\x12\vapi.user.v1\x1a\x13errors/errors.proto*\xb2\x01\n" +
 	"\vErrorReason\x12\x18\n" +
 	"\x0eUSER_NOT_FOUND\x10\x00\x1a\x04\xa8E\x94\x03\x12\x16\n" +
 	"\fUNAUTHORIZED\x10\x01\x1a\x04\xa8E\x91\x03\x12\x17\n" +
 	"\rTOKEN_EXPIRED\x10\x02\x1a\x04\xa8E\x91\x03\x12\x17\n" +
-	"\rINVALID_PHONE\x10\x03\x1a\x04\xa8E\x90\x03\x1a\x04\xa0E\xf4\x03BG\n" +
+	"\rINVALID_PHONE\x10\x03\x1a\x04\xa8E\x90\x03\x12\x1d\n" +
+	"\x13USER_ALREADY_EXISTS\x10\x04\x1a\x04\xa8E\x99\x03\x12\x1a\n" +
+	"\x10INVALID_PASSWORD\x10\x05\x1a\x04\xa8E\x90\x03\x1a\x04\xa0E\xf4\x03BG\n" +
 	"\vapi.user.v1P\x01Z6github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1b\x06proto3"
 
 var (
