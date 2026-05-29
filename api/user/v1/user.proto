@@ -71,11 +71,9 @@ service User {
 message RegisterRequest {
   string phone = 1;
   string password = 2;
-  string nickname = 3;
 }
 message RegisterReply {
   int64 id = 1;
-  string token = 2;
 }
 
 message LoginRequest {

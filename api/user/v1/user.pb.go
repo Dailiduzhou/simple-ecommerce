@@ -27,7 +27,6 @@ type RegisterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Phone         string                 `protobuf:"bytes,1,opt,name=phone,proto3" json:"phone,omitempty"`
 	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
-	Nickname      string                 `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -76,17 +75,9 @@ func (x *RegisterRequest) GetPassword() string {
 	return ""
 }
 
-func (x *RegisterRequest) GetNickname() string {
-	if x != nil {
-		return x.Nickname
-	}
-	return ""
-}
-
 type RegisterReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -126,13 +117,6 @@ func (x *RegisterReply) GetId() int64 {
 		return x.Id
 	}
 	return 0
-}
-
-func (x *RegisterReply) GetToken() string {
-	if x != nil {
-		return x.Token
-	}
-	return ""
 }
 
 type LoginRequest struct {
@@ -1203,14 +1187,12 @@ var File_api_user_v1_user_proto protoreflect.FileDescriptor
 
 const file_api_user_v1_user_proto_rawDesc = "" +
 	"\n" +
-	"\x16api/user/v1/user.proto\x12\vapi.user.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"_\n" +
+	"\x16api/user/v1/user.proto\x12\vapi.user.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"C\n" +
 	"\x0fRegisterRequest\x12\x14\n" +
 	"\x05phone\x18\x01 \x01(\tR\x05phone\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1a\n" +
-	"\bnickname\x18\x03 \x01(\tR\bnickname\"5\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"\x1f\n" +
 	"\rRegisterReply\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\"@\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"@\n" +
 	"\fLoginRequest\x12\x14\n" +
 	"\x05phone\x18\x01 \x01(\tR\x05phone\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\"2\n" +
