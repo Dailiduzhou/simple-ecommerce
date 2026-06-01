@@ -2,6 +2,8 @@ package data
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
@@ -22,6 +24,11 @@ func NewUserRepo(data *Data, logger log.Logger) *UserRepo {
 }
 
 func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEncrypt, passwordHash string) (*biz.User, error) {
+	if nickname == "" {
+		b := make([]byte, 4)
+		rand.Read(b)
+		nickname = "u" + hex.EncodeToString(b)
+	}
 	u, err := r.data.q.CreateUser(ctx, db.CreateUserParams{
 		Nickname:     nickname,
 		PhoneHash:    phoneHash,
