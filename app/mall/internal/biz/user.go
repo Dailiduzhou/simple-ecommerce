@@ -156,6 +156,15 @@ func generateTokenID() string {
 	return hex.EncodeToString(b)
 }
 
+func generateDefaultNickname(seed string) string {
+	if len(seed) >= 8 {
+		return "u" + seed[:8]
+	}
+	b := make([]byte, 4)
+	rand.Read(b)
+	return "u" + hex.EncodeToString(b)
+}
+
 func (uc *UserUsecase) Register(ctx context.Context, phone string, password string) (*User, error) {
 	if !IsValidCNMobile(phone) {
 		return nil, userv1.ErrorInvalidPhone("invalid phone number: %s", phone)
@@ -185,7 +194,7 @@ func (uc *UserUsecase) Register(ctx context.Context, phone string, password stri
 		return nil, fmt.Errorf("encrypt phone: %w", err)
 	}
 
-	nickname := "u" + phoneHash[:8]
+	nickname := generateDefaultNickname(phoneHash)
 	u, err := uc.userRepo.CreateUser(ctx, nickname, phoneHash, phoneEncrypt, passwordHash)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("create user failed: %v", err)
