@@ -6,6 +6,7 @@ import (
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/go-kratos/kratos/v2/log"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type UserService struct {
@@ -46,7 +47,7 @@ func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.
 		Nickname:  u.Nickname,
 		RealName:  u.RealName,
 		Role:      u.Role,
-		CreatedAt: nil, // TODO: convert time.Time to timestamppb
+		CreatedAt: timestamppb.New(u.CreatedAt),
 	}, nil
 }
 
