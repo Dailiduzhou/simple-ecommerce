@@ -22,6 +22,7 @@ type UserRepo interface {
 	GetUserByID(ctx context.Context, id int64) (*User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (*User, error)
 	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
+	DeleteUser(ctx context.Context, id int64) error
 }
 
 type User struct {
@@ -226,6 +227,18 @@ func (uc *UserUsecase) Login(ctx context.Context, phone string, password string)
 	}
 
 	return u, nil
+}
+
+func (uc *UserUsecase) GetUser(ctx context.Context, id int64) (*User, error) {
+	return uc.userRepo.GetUserByID(ctx, id)
+}
+
+func (uc *UserUsecase) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
+	return uc.userRepo.UpdateUser(ctx, id, nickname, realName)
+}
+
+func (uc *UserUsecase) DeleteUser(ctx context.Context, id int64) error {
+	return uc.userRepo.DeleteUser(ctx, id)
 }
 
 func IsValidCNMobile(phone string) bool {
