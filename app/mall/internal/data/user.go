@@ -2,10 +2,10 @@ package data
 
 import (
 	"context"
-	"errors"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 )
@@ -81,4 +81,12 @@ func toBizUser(u db.User) *biz.User {
 		CreatedAt:    u.CreatedAt.Time,
 		UpdatedAt:    u.UpdatedAt.Time,
 	}
+}
+
+func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
+	err := r.data.q.DeleteUser(ctx, id)
+	if err != nil {
+		return err
+	}
+	return nil
 }
