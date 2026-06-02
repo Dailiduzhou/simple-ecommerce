@@ -10,50 +10,59 @@ import (
 
 type UserService struct {
 	pb.UnimplementedUserServer
-	authUc   *biz.AuthUsecase
-	userRepo biz.UserRepo
-	log      *log.Helper
+	authUc *biz.AuthUsecase
+	uc     *biz.UserUsecase
+	log    *log.Helper
 }
 
-func NewUserService(authUc *biz.AuthUsecase, userRepo biz.UserRepo, logger log.Logger) *UserService {
+func NewUserService(authUc *biz.AuthUsecase, userUc *biz.UserUsecase, logger log.Logger) *UserService {
 	return &UserService{
-		authUc:   authUc,
-		userRepo: userRepo,
-		log:      log.NewHelper(logger),
+		authUc: authUc,
+		uc:     userUc,
+		log:    log.NewHelper(logger),
 	}
 }
 
 func (s *UserService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterReply, error) {
-	// TODO: implement phone hash/encrypt and password hashing
-	return &pb.RegisterReply{}, nil
+	u, err := s.uc.Register(ctx, req.Phone, req.Password)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.RegisterReply{Id: u.ID}, nil
 }
 
 func (s *UserService) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginReply, error) {
-	// TODO: implement phone lookup and password verification
-	return &pb.LoginReply{}, nil
+	u, err := s.uc.Login(ctx, req.Phone, req.Password)
+	if err != nil {
+		return nil, err
+	}
+	token, err := s.authUc.GenerateAccessToken(u.ID, u.Role)
+	if err != nil {
+		return nil, pb.ErrorUnauthorized("generate access token failed")
+	}
+	return &pb.LoginReply{Id: u.ID, Token: token}, nil
 }
 
 func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.UserInfo, error) {
-	u, err := s.userRepo.GetUserByID(ctx, req.Id)
+	u, err := s.uc.GetUser(ctx, req.Id)
 	if err != nil {
-		return nil, pb.ErrorUserNotFound("user %d not found", req.Id)
+		return nil, err
 	}
 	if u == nil {
 		return nil, pb.ErrorUserNotFound("user %d not found", req.Id)
 	}
 	return &pb.UserInfo{
-		Id:        u.ID,
-		Nickname:  u.Nickname,
-		RealName:  u.RealName,
-		Role:      u.Role,
-		CreatedAt: nil, // TODO: convert time.Time to timestamppb
+		Id:       u.ID,
+		Nickname: u.Nickname,
+		RealName: u.RealName,
+		Role:     u.Role,
 	}, nil
 }
 
 func (s *UserService) UpdateUser(ctx context.Context, req *pb.UpdateUserRequest) (*pb.UserInfo, error) {
-	u, err := s.userRepo.UpdateUser(ctx, req.Id, req.Nickname, req.RealName)
+	u, err := s.uc.UpdateUser(ctx, req.Id, req.Nickname, req.RealName)
 	if err != nil {
-		return nil, pb.ErrorUserNotFound("user %d not found", req.Id)
+		return nil, err
 	}
 	if u == nil {
 		return nil, pb.ErrorUserNotFound("user %d not found", req.Id)
