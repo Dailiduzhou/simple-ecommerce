@@ -24,6 +24,36 @@ type UserRepo interface {
 	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
 }
+type ShippingAddress struct {
+	ID                   int64
+	UserID               int64
+	ReceiverName         string
+	ReceiverPhoneHash    string
+	ReceiverPhoneEncrypt string
+	Province             string
+	City                 string
+	District             string
+	DetailAddress        string
+	AddressTag           string
+	IsDefault            bool
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+type ShippingAddressRepo interface {
+	CreateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, recieverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*ShippingAddress, error)
+	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
+	UpdateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, recieverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*ShippingAddress, error)
+}
+
+type ShippingAddressUsecase struct {
+	addressRepo ShippingAddressRepo
+	log         *log.Helper
+}
+
+func NewShippingAddressUsecase(addressRepo ShippingAddressRepo, logger log.Logger) *ShippingAddressUsecase {
+	return &ShippingAddressUsecase{addressRepo: addressRepo, log: log.NewHelper(logger)}
+}
 
 type User struct {
 	ID           int64

@@ -10,9 +10,13 @@ import (
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-var _ biz.UserRepo = (*UserRepo)(nil)
+var (
+	_ biz.UserRepo            = (*UserRepo)(nil)
+	_ biz.ShippingAddressRepo = (*ShippingAddressRepo)(nil)
+)
 
 type UserRepo struct {
 	data *Data
@@ -21,6 +25,15 @@ type UserRepo struct {
 
 func NewUserRepo(data *Data, logger log.Logger) *UserRepo {
 	return &UserRepo{data: data, log: log.NewHelper(logger)}
+}
+
+type ShippingAddressRepo struct {
+	data *Data
+	log  *log.Helper
+}
+
+func NewShippingAddressRepo(data *Data, logger log.Logger) *ShippingAddressRepo {
+	return &ShippingAddressRepo{data: data, log: log.NewHelper(logger)}
 }
 
 func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEncrypt, passwordHash string) (*biz.User, error) {
@@ -96,4 +109,32 @@ func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
 		return err
 	}
 	return nil
+}
+
+func (r *ShippingAddressRepo) CreateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, recieverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*biz.ShippingAddress, error) {
+	isValid := false
+	if addressTag != "" {
+		isValid = true
+	}
+	sd, err := r.data.q.CreateShippingAddress(ctx, db.CreateShippingAddressParams{
+		UserID: userID, ReceiverName: receiverName, ReceiverPhoneHash: receiverPhoneHash, ReceiverPhoneEncrypt: recieverPhoneEncrypt, Province: province, City: city, District: district, DetailAddress: detailAddress, AddressTag: pgtype.Text{String: addressTag, Valid: isValid}, IsDefault: isDefault,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &biz.ShippingAddress{
+		ID:                   sd.ID,
+		UserID:               sd.UserID,
+		ReceiverName:         sd.ReceiverName,
+		ReceiverPhoneHash:    sd.ReceiverPhoneHash,
+		ReceiverPhoneEncrypt: sd.ReceiverPhoneEncrypt,
+		Province:             sd.Province,
+		City:                 sd.City,
+		District:             sd.District,
+		DetailAddress:        sd.DetailAddress,
+		AddressTag:           sd.AddressTag.String,
+		IsDefault:            sd.IsDefault,
+		CreatedAt:            sd.CreatedAt.Time,
+		UpdatedAt:            sd.UpdatedAt.Time,
+	}, nil
 }

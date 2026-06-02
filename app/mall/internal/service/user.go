@@ -83,7 +83,7 @@ func (s *UserService) DeleteUser(ctx context.Context, req *pb.DeleteUserRequest)
 	err := s.uc.DeleteUser(ctx, req.Id)
 	if err != nil {
 		s.log.WithContext(ctx).Errorf("Error deleting User %d", req.Id)
-		return nil, errors.InternalServer("DB FAILURE", fmt.Sprintf("Error deleting User %d", id))
+		return nil, errors.InternalServer("DB FAILURE", fmt.Sprintf("Error deleting User %d", req.Id))
 	}
 	return &pb.DeleteUserReply{}, nil
 }
