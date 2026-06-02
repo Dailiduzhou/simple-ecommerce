@@ -219,6 +219,14 @@ func (uc *UserUsecase) Login(ctx context.Context, phone string, password string)
 	return u, nil
 }
 
+func (uc *UserUsecase) GetUser(ctx context.Context, id int64) (*User, error) {
+	return uc.userRepo.GetUserByID(ctx, id)
+}
+
+func (uc *UserUsecase) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
+	return uc.userRepo.UpdateUser(ctx, id, nickname, realName)
+}
+
 func IsValidCNMobile(phone string) bool {
 	// 匹配规则：1开头，第二位3-9，后面9位数字
 	re := regexp.MustCompile(`^1[3-9]\d{9}$`)
