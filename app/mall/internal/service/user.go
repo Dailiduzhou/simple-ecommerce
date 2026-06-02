@@ -2,42 +2,54 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type UserService struct {
 	pb.UnimplementedUserServer
-	authUc   *biz.AuthUsecase
-	userRepo biz.UserRepo
-	log      *log.Helper
+	authUc *biz.AuthUsecase
+	uc     *biz.UserUsecase
+	log    *log.Helper
 }
 
-func NewUserService(authUc *biz.AuthUsecase, userRepo biz.UserRepo, logger log.Logger) *UserService {
+func NewUserService(authUc *biz.AuthUsecase, userUc *biz.UserUsecase, logger log.Logger) *UserService {
 	return &UserService{
-		authUc:   authUc,
-		userRepo: userRepo,
-		log:      log.NewHelper(logger),
+		authUc: authUc,
+		uc:     userUc,
+		log:    log.NewHelper(logger),
 	}
 }
 
 func (s *UserService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterReply, error) {
-	// TODO: implement phone hash/encrypt and password hashing
-	return &pb.RegisterReply{}, nil
+	u, err := s.uc.Register(ctx, req.Phone, req.Password)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.RegisterReply{Id: u.ID}, nil
 }
 
 func (s *UserService) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginReply, error) {
-	// TODO: implement phone lookup and password verification
-	return &pb.LoginReply{}, nil
+	u, err := s.uc.Login(ctx, req.Phone, req.Password)
+	if err != nil {
+		return nil, err
+	}
+	token, err := s.authUc.GenerateAccessToken(u.ID, u.Role)
+	if err != nil {
+		return nil, pb.ErrorUnauthorized("generate access token failed")
+	}
+	return &pb.LoginReply{Id: u.ID, Token: token}, nil
 }
 
 func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.UserInfo, error) {
-	u, err := s.userRepo.GetUserByID(ctx, req.Id)
+	u, err := s.uc.GetUser(ctx, req.Id)
 	if err != nil {
-		return nil, pb.ErrorUserNotFound("user %d not found", req.Id)
+		return nil, err
 	}
 	if u == nil {
 		return nil, pb.ErrorUserNotFound("user %d not found", req.Id)
@@ -52,9 +64,9 @@ func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.
 }
 
 func (s *UserService) UpdateUser(ctx context.Context, req *pb.UpdateUserRequest) (*pb.UserInfo, error) {
-	u, err := s.userRepo.UpdateUser(ctx, req.Id, req.Nickname, req.RealName)
+	u, err := s.uc.UpdateUser(ctx, req.Id, req.Nickname, req.RealName)
 	if err != nil {
-		return nil, pb.ErrorUserNotFound("user %d not found", req.Id)
+		return nil, err
 	}
 	if u == nil {
 		return nil, pb.ErrorUserNotFound("user %d not found", req.Id)
@@ -68,6 +80,11 @@ func (s *UserService) UpdateUser(ctx context.Context, req *pb.UpdateUserRequest)
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, req *pb.DeleteUserRequest) (*pb.DeleteUserReply, error) {
+	err := s.uc.DeleteUser(ctx, req.Id)
+	if err != nil {
+		s.log.WithContext(ctx).Errorf("Error deleting User %d", req.Id)
+		return nil, errors.InternalServer("DB FAILURE", fmt.Sprintf("Error deleting User %d", id))
+	}
 	return &pb.DeleteUserReply{}, nil
 }
 
