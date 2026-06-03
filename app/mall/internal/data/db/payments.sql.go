@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 const createPayment = `-- name: CreatePayment :one
@@ -21,7 +22,7 @@ type CreatePaymentParams struct {
 	OrderID    int64
 	UserID     int64
 	MerchantID int64
-	Amount     pgtype.Numeric
+	Amount     decimal.Decimal
 	Status     string
 	PayChannel string
 }

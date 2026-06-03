@@ -8,3 +8,8 @@ sql:
         package: "db"
         out: "internal/data/db"
         sql_package: "pgx/v5"
+        overrides:
+          - db_type: "pg_catalog.numeric"
+            go_type:
+              import: "github.com/shopspring/decimal"
+              type: "Decimal"

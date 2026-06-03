@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 const createOrderItem = `-- name: CreateOrderItem :one
@@ -21,7 +22,7 @@ type CreateOrderItemParams struct {
 	OrderID   int64
 	ProductID int64
 	Quantity  int32
-	UnitPrice pgtype.Numeric
+	UnitPrice decimal.Decimal
 }
 
 func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error) {
@@ -86,7 +87,7 @@ type ListOrderItemsWithProductRow struct {
 	OrderID     int64
 	ProductID   int64
 	Quantity    int32
-	UnitPrice   pgtype.Numeric
+	UnitPrice   decimal.Decimal
 	CreatedAt   pgtype.Timestamptz
 	ProductName string
 	CoverImage  string

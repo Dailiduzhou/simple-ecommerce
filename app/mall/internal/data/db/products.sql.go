@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 const createProduct = `-- name: CreateProduct :one
@@ -20,8 +21,8 @@ RETURNING id, category_id, name, price, discount, stock, status, cover_image, me
 type CreateProductParams struct {
 	CategoryID  int64
 	Name        string
-	Price       pgtype.Numeric
-	Discount    pgtype.Numeric
+	Price       decimal.Decimal
+	Discount    decimal.Decimal
 	Stock       int32
 	Status      int16
 	CoverImage  string
@@ -217,8 +218,8 @@ type UpdateProductParams struct {
 	ID          int64
 	CategoryID  int64
 	Name        string
-	Price       pgtype.Numeric
-	Discount    pgtype.Numeric
+	Price       decimal.Decimal
+	Discount    decimal.Decimal
 	Stock       int32
 	CoverImage  string
 	MediaAssets []byte
