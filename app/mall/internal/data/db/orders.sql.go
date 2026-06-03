@@ -28,8 +28,8 @@ func (q *Queries) CompleteOrder(ctx context.Context, id int64) error {
 }
 
 const createOrder = `-- name: CreateOrder :one
-INSERT INTO orders (user_id, address_id, total_amount, status)
-VALUES ($1, $2, $3, $4)
+INSERT INTO orders (user_id, address_id, total_amount)
+VALUES ($1, $2, $3)
 RETURNING id, user_id, address_id, total_amount, status, is_completed, created_at, updated_at
 `
 
@@ -37,16 +37,10 @@ type CreateOrderParams struct {
 	UserID      int64
 	AddressID   int64
 	TotalAmount int32
-	Status      string
 }
 
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error) {
-	row := q.db.QueryRow(ctx, createOrder,
-		arg.UserID,
-		arg.AddressID,
-		arg.TotalAmount,
-		arg.Status,
-	)
+	row := q.db.QueryRow(ctx, createOrder, arg.UserID, arg.AddressID, arg.TotalAmount)
 	var i Order
 	err := row.Scan(
 		&i.ID,

@@ -6,6 +6,7 @@ package db
 
 import (
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 type Category struct {
@@ -47,7 +48,7 @@ type OrderItem struct {
 	OrderID   int64
 	ProductID int64
 	Quantity  int32
-	UnitPrice pgtype.Numeric
+	UnitPrice decimal.Decimal
 	CreatedAt pgtype.Timestamptz
 }
 
@@ -56,7 +57,7 @@ type Payment struct {
 	OrderID        int64
 	UserID         int64
 	MerchantID     int64
-	Amount         pgtype.Numeric
+	Amount         decimal.Decimal
 	Status         string
 	PayChannel     string
 	ThirdPartyTxID pgtype.Text
@@ -69,8 +70,8 @@ type Product struct {
 	ID          int64
 	CategoryID  int64
 	Name        string
-	Price       pgtype.Numeric
-	Discount    pgtype.Numeric
+	Price       decimal.Decimal
+	Discount    decimal.Decimal
 	Stock       int32
 	Status      int16
 	CoverImage  string
