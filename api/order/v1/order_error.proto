@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package api.order.v1;
+
 import "errors/errors.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/order/v1;v1";
@@ -10,4 +11,9 @@ option java_package = "api.order.v1";
 enum ErrorReason {
   option (errors.default_code) = 500;
 
+  ORDER_NOT_FOUND          = 0 [(errors.code) = 404];
+  ORDER_ALREADY_CANCELLED  = 1 [(errors.code) = 409];
+  ORDER_CANNOT_CANCEL      = 2 [(errors.code) = 400];
+  INSUFFICIENT_STOCK       = 3 [(errors.code) = 409];
+  ADDRESS_NOT_FOUND        = 4 [(errors.code) = 404];
 }

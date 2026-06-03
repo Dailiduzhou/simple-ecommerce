@@ -1,6 +1,7 @@
 syntax = "proto3";
 
-package api.mall.v1;
+package api.payment.v1;
+
 import "errors/errors.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1;v1";
@@ -10,4 +11,10 @@ option java_package = "api.payment.v1";
 enum ErrorReason {
   option (errors.default_code) = 500;
 
+  PAYMENT_NOT_FOUND              = 0 [(errors.code) = 404];
+  PAYMENT_ALREADY_PAID           = 1 [(errors.code) = 409];
+  PAYMENT_EXPIRED                = 2 [(errors.code) = 408];
+  REFUND_FAILED                  = 3 [(errors.code) = 400];
+  PAYMENT_AMOUNT_MISMATCH        = 4 [(errors.code) = 400];
+  THIRD_PARTY_PAYMENT_FAILED     = 5 [(errors.code) = 502];
 }
