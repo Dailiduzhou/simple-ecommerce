@@ -115,7 +115,24 @@ type Category struct {
 	ID        int64
 	ParentID  int64
 	Name      string
-	SortOrder int32
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type CategoryRepo interface {
+	CreateCategory(ctx context.Context, parentID int64, name string) (Category, error)
+	DeleteCategory(ctx context.Context, id int64) error
+	GetCategory(ctx context.Context, id int64) (Category, error)
+	ListSubCategories(ctx context.Context, parentID int64) ([]Category, error)
+	ListTopCategories(ctx context.Context) ([]Category, error)
+	UpdateCategory(ctx context.Context, id int64, name string) (Category, error)
+}
+
+type CategoryUsecase struct {
+	repo CategoryRepo
+	log  *log.Helper
+}
+
+func NewCategoryUsecase(repo CategoryRepo, logger *log.Logger) *CategoryUsecase {
+	return &CategoryUsecase{repo: repo, log: log.NewHelper(*logger)}
 }
