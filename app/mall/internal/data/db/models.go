@@ -13,7 +13,6 @@ type Category struct {
 	ID        int64
 	ParentID  pgtype.Int8
 	Name      string
-	SortOrder int32
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 }
