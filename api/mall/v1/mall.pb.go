@@ -380,6 +380,82 @@ func (*DeleteCategoryReply) Descriptor() ([]byte, []int) {
 	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{6}
 }
 
+type MediaInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OssUrl        string                 `protobuf:"bytes,1,opt,name=oss_url,json=ossUrl,proto3" json:"oss_url,omitempty"`
+	BucketName    string                 `protobuf:"bytes,2,opt,name=bucket_name,json=bucketName,proto3" json:"bucket_name,omitempty"`
+	ObjectKey     string                 `protobuf:"bytes,3,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`
+	ContentType   string                 `protobuf:"bytes,4,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Size          int64                  `protobuf:"varint,5,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MediaInfo) Reset() {
+	*x = MediaInfo{}
+	mi := &file_api_mall_v1_mall_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MediaInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MediaInfo) ProtoMessage() {}
+
+func (x *MediaInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_api_mall_v1_mall_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MediaInfo.ProtoReflect.Descriptor instead.
+func (*MediaInfo) Descriptor() ([]byte, []int) {
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MediaInfo) GetOssUrl() string {
+	if x != nil {
+		return x.OssUrl
+	}
+	return ""
+}
+
+func (x *MediaInfo) GetBucketName() string {
+	if x != nil {
+		return x.BucketName
+	}
+	return ""
+}
+
+func (x *MediaInfo) GetObjectKey() string {
+	if x != nil {
+		return x.ObjectKey
+	}
+	return ""
+}
+
+func (x *MediaInfo) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *MediaInfo) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
 type Product struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -390,7 +466,7 @@ type Product struct {
 	Stock         int32                  `protobuf:"varint,6,opt,name=stock,proto3" json:"stock,omitempty"`
 	Status        int32                  `protobuf:"varint,7,opt,name=status,proto3" json:"status,omitempty"`
 	CoverImage    string                 `protobuf:"bytes,8,opt,name=cover_image,json=coverImage,proto3" json:"cover_image,omitempty"`
-	MediaAssets   *structpb.Struct       `protobuf:"bytes,9,opt,name=media_assets,json=mediaAssets,proto3" json:"media_assets,omitempty"`
+	MediaAssets   []*MediaInfo           `protobuf:"bytes,9,rep,name=media_assets,json=mediaAssets,proto3" json:"media_assets,omitempty"`
 	Description   string                 `protobuf:"bytes,10,opt,name=description,proto3" json:"description,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -399,7 +475,7 @@ type Product struct {
 
 func (x *Product) Reset() {
 	*x = Product{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[7]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -411,7 +487,7 @@ func (x *Product) String() string {
 func (*Product) ProtoMessage() {}
 
 func (x *Product) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[7]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -424,7 +500,7 @@ func (x *Product) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Product.ProtoReflect.Descriptor instead.
 func (*Product) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{7}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Product) GetId() int64 {
@@ -483,7 +559,7 @@ func (x *Product) GetCoverImage() string {
 	return ""
 }
 
-func (x *Product) GetMediaAssets() *structpb.Struct {
+func (x *Product) GetMediaAssets() []*MediaInfo {
 	if x != nil {
 		return x.MediaAssets
 	}
@@ -520,7 +596,7 @@ type CreateProductRequest struct {
 
 func (x *CreateProductRequest) Reset() {
 	*x = CreateProductRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[8]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -532,7 +608,7 @@ func (x *CreateProductRequest) String() string {
 func (*CreateProductRequest) ProtoMessage() {}
 
 func (x *CreateProductRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[8]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -545,7 +621,7 @@ func (x *CreateProductRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProductRequest.ProtoReflect.Descriptor instead.
 func (*CreateProductRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{8}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CreateProductRequest) GetCategoryId() int64 {
@@ -613,7 +689,7 @@ type GetProductRequest struct {
 
 func (x *GetProductRequest) Reset() {
 	*x = GetProductRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[9]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -625,7 +701,7 @@ func (x *GetProductRequest) String() string {
 func (*GetProductRequest) ProtoMessage() {}
 
 func (x *GetProductRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[9]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -638,7 +714,7 @@ func (x *GetProductRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProductRequest.ProtoReflect.Descriptor instead.
 func (*GetProductRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{9}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetProductRequest) GetId() int64 {
@@ -659,7 +735,7 @@ type ListProductsRequest struct {
 
 func (x *ListProductsRequest) Reset() {
 	*x = ListProductsRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[10]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -671,7 +747,7 @@ func (x *ListProductsRequest) String() string {
 func (*ListProductsRequest) ProtoMessage() {}
 
 func (x *ListProductsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[10]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -684,7 +760,7 @@ func (x *ListProductsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProductsRequest.ProtoReflect.Descriptor instead.
 func (*ListProductsRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{10}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListProductsRequest) GetCategoryId() int64 {
@@ -718,7 +794,7 @@ type ListProductsReply struct {
 
 func (x *ListProductsReply) Reset() {
 	*x = ListProductsReply{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[11]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -730,7 +806,7 @@ func (x *ListProductsReply) String() string {
 func (*ListProductsReply) ProtoMessage() {}
 
 func (x *ListProductsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[11]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -743,7 +819,7 @@ func (x *ListProductsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProductsReply.ProtoReflect.Descriptor instead.
 func (*ListProductsReply) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{11}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListProductsReply) GetProducts() []*Product {
@@ -777,7 +853,7 @@ type UpdateProductRequest struct {
 
 func (x *UpdateProductRequest) Reset() {
 	*x = UpdateProductRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[12]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -789,7 +865,7 @@ func (x *UpdateProductRequest) String() string {
 func (*UpdateProductRequest) ProtoMessage() {}
 
 func (x *UpdateProductRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[12]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -802,7 +878,7 @@ func (x *UpdateProductRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProductRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProductRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{12}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpdateProductRequest) GetId() int64 {
@@ -878,7 +954,7 @@ type UpdateProductStatusRequest struct {
 
 func (x *UpdateProductStatusRequest) Reset() {
 	*x = UpdateProductStatusRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[13]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -890,7 +966,7 @@ func (x *UpdateProductStatusRequest) String() string {
 func (*UpdateProductStatusRequest) ProtoMessage() {}
 
 func (x *UpdateProductStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[13]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -903,7 +979,7 @@ func (x *UpdateProductStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProductStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProductStatusRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{13}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateProductStatusRequest) GetId() int64 {
@@ -928,7 +1004,7 @@ type UpdateProductStatusReply struct {
 
 func (x *UpdateProductStatusReply) Reset() {
 	*x = UpdateProductStatusReply{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[14]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -940,7 +1016,7 @@ func (x *UpdateProductStatusReply) String() string {
 func (*UpdateProductStatusReply) ProtoMessage() {}
 
 func (x *UpdateProductStatusReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[14]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -953,7 +1029,7 @@ func (x *UpdateProductStatusReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProductStatusReply.ProtoReflect.Descriptor instead.
 func (*UpdateProductStatusReply) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{14}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{15}
 }
 
 type DeleteProductRequest struct {
@@ -965,7 +1041,7 @@ type DeleteProductRequest struct {
 
 func (x *DeleteProductRequest) Reset() {
 	*x = DeleteProductRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[15]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -977,7 +1053,7 @@ func (x *DeleteProductRequest) String() string {
 func (*DeleteProductRequest) ProtoMessage() {}
 
 func (x *DeleteProductRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[15]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -990,7 +1066,7 @@ func (x *DeleteProductRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProductRequest.ProtoReflect.Descriptor instead.
 func (*DeleteProductRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{15}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DeleteProductRequest) GetId() int64 {
@@ -1008,7 +1084,7 @@ type DeleteProductReply struct {
 
 func (x *DeleteProductReply) Reset() {
 	*x = DeleteProductReply{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[16]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1020,7 +1096,7 @@ func (x *DeleteProductReply) String() string {
 func (*DeleteProductReply) ProtoMessage() {}
 
 func (x *DeleteProductReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[16]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1033,7 +1109,7 @@ func (x *DeleteProductReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProductReply.ProtoReflect.Descriptor instead.
 func (*DeleteProductReply) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{16}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{17}
 }
 
 type Event struct {
@@ -1055,7 +1131,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[17]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1067,7 +1143,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[17]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1080,7 +1156,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{17}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Event) GetId() int64 {
@@ -1176,7 +1252,7 @@ type CreateEventRequest struct {
 
 func (x *CreateEventRequest) Reset() {
 	*x = CreateEventRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[18]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1188,7 +1264,7 @@ func (x *CreateEventRequest) String() string {
 func (*CreateEventRequest) ProtoMessage() {}
 
 func (x *CreateEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[18]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1201,7 +1277,7 @@ func (x *CreateEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEventRequest.ProtoReflect.Descriptor instead.
 func (*CreateEventRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{18}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CreateEventRequest) GetName() string {
@@ -1269,7 +1345,7 @@ type GetEventRequest struct {
 
 func (x *GetEventRequest) Reset() {
 	*x = GetEventRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[19]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1281,7 +1357,7 @@ func (x *GetEventRequest) String() string {
 func (*GetEventRequest) ProtoMessage() {}
 
 func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[19]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1294,7 +1370,7 @@ func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
 func (*GetEventRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{19}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetEventRequest) GetId() int64 {
@@ -1315,7 +1391,7 @@ type ListEventsRequest struct {
 
 func (x *ListEventsRequest) Reset() {
 	*x = ListEventsRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[20]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1327,7 +1403,7 @@ func (x *ListEventsRequest) String() string {
 func (*ListEventsRequest) ProtoMessage() {}
 
 func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[20]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1340,7 +1416,7 @@ func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{20}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListEventsRequest) GetStatus() int32 {
@@ -1373,7 +1449,7 @@ type ListEventsReply struct {
 
 func (x *ListEventsReply) Reset() {
 	*x = ListEventsReply{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[21]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1385,7 +1461,7 @@ func (x *ListEventsReply) String() string {
 func (*ListEventsReply) ProtoMessage() {}
 
 func (x *ListEventsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[21]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1398,7 +1474,7 @@ func (x *ListEventsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsReply.ProtoReflect.Descriptor instead.
 func (*ListEventsReply) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{21}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListEventsReply) GetEvents() []*Event {
@@ -1425,7 +1501,7 @@ type UpdateEventRequest struct {
 
 func (x *UpdateEventRequest) Reset() {
 	*x = UpdateEventRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[22]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1437,7 +1513,7 @@ func (x *UpdateEventRequest) String() string {
 func (*UpdateEventRequest) ProtoMessage() {}
 
 func (x *UpdateEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[22]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1450,7 +1526,7 @@ func (x *UpdateEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateEventRequest.ProtoReflect.Descriptor instead.
 func (*UpdateEventRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{22}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *UpdateEventRequest) GetId() int64 {
@@ -1526,7 +1602,7 @@ type UpdateEventStatusRequest struct {
 
 func (x *UpdateEventStatusRequest) Reset() {
 	*x = UpdateEventStatusRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[23]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1538,7 +1614,7 @@ func (x *UpdateEventStatusRequest) String() string {
 func (*UpdateEventStatusRequest) ProtoMessage() {}
 
 func (x *UpdateEventStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[23]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1551,7 +1627,7 @@ func (x *UpdateEventStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateEventStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateEventStatusRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{23}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *UpdateEventStatusRequest) GetId() int64 {
@@ -1576,7 +1652,7 @@ type UpdateEventStatusReply struct {
 
 func (x *UpdateEventStatusReply) Reset() {
 	*x = UpdateEventStatusReply{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[24]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1588,7 +1664,7 @@ func (x *UpdateEventStatusReply) String() string {
 func (*UpdateEventStatusReply) ProtoMessage() {}
 
 func (x *UpdateEventStatusReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[24]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1601,7 +1677,7 @@ func (x *UpdateEventStatusReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateEventStatusReply.ProtoReflect.Descriptor instead.
 func (*UpdateEventStatusReply) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{24}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{25}
 }
 
 type DeleteEventRequest struct {
@@ -1613,7 +1689,7 @@ type DeleteEventRequest struct {
 
 func (x *DeleteEventRequest) Reset() {
 	*x = DeleteEventRequest{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[25]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1625,7 +1701,7 @@ func (x *DeleteEventRequest) String() string {
 func (*DeleteEventRequest) ProtoMessage() {}
 
 func (x *DeleteEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[25]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1638,7 +1714,7 @@ func (x *DeleteEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteEventRequest.ProtoReflect.Descriptor instead.
 func (*DeleteEventRequest) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{25}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DeleteEventRequest) GetId() int64 {
@@ -1656,7 +1732,7 @@ type DeleteEventReply struct {
 
 func (x *DeleteEventReply) Reset() {
 	*x = DeleteEventReply{}
-	mi := &file_api_mall_v1_mall_proto_msgTypes[26]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1668,7 +1744,7 @@ func (x *DeleteEventReply) String() string {
 func (*DeleteEventReply) ProtoMessage() {}
 
 func (x *DeleteEventReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_mall_v1_mall_proto_msgTypes[26]
+	mi := &file_api_mall_v1_mall_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1681,7 +1757,7 @@ func (x *DeleteEventReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteEventReply.ProtoReflect.Descriptor instead.
 func (*DeleteEventReply) Descriptor() ([]byte, []int) {
-	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{26}
+	return file_api_mall_v1_mall_proto_rawDescGZIP(), []int{27}
 }
 
 var File_api_mall_v1_mall_proto protoreflect.FileDescriptor
@@ -1713,7 +1789,15 @@ const file_api_mall_v1_mall_proto_rawDesc = "" +
 	"sort_order\x18\x03 \x01(\x05R\tsortOrder\"'\n" +
 	"\x15DeleteCategoryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"\x15\n" +
-	"\x13DeleteCategoryReply\"\xe8\x02\n" +
+	"\x13DeleteCategoryReply\"\x9b\x01\n" +
+	"\tMediaInfo\x12\x17\n" +
+	"\aoss_url\x18\x01 \x01(\tR\x06ossUrl\x12\x1f\n" +
+	"\vbucket_name\x18\x02 \x01(\tR\n" +
+	"bucketName\x12\x1d\n" +
+	"\n" +
+	"object_key\x18\x03 \x01(\tR\tobjectKey\x12!\n" +
+	"\fcontent_type\x18\x04 \x01(\tR\vcontentType\x12\x12\n" +
+	"\x04size\x18\x05 \x01(\x03R\x04size\"\xe7\x02\n" +
 	"\aProduct\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\vcategory_id\x18\x02 \x01(\x03R\n" +
@@ -1724,8 +1808,8 @@ const file_api_mall_v1_mall_proto_rawDesc = "" +
 	"\x05stock\x18\x06 \x01(\x05R\x05stock\x12\x16\n" +
 	"\x06status\x18\a \x01(\x05R\x06status\x12\x1f\n" +
 	"\vcover_image\x18\b \x01(\tR\n" +
-	"coverImage\x12:\n" +
-	"\fmedia_assets\x18\t \x01(\v2\x17.google.protobuf.StructR\vmediaAssets\x12 \n" +
+	"coverImage\x129\n" +
+	"\fmedia_assets\x18\t \x03(\v2\x16.api.mall.v1.MediaInfoR\vmediaAssets\x12 \n" +
 	"\vdescription\x18\n" +
 	" \x01(\tR\vdescription\x129\n" +
 	"\n" +
@@ -1856,7 +1940,7 @@ func file_api_mall_v1_mall_proto_rawDescGZIP() []byte {
 	return file_api_mall_v1_mall_proto_rawDescData
 }
 
-var file_api_mall_v1_mall_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_api_mall_v1_mall_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_api_mall_v1_mall_proto_goTypes = []any{
 	(*Category)(nil),                   // 0: api.mall.v1.Category
 	(*CreateCategoryRequest)(nil),      // 1: api.mall.v1.CreateCategoryRequest
@@ -1865,79 +1949,80 @@ var file_api_mall_v1_mall_proto_goTypes = []any{
 	(*UpdateCategoryRequest)(nil),      // 4: api.mall.v1.UpdateCategoryRequest
 	(*DeleteCategoryRequest)(nil),      // 5: api.mall.v1.DeleteCategoryRequest
 	(*DeleteCategoryReply)(nil),        // 6: api.mall.v1.DeleteCategoryReply
-	(*Product)(nil),                    // 7: api.mall.v1.Product
-	(*CreateProductRequest)(nil),       // 8: api.mall.v1.CreateProductRequest
-	(*GetProductRequest)(nil),          // 9: api.mall.v1.GetProductRequest
-	(*ListProductsRequest)(nil),        // 10: api.mall.v1.ListProductsRequest
-	(*ListProductsReply)(nil),          // 11: api.mall.v1.ListProductsReply
-	(*UpdateProductRequest)(nil),       // 12: api.mall.v1.UpdateProductRequest
-	(*UpdateProductStatusRequest)(nil), // 13: api.mall.v1.UpdateProductStatusRequest
-	(*UpdateProductStatusReply)(nil),   // 14: api.mall.v1.UpdateProductStatusReply
-	(*DeleteProductRequest)(nil),       // 15: api.mall.v1.DeleteProductRequest
-	(*DeleteProductReply)(nil),         // 16: api.mall.v1.DeleteProductReply
-	(*Event)(nil),                      // 17: api.mall.v1.Event
-	(*CreateEventRequest)(nil),         // 18: api.mall.v1.CreateEventRequest
-	(*GetEventRequest)(nil),            // 19: api.mall.v1.GetEventRequest
-	(*ListEventsRequest)(nil),          // 20: api.mall.v1.ListEventsRequest
-	(*ListEventsReply)(nil),            // 21: api.mall.v1.ListEventsReply
-	(*UpdateEventRequest)(nil),         // 22: api.mall.v1.UpdateEventRequest
-	(*UpdateEventStatusRequest)(nil),   // 23: api.mall.v1.UpdateEventStatusRequest
-	(*UpdateEventStatusReply)(nil),     // 24: api.mall.v1.UpdateEventStatusReply
-	(*DeleteEventRequest)(nil),         // 25: api.mall.v1.DeleteEventRequest
-	(*DeleteEventReply)(nil),           // 26: api.mall.v1.DeleteEventReply
-	(*structpb.Struct)(nil),            // 27: google.protobuf.Struct
+	(*MediaInfo)(nil),                  // 7: api.mall.v1.MediaInfo
+	(*Product)(nil),                    // 8: api.mall.v1.Product
+	(*CreateProductRequest)(nil),       // 9: api.mall.v1.CreateProductRequest
+	(*GetProductRequest)(nil),          // 10: api.mall.v1.GetProductRequest
+	(*ListProductsRequest)(nil),        // 11: api.mall.v1.ListProductsRequest
+	(*ListProductsReply)(nil),          // 12: api.mall.v1.ListProductsReply
+	(*UpdateProductRequest)(nil),       // 13: api.mall.v1.UpdateProductRequest
+	(*UpdateProductStatusRequest)(nil), // 14: api.mall.v1.UpdateProductStatusRequest
+	(*UpdateProductStatusReply)(nil),   // 15: api.mall.v1.UpdateProductStatusReply
+	(*DeleteProductRequest)(nil),       // 16: api.mall.v1.DeleteProductRequest
+	(*DeleteProductReply)(nil),         // 17: api.mall.v1.DeleteProductReply
+	(*Event)(nil),                      // 18: api.mall.v1.Event
+	(*CreateEventRequest)(nil),         // 19: api.mall.v1.CreateEventRequest
+	(*GetEventRequest)(nil),            // 20: api.mall.v1.GetEventRequest
+	(*ListEventsRequest)(nil),          // 21: api.mall.v1.ListEventsRequest
+	(*ListEventsReply)(nil),            // 22: api.mall.v1.ListEventsReply
+	(*UpdateEventRequest)(nil),         // 23: api.mall.v1.UpdateEventRequest
+	(*UpdateEventStatusRequest)(nil),   // 24: api.mall.v1.UpdateEventStatusRequest
+	(*UpdateEventStatusReply)(nil),     // 25: api.mall.v1.UpdateEventStatusReply
+	(*DeleteEventRequest)(nil),         // 26: api.mall.v1.DeleteEventRequest
+	(*DeleteEventReply)(nil),           // 27: api.mall.v1.DeleteEventReply
 	(*timestamppb.Timestamp)(nil),      // 28: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),            // 29: google.protobuf.Struct
 }
 var file_api_mall_v1_mall_proto_depIdxs = []int32{
 	0,  // 0: api.mall.v1.ListCategoriesReply.categories:type_name -> api.mall.v1.Category
-	27, // 1: api.mall.v1.Product.media_assets:type_name -> google.protobuf.Struct
+	7,  // 1: api.mall.v1.Product.media_assets:type_name -> api.mall.v1.MediaInfo
 	28, // 2: api.mall.v1.Product.created_at:type_name -> google.protobuf.Timestamp
-	27, // 3: api.mall.v1.CreateProductRequest.media_assets:type_name -> google.protobuf.Struct
-	7,  // 4: api.mall.v1.ListProductsReply.products:type_name -> api.mall.v1.Product
-	27, // 5: api.mall.v1.UpdateProductRequest.media_assets:type_name -> google.protobuf.Struct
-	27, // 6: api.mall.v1.Event.media_assets:type_name -> google.protobuf.Struct
+	29, // 3: api.mall.v1.CreateProductRequest.media_assets:type_name -> google.protobuf.Struct
+	8,  // 4: api.mall.v1.ListProductsReply.products:type_name -> api.mall.v1.Product
+	29, // 5: api.mall.v1.UpdateProductRequest.media_assets:type_name -> google.protobuf.Struct
+	29, // 6: api.mall.v1.Event.media_assets:type_name -> google.protobuf.Struct
 	28, // 7: api.mall.v1.Event.start_at:type_name -> google.protobuf.Timestamp
 	28, // 8: api.mall.v1.Event.end_at:type_name -> google.protobuf.Timestamp
 	28, // 9: api.mall.v1.Event.created_at:type_name -> google.protobuf.Timestamp
-	27, // 10: api.mall.v1.CreateEventRequest.media_assets:type_name -> google.protobuf.Struct
+	29, // 10: api.mall.v1.CreateEventRequest.media_assets:type_name -> google.protobuf.Struct
 	28, // 11: api.mall.v1.CreateEventRequest.start_at:type_name -> google.protobuf.Timestamp
 	28, // 12: api.mall.v1.CreateEventRequest.end_at:type_name -> google.protobuf.Timestamp
-	17, // 13: api.mall.v1.ListEventsReply.events:type_name -> api.mall.v1.Event
-	27, // 14: api.mall.v1.UpdateEventRequest.media_assets:type_name -> google.protobuf.Struct
+	18, // 13: api.mall.v1.ListEventsReply.events:type_name -> api.mall.v1.Event
+	29, // 14: api.mall.v1.UpdateEventRequest.media_assets:type_name -> google.protobuf.Struct
 	28, // 15: api.mall.v1.UpdateEventRequest.start_at:type_name -> google.protobuf.Timestamp
 	28, // 16: api.mall.v1.UpdateEventRequest.end_at:type_name -> google.protobuf.Timestamp
 	1,  // 17: api.mall.v1.Mall.CreateCategory:input_type -> api.mall.v1.CreateCategoryRequest
 	2,  // 18: api.mall.v1.Mall.ListCategories:input_type -> api.mall.v1.ListCategoriesRequest
 	4,  // 19: api.mall.v1.Mall.UpdateCategory:input_type -> api.mall.v1.UpdateCategoryRequest
 	5,  // 20: api.mall.v1.Mall.DeleteCategory:input_type -> api.mall.v1.DeleteCategoryRequest
-	8,  // 21: api.mall.v1.Mall.CreateProduct:input_type -> api.mall.v1.CreateProductRequest
-	9,  // 22: api.mall.v1.Mall.GetProduct:input_type -> api.mall.v1.GetProductRequest
-	10, // 23: api.mall.v1.Mall.ListProducts:input_type -> api.mall.v1.ListProductsRequest
-	12, // 24: api.mall.v1.Mall.UpdateProduct:input_type -> api.mall.v1.UpdateProductRequest
-	13, // 25: api.mall.v1.Mall.UpdateProductStatus:input_type -> api.mall.v1.UpdateProductStatusRequest
-	15, // 26: api.mall.v1.Mall.DeleteProduct:input_type -> api.mall.v1.DeleteProductRequest
-	18, // 27: api.mall.v1.Mall.CreateEvent:input_type -> api.mall.v1.CreateEventRequest
-	19, // 28: api.mall.v1.Mall.GetEvent:input_type -> api.mall.v1.GetEventRequest
-	20, // 29: api.mall.v1.Mall.ListEvents:input_type -> api.mall.v1.ListEventsRequest
-	22, // 30: api.mall.v1.Mall.UpdateEvent:input_type -> api.mall.v1.UpdateEventRequest
-	23, // 31: api.mall.v1.Mall.UpdateEventStatus:input_type -> api.mall.v1.UpdateEventStatusRequest
-	25, // 32: api.mall.v1.Mall.DeleteEvent:input_type -> api.mall.v1.DeleteEventRequest
+	9,  // 21: api.mall.v1.Mall.CreateProduct:input_type -> api.mall.v1.CreateProductRequest
+	10, // 22: api.mall.v1.Mall.GetProduct:input_type -> api.mall.v1.GetProductRequest
+	11, // 23: api.mall.v1.Mall.ListProducts:input_type -> api.mall.v1.ListProductsRequest
+	13, // 24: api.mall.v1.Mall.UpdateProduct:input_type -> api.mall.v1.UpdateProductRequest
+	14, // 25: api.mall.v1.Mall.UpdateProductStatus:input_type -> api.mall.v1.UpdateProductStatusRequest
+	16, // 26: api.mall.v1.Mall.DeleteProduct:input_type -> api.mall.v1.DeleteProductRequest
+	19, // 27: api.mall.v1.Mall.CreateEvent:input_type -> api.mall.v1.CreateEventRequest
+	20, // 28: api.mall.v1.Mall.GetEvent:input_type -> api.mall.v1.GetEventRequest
+	21, // 29: api.mall.v1.Mall.ListEvents:input_type -> api.mall.v1.ListEventsRequest
+	23, // 30: api.mall.v1.Mall.UpdateEvent:input_type -> api.mall.v1.UpdateEventRequest
+	24, // 31: api.mall.v1.Mall.UpdateEventStatus:input_type -> api.mall.v1.UpdateEventStatusRequest
+	26, // 32: api.mall.v1.Mall.DeleteEvent:input_type -> api.mall.v1.DeleteEventRequest
 	0,  // 33: api.mall.v1.Mall.CreateCategory:output_type -> api.mall.v1.Category
 	3,  // 34: api.mall.v1.Mall.ListCategories:output_type -> api.mall.v1.ListCategoriesReply
 	0,  // 35: api.mall.v1.Mall.UpdateCategory:output_type -> api.mall.v1.Category
 	6,  // 36: api.mall.v1.Mall.DeleteCategory:output_type -> api.mall.v1.DeleteCategoryReply
-	7,  // 37: api.mall.v1.Mall.CreateProduct:output_type -> api.mall.v1.Product
-	7,  // 38: api.mall.v1.Mall.GetProduct:output_type -> api.mall.v1.Product
-	11, // 39: api.mall.v1.Mall.ListProducts:output_type -> api.mall.v1.ListProductsReply
-	7,  // 40: api.mall.v1.Mall.UpdateProduct:output_type -> api.mall.v1.Product
-	14, // 41: api.mall.v1.Mall.UpdateProductStatus:output_type -> api.mall.v1.UpdateProductStatusReply
-	16, // 42: api.mall.v1.Mall.DeleteProduct:output_type -> api.mall.v1.DeleteProductReply
-	17, // 43: api.mall.v1.Mall.CreateEvent:output_type -> api.mall.v1.Event
-	17, // 44: api.mall.v1.Mall.GetEvent:output_type -> api.mall.v1.Event
-	21, // 45: api.mall.v1.Mall.ListEvents:output_type -> api.mall.v1.ListEventsReply
-	17, // 46: api.mall.v1.Mall.UpdateEvent:output_type -> api.mall.v1.Event
-	24, // 47: api.mall.v1.Mall.UpdateEventStatus:output_type -> api.mall.v1.UpdateEventStatusReply
-	26, // 48: api.mall.v1.Mall.DeleteEvent:output_type -> api.mall.v1.DeleteEventReply
+	8,  // 37: api.mall.v1.Mall.CreateProduct:output_type -> api.mall.v1.Product
+	8,  // 38: api.mall.v1.Mall.GetProduct:output_type -> api.mall.v1.Product
+	12, // 39: api.mall.v1.Mall.ListProducts:output_type -> api.mall.v1.ListProductsReply
+	8,  // 40: api.mall.v1.Mall.UpdateProduct:output_type -> api.mall.v1.Product
+	15, // 41: api.mall.v1.Mall.UpdateProductStatus:output_type -> api.mall.v1.UpdateProductStatusReply
+	17, // 42: api.mall.v1.Mall.DeleteProduct:output_type -> api.mall.v1.DeleteProductReply
+	18, // 43: api.mall.v1.Mall.CreateEvent:output_type -> api.mall.v1.Event
+	18, // 44: api.mall.v1.Mall.GetEvent:output_type -> api.mall.v1.Event
+	22, // 45: api.mall.v1.Mall.ListEvents:output_type -> api.mall.v1.ListEventsReply
+	18, // 46: api.mall.v1.Mall.UpdateEvent:output_type -> api.mall.v1.Event
+	25, // 47: api.mall.v1.Mall.UpdateEventStatus:output_type -> api.mall.v1.UpdateEventStatusReply
+	27, // 48: api.mall.v1.Mall.DeleteEvent:output_type -> api.mall.v1.DeleteEventReply
 	33, // [33:49] is the sub-list for method output_type
 	17, // [17:33] is the sub-list for method input_type
 	17, // [17:17] is the sub-list for extension type_name
@@ -1956,7 +2041,7 @@ func file_api_mall_v1_mall_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_mall_v1_mall_proto_rawDesc), len(file_api_mall_v1_mall_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

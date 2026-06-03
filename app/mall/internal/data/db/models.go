@@ -74,7 +74,7 @@ type Product struct {
 	Discount    decimal.Decimal
 	Stock       int32
 	Status      int16
-	CoverImage  string
+	CoverImage  []byte
 	MediaAssets []byte
 	Description pgtype.Text
 	CreatedAt   pgtype.Timestamptz

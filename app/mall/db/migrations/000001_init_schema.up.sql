@@ -71,7 +71,7 @@ CREATE TABLE products (
     stock INTEGER NOT NULL DEFAULT 0,
     status SMALLINT NOT NULL DEFAULT 0,           -- 0-下架, 1-上架, 2-违规封禁
 
-    cover_image VARCHAR(512) NOT NULL,
+    cover_image JSONB NOT NULL DEFAULT '{}',
     media_assets JSONB NOT NULL DEFAULT '{}',
     description TEXT,
 
@@ -85,6 +85,7 @@ CREATE TABLE products (
 
 CREATE INDEX idx_products_category_id ON products(category_id);
 CREATE INDEX idx_products_status ON products(status) WHERE deleted_at IS NULL;
+CREATE INDEX idx_products_image_main ON products USING GIN (cover_image);
 CREATE INDEX idx_products_media_assets ON products USING GIN (media_assets);
 
 -- 用户有未结束的 payment 或 order 禁止注销

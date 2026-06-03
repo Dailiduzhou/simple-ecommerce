@@ -25,7 +25,7 @@ type CreateProductParams struct {
 	Discount    decimal.Decimal
 	Stock       int32
 	Status      int16
-	CoverImage  string
+	CoverImage  []byte
 	MediaAssets []byte
 	Description pgtype.Text
 }
@@ -221,7 +221,7 @@ type UpdateProductParams struct {
 	Price       decimal.Decimal
 	Discount    decimal.Decimal
 	Stock       int32
-	CoverImage  string
+	CoverImage  []byte
 	MediaAssets []byte
 	Description pgtype.Text
 }
