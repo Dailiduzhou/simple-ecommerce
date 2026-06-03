@@ -29,7 +29,15 @@ func NewProductRepo(data *Data, logger log.Logger) *ProductRepo {
 	return &ProductRepo{data: data, log: log.NewHelper(logger)}
 }
 
-func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage string, mediaAssets []byte, descrption string) (*biz.Product, error) {
+func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+	coverImageJSON, err := json.Marshal(coverImage)
+	if err != nil {
+		return nil, err
+	}
+	mediaAssetsJSON, err := json.Marshal(mediaAssets)
+	if err != nil {
+		return nil, err
+	}
 	p, err := r.data.q.CreateProduct(ctx, db.CreateProductParams{
 		CategoryID:  categoryID,
 		Name:        name,
@@ -37,8 +45,8 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 		Discount:    discount,
 		Stock:       stock,
 		Status:      status,
-		CoverImage:  coverImage,
-		MediaAssets: mediaAssets,
+		CoverImage:  coverImageJSON,
+		MediaAssets: mediaAssetsJSON,
 		Description: pgtype.Text{String: descrption, Valid: descrption != ""},
 	})
 	if err != nil {
@@ -179,7 +187,15 @@ func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, coverImage string, mediaAssets []byte, descrption string) (*biz.Product, error) {
+func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+	coverImageJSON, err := json.Marshal(coverImage)
+	if err != nil {
+		return nil, err
+	}
+	mediaAssetsJSON, err := json.Marshal(mediaAssets)
+	if err != nil {
+		return nil, err
+	}
 	p, err := r.data.q.UpdateProduct(ctx, db.UpdateProductParams{
 		ID:          id,
 		CategoryID:  categoryID,
@@ -187,8 +203,8 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		Price:       price,
 		Discount:    discount,
 		Stock:       stock,
-		CoverImage:  coverImage,
-		MediaAssets: mediaAssets,
+		CoverImage:  coverImageJSON,
+		MediaAssets: mediaAssetsJSON,
 		Description: pgtype.Text{String: descrption, Valid: descrption != ""},
 	})
 	if err != nil {
@@ -274,8 +290,8 @@ func toBizProduct(p db.Product) biz.Product {
 		Discount:    p.Discount,
 		Stock:       p.Stock,
 		Status:      p.Status,
-		CoverImage:  p.CoverImage,
-		MediaAssets: p.MediaAssets,
+		CoverImage:  parseMediaInfoJSON(p.CoverImage),
+		MediaAssets: parseMediaInfoJSON(p.MediaAssets),
 		Description: p.Description.String,
 		CreatedAt:   p.CreatedAt.Time,
 		UpdatedAt:   p.UpdatedAt.Time,
@@ -296,4 +312,15 @@ func timePtr(t pgtype.Timestamptz) *time.Time {
 		return nil
 	}
 	return &t.Time
+}
+
+func parseMediaInfoJSON(data []byte) []biz.MediaInfo {
+	if len(data) == 0 {
+		return nil
+	}
+	var result []biz.MediaInfo
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil
+	}
+	return result
 }

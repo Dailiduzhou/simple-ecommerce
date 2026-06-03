@@ -16,22 +16,30 @@ type Product struct {
 	Discount    decimal.Decimal
 	Stock       int32
 	Status      int16
-	CoverImage  string
-	MediaAssets []byte
+	CoverImage  []MediaInfo
+	MediaAssets []MediaInfo
 	Description string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	DeletedAt   *time.Time
 }
 
+type MediaInfo struct {
+	OssURL      string
+	BucketName  string
+	ObjectKey   string
+	ContentType string
+	Size        int64
+}
+
 type ProductRepo interface {
-	CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage string, mediaAssets []byte, descrption string) (*Product, error)
+	CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	DecrProductStock(ctx context.Context, ID int64, amount int32) (int32, error)
 	GetProduct(ctx context.Context, id int64) (*Product, error)
 	ListProducts(ctx context.Context, limit int32, offset int32) ([]Product, error)
 	ListProductsByCategory(ctx context.Context, categoryID int64, limit int32, offset int32) ([]Product, error)
 	SoftDeleteProduct(ctx context.Context, id int64) error
-	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, coverImage string, mediaAssets []byte, descrption string) (*Product, error)
+	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	UpdateProductStatus(ctx context.Context, ID int64, status int32) error
 }
 
