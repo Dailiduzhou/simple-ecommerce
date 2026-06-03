@@ -41,18 +41,26 @@ type ShippingAddress struct {
 }
 
 type ShippingAddressRepo interface {
-	CreateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, recieverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*ShippingAddress, error)
+	CreateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, receiverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*ShippingAddress, error)
+	GetShippingAddress(ctx context.Context, id int64, userID int64) (*ShippingAddress, error)
 	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
-	UpdateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, recieverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*ShippingAddress, error)
+	UpdateShippingAddress(ctx context.Context, id int64, userID int64, receiverName string, receiverPhoneHash string, receiverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string) (*ShippingAddress, error)
+	SetDefaultShippingAddress(ctx context.Context, id int64, userID int64) error
+	DeleteShippingAddress(ctx context.Context, id int64, userID int64) error
 }
 
 type ShippingAddressUsecase struct {
 	addressRepo ShippingAddressRepo
+	phoneSecret string
 	log         *log.Helper
 }
 
-func NewShippingAddressUsecase(addressRepo ShippingAddressRepo, logger log.Logger) *ShippingAddressUsecase {
-	return &ShippingAddressUsecase{addressRepo: addressRepo, log: log.NewHelper(logger)}
+func NewShippingAddressUsecase(addressRepo ShippingAddressRepo, ac *conf.Auth, logger log.Logger) *ShippingAddressUsecase {
+	return &ShippingAddressUsecase{
+		addressRepo: addressRepo,
+		phoneSecret: ac.PhoneSecret,
+		log:         log.NewHelper(logger),
+	}
 }
 
 type User struct {
@@ -269,6 +277,46 @@ func (uc *UserUsecase) UpdateUser(ctx context.Context, id int64, nickname, realN
 
 func (uc *UserUsecase) DeleteUser(ctx context.Context, id int64) error {
 	return uc.userRepo.DeleteUser(ctx, id)
+}
+
+func (uc *ShippingAddressUsecase) CreateShippingAddress(ctx context.Context, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string, isDefault bool) (*ShippingAddress, error) {
+	secret := []byte(uc.phoneSecret)
+	phoneHash := phonecrypto.HashPhone(receiverPhone, secret)
+	phoneEncrypt, err := phonecrypto.EncryptPhone(receiverPhone, secret)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("encrypt phone failed: %v", err)
+		return nil, fmt.Errorf("encrypt phone: %w", err)
+	}
+
+	return uc.addressRepo.CreateShippingAddress(ctx, userID, receiverName, phoneHash, phoneEncrypt, province, city, district, detailAddress, addressTag, isDefault)
+}
+
+func (uc *ShippingAddressUsecase) GetShippingAddress(ctx context.Context, id int64, userID int64) (*ShippingAddress, error) {
+	return uc.addressRepo.GetShippingAddress(ctx, id, userID)
+}
+
+func (uc *ShippingAddressUsecase) ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error) {
+	return uc.addressRepo.ListShippingAddressesByUser(ctx, userID)
+}
+
+func (uc *ShippingAddressUsecase) UpdateShippingAddress(ctx context.Context, id int64, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string) (*ShippingAddress, error) {
+	secret := []byte(uc.phoneSecret)
+	phoneHash := phonecrypto.HashPhone(receiverPhone, secret)
+	phoneEncrypt, err := phonecrypto.EncryptPhone(receiverPhone, secret)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("encrypt phone failed: %v", err)
+		return nil, fmt.Errorf("encrypt phone: %w", err)
+	}
+
+	return uc.addressRepo.UpdateShippingAddress(ctx, id, userID, receiverName, phoneHash, phoneEncrypt, province, city, district, detailAddress, addressTag)
+}
+
+func (uc *ShippingAddressUsecase) SetDefaultShippingAddress(ctx context.Context, id int64, userID int64) error {
+	return uc.addressRepo.SetDefaultShippingAddress(ctx, id, userID)
+}
+
+func (uc *ShippingAddressUsecase) DeleteShippingAddress(ctx context.Context, id int64, userID int64) error {
+	return uc.addressRepo.DeleteShippingAddress(ctx, id, userID)
 }
 
 func IsValidCNMobile(phone string) bool {
