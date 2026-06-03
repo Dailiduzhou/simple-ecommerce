@@ -6,6 +6,8 @@ import (
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
+	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -13,16 +15,20 @@ import (
 
 type UserService struct {
 	pb.UnimplementedUserServer
-	authUc *biz.AuthUsecase
-	uc     *biz.UserUsecase
-	log    *log.Helper
+	authUc         *biz.AuthUsecase
+	uc             *biz.UserUsecase
+	shippingAddrUc *biz.ShippingAddressUsecase
+	phoneSecret    string
+	log            *log.Helper
 }
 
-func NewUserService(authUc *biz.AuthUsecase, userUc *biz.UserUsecase, logger log.Logger) *UserService {
+func NewUserService(authUc *biz.AuthUsecase, userUc *biz.UserUsecase, shippingAddrUc *biz.ShippingAddressUsecase, ac *conf.Auth, logger log.Logger) *UserService {
 	return &UserService{
-		authUc: authUc,
-		uc:     userUc,
-		log:    log.NewHelper(logger),
+		authUc:         authUc,
+		uc:             userUc,
+		shippingAddrUc: shippingAddrUc,
+		phoneSecret:    ac.PhoneSecret,
+		log:            log.NewHelper(logger),
 	}
 }
 
@@ -89,23 +95,74 @@ func (s *UserService) DeleteUser(ctx context.Context, req *pb.DeleteUserRequest)
 }
 
 func (s *UserService) CreateShippingAddress(ctx context.Context, req *pb.CreateShippingAddressRequest) (*pb.ShippingAddress, error) {
-	return &pb.ShippingAddress{}, nil
+	sa, err := s.shippingAddrUc.CreateShippingAddress(ctx, req.UserId, req.ReceiverName, req.ReceiverPhone, req.Province, req.City, req.District, req.DetailAddress, req.AddressTag, req.IsDefault)
+	if err != nil {
+		return nil, err
+	}
+	return toProtoShippingAddress(sa, s.phoneSecret)
 }
 
 func (s *UserService) ListShippingAddresses(ctx context.Context, req *pb.ListShippingAddressesRequest) (*pb.ListShippingAddressesReply, error) {
-	return &pb.ListShippingAddressesReply{}, nil
+	sas, err := s.shippingAddrUc.ListShippingAddressesByUser(ctx, req.UserId)
+	if err != nil {
+		return nil, err
+	}
+	var addrs []*pb.ShippingAddress
+	for _, sa := range sas {
+		addr, err := toProtoShippingAddress(&sa, s.phoneSecret)
+		if err != nil {
+			return nil, err
+		}
+		addrs = append(addrs, addr)
+	}
+	return &pb.ListShippingAddressesReply{Addresses: addrs}, nil
 }
 
 func (s *UserService) UpdateShippingAddress(ctx context.Context, req *pb.UpdateShippingAddressRequest) (*pb.ShippingAddress, error) {
-	return &pb.ShippingAddress{}, nil
+	sa, err := s.shippingAddrUc.UpdateShippingAddress(ctx, req.Id, req.UserId, req.ReceiverName, req.ReceiverPhone, req.Province, req.City, req.District, req.DetailAddress, req.AddressTag)
+	if err != nil {
+		return nil, err
+	}
+	return toProtoShippingAddress(sa, s.phoneSecret)
 }
 
 func (s *UserService) SetDefaultShippingAddress(ctx context.Context, req *pb.SetDefaultShippingAddressRequest) (*pb.SetDefaultShippingAddressReply, error) {
+	err := s.shippingAddrUc.SetDefaultShippingAddress(ctx, req.Id, req.UserId)
+	if err != nil {
+		return nil, err
+	}
 	return &pb.SetDefaultShippingAddressReply{}, nil
 }
 
 func (s *UserService) DeleteShippingAddress(ctx context.Context, req *pb.DeleteShippingAddressRequest) (*pb.DeleteShippingAddressReply, error) {
+	err := s.shippingAddrUc.DeleteShippingAddress(ctx, req.Id, req.UserId)
+	if err != nil {
+		return nil, err
+	}
 	return &pb.DeleteShippingAddressReply{}, nil
+}
+
+func toProtoShippingAddress(sa *biz.ShippingAddress, phoneSecret string) (*pb.ShippingAddress, error) {
+	var phone string
+	if sa.ReceiverPhoneEncrypt != "" {
+		var err error
+		phone, err = phonecrypto.DecryptPhone(sa.ReceiverPhoneEncrypt, []byte(phoneSecret))
+		if err != nil {
+			return nil, pb.ErrorUnauthorized("decrypt phone failed: %v", err)
+		}
+	}
+	return &pb.ShippingAddress{
+		Id:            sa.ID,
+		UserId:        sa.UserID,
+		ReceiverName:  sa.ReceiverName,
+		ReceiverPhone: phone,
+		Province:      sa.Province,
+		City:          sa.City,
+		District:      sa.District,
+		DetailAddress: sa.DetailAddress,
+		AddressTag:    sa.AddressTag,
+		IsDefault:     sa.IsDefault,
+	}, nil
 }
 
 func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) (*pb.RefreshReply, error) {
