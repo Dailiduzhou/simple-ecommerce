@@ -137,6 +137,14 @@ message DeleteCategoryRequest {
 }
 message DeleteCategoryReply {}
 
+message MediaInfo {
+  string oss_url = 1;
+  string bucket_name = 2;
+  string object_key = 3;
+  string content_type = 4;
+  int64 size = 5;
+}
+
 message Product {
   int64  id          = 1;
   int64  category_id = 2;
@@ -146,7 +154,7 @@ message Product {
   int32  stock       = 6;
   int32  status      = 7;
   string cover_image = 8;
-  google.protobuf.Struct media_assets = 9;
+  repeated MediaInfo media_assets = 9;
   string description = 10;
   google.protobuf.Timestamp created_at = 11;
 }

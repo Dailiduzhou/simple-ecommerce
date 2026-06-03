@@ -90,7 +90,7 @@ type ListOrderItemsWithProductRow struct {
 	UnitPrice   decimal.Decimal
 	CreatedAt   pgtype.Timestamptz
 	ProductName string
-	CoverImage  string
+	CoverImage  []byte
 }
 
 func (q *Queries) ListOrderItemsWithProduct(ctx context.Context, orderID int64) ([]ListOrderItemsWithProductRow, error) {

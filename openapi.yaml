@@ -3,90 +3,17 @@
 
 openapi: 3.0.3
 info:
-    title: User API
+    title: Mall API
     version: 0.0.1
 paths:
-    /v1/users/login:
-        post:
-            tags:
-                - User
-            operationId: User_Login
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/LoginRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/LoginReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/users/refresh:
-        post:
-            tags:
-                - User
-            operationId: User_RefreshToken
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/RefreshRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/RefreshReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/users/register:
-        post:
-            tags:
-                - User
-            operationId: User_Register
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/RegisterRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/RegisterReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/users/{id}:
+    /v1/categories:
         get:
             tags:
-                - User
-            operationId: User_GetUser
+                - Mall
+            operationId: Mall_ListCategories
             parameters:
-                - name: id
-                  in: path
-                  required: true
+                - name: parentId
+                  in: query
                   schema:
                     type: string
             responses:
@@ -95,17 +22,42 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/UserInfo'
+                                $ref: '#/components/schemas/ListCategoriesReply'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - Mall
+            description: Categories
+            operationId: Mall_CreateCategory
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateCategoryRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Category'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/categories/{id}:
         put:
             tags:
-                - User
-            operationId: User_UpdateUser
+                - Mall
+            operationId: Mall_UpdateCategory
             parameters:
                 - name: id
                   in: path
@@ -116,7 +68,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/UpdateUserRequest'
+                            $ref: '#/components/schemas/UpdateCategoryRequest'
                 required: true
             responses:
                 "200":
@@ -124,7 +76,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/UserInfo'
+                                $ref: '#/components/schemas/Category'
                 default:
                     description: Default error response
                     content:
@@ -133,8 +85,8 @@ paths:
                                 $ref: '#/components/schemas/Status'
         delete:
             tags:
-                - User
-            operationId: User_DeleteUser
+                - Mall
+            operationId: Mall_DeleteCategory
             parameters:
                 - name: id
                   in: path
@@ -147,31 +99,41 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/DeleteUserReply'
+                                $ref: '#/components/schemas/DeleteCategoryReply'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /v1/users/{userId}/addresses:
+    /v1/events:
         get:
             tags:
-                - User
-            operationId: User_ListShippingAddresses
+                - Mall
+            operationId: Mall_ListEvents
             parameters:
-                - name: userId
-                  in: path
-                  required: true
+                - name: status
+                  in: query
                   schema:
-                    type: string
+                    type: integer
+                    format: int32
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: page
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
             responses:
                 "200":
                     description: OK
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListShippingAddressesReply'
+                                $ref: '#/components/schemas/ListEventsReply'
                 default:
                     description: Default error response
                     content:
@@ -180,20 +142,14 @@ paths:
                                 $ref: '#/components/schemas/Status'
         post:
             tags:
-                - User
-            description: Shipping Addresses
-            operationId: User_CreateShippingAddress
-            parameters:
-                - name: userId
-                  in: path
-                  required: true
-                  schema:
-                    type: string
+                - Mall
+            description: Events
+            operationId: Mall_CreateEvent
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/CreateShippingAddressRequest'
+                            $ref: '#/components/schemas/CreateEventRequest'
                 required: true
             responses:
                 "200":
@@ -201,24 +157,42 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ShippingAddress'
+                                $ref: '#/components/schemas/Event'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /v1/users/{userId}/addresses/{id}:
-        put:
+    /v1/events/{id}:
+        get:
             tags:
-                - User
-            operationId: User_UpdateShippingAddress
+                - Mall
+            operationId: Mall_GetEvent
             parameters:
-                - name: userId
+                - name: id
                   in: path
                   required: true
                   schema:
                     type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Event'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        put:
+            tags:
+                - Mall
+            operationId: Mall_UpdateEvent
+            parameters:
                 - name: id
                   in: path
                   required: true
@@ -228,7 +202,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/UpdateShippingAddressRequest'
+                            $ref: '#/components/schemas/UpdateEventRequest'
                 required: true
             responses:
                 "200":
@@ -236,7 +210,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ShippingAddress'
+                                $ref: '#/components/schemas/Event'
                 default:
                     description: Default error response
                     content:
@@ -245,14 +219,9 @@ paths:
                                 $ref: '#/components/schemas/Status'
         delete:
             tags:
-                - User
-            operationId: User_DeleteShippingAddress
+                - Mall
+            operationId: Mall_DeleteEvent
             parameters:
-                - name: userId
-                  in: path
-                  required: true
-                  schema:
-                    type: string
                 - name: id
                   in: path
                   required: true
@@ -264,24 +233,19 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/DeleteShippingAddressReply'
+                                $ref: '#/components/schemas/DeleteEventReply'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /v1/users/{userId}/addresses/{id}/default:
-        post:
+    /v1/events/{id}/status:
+        patch:
             tags:
-                - User
-            operationId: User_SetDefaultShippingAddress
+                - Mall
+            operationId: Mall_UpdateEventStatus
             parameters:
-                - name: userId
-                  in: path
-                  required: true
-                  schema:
-                    type: string
                 - name: id
                   in: path
                   required: true
@@ -291,7 +255,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/SetDefaultShippingAddressRequest'
+                            $ref: '#/components/schemas/UpdateEventStatusRequest'
                 required: true
             responses:
                 "200":
@@ -299,7 +263,170 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/SetDefaultShippingAddressReply'
+                                $ref: '#/components/schemas/UpdateEventStatusReply'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/products:
+        get:
+            tags:
+                - Mall
+            operationId: Mall_ListProducts
+            parameters:
+                - name: categoryId
+                  in: query
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: page
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListProductsReply'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        post:
+            tags:
+                - Mall
+            description: Products
+            operationId: Mall_CreateProduct
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateProductRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Product'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/products/{id}:
+        get:
+            tags:
+                - Mall
+            operationId: Mall_GetProduct
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Product'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        put:
+            tags:
+                - Mall
+            operationId: Mall_UpdateProduct
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateProductRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Product'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        delete:
+            tags:
+                - Mall
+            operationId: Mall_DeleteProduct
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteProductReply'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/products/{id}/status:
+        patch:
+            tags:
+                - Mall
+            operationId: Mall_UpdateProductStatus
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateProductStatusRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UpdateProductStatusReply'
                 default:
                     description: Default error response
                     content:
@@ -308,33 +435,109 @@ paths:
                                 $ref: '#/components/schemas/Status'
 components:
     schemas:
-        CreateShippingAddressRequest:
+        Category:
             type: object
             properties:
-                userId:
+                id:
                     type: string
-                receiverName:
+                parentId:
                     type: string
-                receiverPhone:
+                name:
                     type: string
-                province:
+                sortOrder:
+                    type: integer
+                    format: int32
+        CreateCategoryRequest:
+            type: object
+            properties:
+                parentId:
                     type: string
-                city:
+                name:
                     type: string
-                district:
+                sortOrder:
+                    type: integer
+                    format: int32
+        CreateEventRequest:
+            type: object
+            properties:
+                name:
                     type: string
-                detailAddress:
+                price:
                     type: string
-                addressTag:
+                stock:
+                    type: integer
+                    format: int32
+                coverImage:
                     type: string
-                isDefault:
-                    type: boolean
-        DeleteShippingAddressReply:
+                mediaAssets:
+                    type: object
+                description:
+                    type: string
+                startAt:
+                    type: string
+                    format: date-time
+                endAt:
+                    type: string
+                    format: date-time
+        CreateProductRequest:
+            type: object
+            properties:
+                categoryId:
+                    type: string
+                name:
+                    type: string
+                price:
+                    type: string
+                discount:
+                    type: string
+                stock:
+                    type: integer
+                    format: int32
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: object
+                description:
+                    type: string
+        DeleteCategoryReply:
             type: object
             properties: {}
-        DeleteUserReply:
+        DeleteEventReply:
             type: object
             properties: {}
+        DeleteProductReply:
+            type: object
+            properties: {}
+        Event:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                price:
+                    type: string
+                stock:
+                    type: integer
+                    format: int32
+                status:
+                    type: integer
+                    format: int32
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: object
+                description:
+                    type: string
+                startAt:
+                    type: string
+                    format: date-time
+                endAt:
+                    type: string
+                    format: date-time
+                createdAt:
+                    type: string
+                    format: date-time
         GoogleProtobufAny:
             type: object
             properties:
@@ -343,84 +546,73 @@ components:
                     description: The type of the serialized message.
             additionalProperties: true
             description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
-        ListShippingAddressesReply:
+        ListCategoriesReply:
             type: object
             properties:
-                addresses:
+                categories:
                     type: array
                     items:
-                        $ref: '#/components/schemas/ShippingAddress'
-        LoginReply:
+                        $ref: '#/components/schemas/Category'
+        ListEventsReply:
+            type: object
+            properties:
+                events:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Event'
+        ListProductsReply:
+            type: object
+            properties:
+                products:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Product'
+                total:
+                    type: integer
+                    format: int32
+        MediaInfo:
+            type: object
+            properties:
+                ossUrl:
+                    type: string
+                bucketName:
+                    type: string
+                objectKey:
+                    type: string
+                contentType:
+                    type: string
+                size:
+                    type: string
+        Product:
             type: object
             properties:
                 id:
                     type: string
-                token:
+                categoryId:
                     type: string
-        LoginRequest:
-            type: object
-            properties:
-                phone:
+                name:
                     type: string
-                password:
+                price:
                     type: string
-        RefreshReply:
-            type: object
-            properties:
-                accessToken:
+                discount:
                     type: string
-                refreshToken:
+                stock:
+                    type: integer
+                    format: int32
+                status:
+                    type: integer
+                    format: int32
+                coverImage:
                     type: string
-        RefreshRequest:
-            type: object
-            properties:
-                refreshToken:
+                mediaAssets:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MediaInfo'
+                description:
                     type: string
-        RegisterReply:
-            type: object
-            properties:
-                id:
+                createdAt:
                     type: string
-        RegisterRequest:
-            type: object
-            properties:
-                phone:
-                    type: string
-                password:
-                    type: string
-        SetDefaultShippingAddressReply:
-            type: object
-            properties: {}
-        SetDefaultShippingAddressRequest:
-            type: object
-            properties:
-                userId:
-                    type: string
-                id:
-                    type: string
-        ShippingAddress:
-            type: object
-            properties:
-                id:
-                    type: string
-                userId:
-                    type: string
-                receiverName:
-                    type: string
-                receiverPhone:
-                    type: string
-                province:
-                    type: string
-                city:
-                    type: string
-                district:
-                    type: string
-                detailAddress:
-                    type: string
-                addressTag:
-                    type: string
-                isDefault:
-                    type: boolean
+                    format: date-time
         Status:
             type: object
             properties:
@@ -437,51 +629,83 @@ components:
                         $ref: '#/components/schemas/GoogleProtobufAny'
                     description: A list of messages that carry the error details.  There is a common set of message types for APIs to use.
             description: 'The `Status` type defines a logical error model that is suitable for different programming environments, including REST APIs and RPC APIs. It is used by [gRPC](https://github.com/grpc). Each `Status` message contains three pieces of data: error code, error message, and error details. You can find out more about this error model and how to work with it in the [API Design Guide](https://cloud.google.com/apis/design/errors).'
-        UpdateShippingAddressRequest:
+        UpdateCategoryRequest:
             type: object
             properties:
                 id:
                     type: string
-                userId:
+                name:
                     type: string
-                receiverName:
-                    type: string
-                receiverPhone:
-                    type: string
-                province:
-                    type: string
-                city:
-                    type: string
-                district:
-                    type: string
-                detailAddress:
-                    type: string
-                addressTag:
-                    type: string
-        UpdateUserRequest:
+                sortOrder:
+                    type: integer
+                    format: int32
+        UpdateEventRequest:
             type: object
             properties:
                 id:
                     type: string
-                nickname:
+                name:
                     type: string
-                realName:
+                price:
                     type: string
-        UserInfo:
-            type: object
-            properties:
-                id:
+                stock:
+                    type: integer
+                    format: int32
+                coverImage:
                     type: string
-                nickname:
+                mediaAssets:
+                    type: object
+                description:
                     type: string
-                realName:
-                    type: string
-                phone:
-                    type: string
-                role:
-                    type: string
-                createdAt:
+                startAt:
                     type: string
                     format: date-time
+                endAt:
+                    type: string
+                    format: date-time
+        UpdateEventStatusReply:
+            type: object
+            properties: {}
+        UpdateEventStatusRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                status:
+                    type: integer
+                    format: int32
+        UpdateProductRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                categoryId:
+                    type: string
+                name:
+                    type: string
+                price:
+                    type: string
+                discount:
+                    type: string
+                stock:
+                    type: integer
+                    format: int32
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: object
+                description:
+                    type: string
+        UpdateProductStatusReply:
+            type: object
+            properties: {}
+        UpdateProductStatusRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                status:
+                    type: integer
+                    format: int32
 tags:
-    - name: User
+    - name: Mall
