@@ -32,7 +32,7 @@ type Data struct {
 	pool        *pgxpool.Pool
 	riverclient *river.Client[pgx.Tx]
 	rdb         *redis.Client
-	q           *db.Queries
+	q           db.Querier
 	sg          *singleflight.Group
 }
 
