@@ -84,7 +84,7 @@ func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error)
 		u, err := r.data.q.GetUserByID(ctx, id)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, nil
+				return (*biz.User)(nil), nil
 			}
 			return nil, err
 		}
@@ -121,7 +121,7 @@ func (r *UserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*b
 		u, err := r.data.q.GetUserByPhoneHash(ctx, phoneHash)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, nil
+				return (*biz.User)(nil), nil
 			}
 			return nil, err
 		}
@@ -367,7 +367,7 @@ func (r *ShippingAddressRepo) GetShippingAddress(ctx context.Context, id int64, 
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, nil
+				return (*biz.User)(nil), nil
 			}
 			return nil, err
 		}
