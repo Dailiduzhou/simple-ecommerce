@@ -6,16 +6,23 @@ RETURNING *;
 -- name: GetEvent :one
 SELECT * FROM events WHERE id = $1 AND deleted_at IS NULL;
 
--- name: ListActiveEvents :many
+-- name: ListEvents :many
 SELECT * FROM events
-WHERE status = 1 AND deleted_at IS NULL
+WHERE deleted_at IS NULL
 ORDER BY start_at ASC
 LIMIT $1 OFFSET $2;
+
+-- name: ListEventsByStatus :many
+SELECT * FROM events
+WHERE status = $1 AND deleted_at IS NULL
+ORDER BY start_at ASC
+LIMIT $2 OFFSET $3;
 
 -- name: ListUpcomingEvents :many
 SELECT * FROM events
 WHERE status = 0 AND start_at > CURRENT_TIMESTAMP AND deleted_at IS NULL
-ORDER BY start_at ASC;
+ORDER BY start_at ASC
+LIMIT $1 OFFSET $2;
 
 -- name: UpdateEvent :one
 UPDATE events
