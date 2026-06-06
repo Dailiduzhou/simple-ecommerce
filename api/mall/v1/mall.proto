@@ -4,7 +4,6 @@ package api.mall.v1;
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
-import "google/protobuf/struct.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1;v1";
 option java_multiple_files = true;
@@ -166,7 +165,7 @@ message CreateProductRequest {
   string discount     = 4;
   int32  stock        = 5;
   string cover_image  = 6;
-  google.protobuf.Struct media_assets = 7;
+  repeated MediaInfo media_assets = 7;
   string description  = 8;
 }
 
@@ -192,7 +191,7 @@ message UpdateProductRequest {
   string discount     = 5;
   int32  stock        = 6;
   string cover_image  = 7;
-  google.protobuf.Struct media_assets = 8;
+  repeated MediaInfo media_assets = 8;
   string description  = 9;
 }
 
@@ -214,7 +213,7 @@ message Event {
   string name        = 2;
   int32  status      = 5;
   string cover_image = 6;
-  google.protobuf.Struct media_assets = 7;
+  repeated MediaInfo media_assets = 7;
   string description = 8;
   google.protobuf.Timestamp start_at   = 9;
   google.protobuf.Timestamp end_at     = 10;
@@ -226,7 +225,7 @@ message CreateEventRequest {
 
   string name        = 1;
   string cover_image = 4;
-  google.protobuf.Struct media_assets = 5;
+  repeated MediaInfo media_assets = 5;
   string description = 6;
   google.protobuf.Timestamp start_at = 7;
   google.protobuf.Timestamp end_at   = 8;
@@ -251,7 +250,7 @@ message UpdateEventRequest {
   int64  id          = 1;
   string name        = 2;
   string cover_image = 5;
-  google.protobuf.Struct media_assets = 6;
+  repeated MediaInfo media_assets = 6;
   string description = 7;
   google.protobuf.Timestamp start_at = 8;
   google.protobuf.Timestamp end_at   = 9;

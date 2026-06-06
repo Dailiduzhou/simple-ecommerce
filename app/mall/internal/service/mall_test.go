@@ -11,7 +11,6 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -49,15 +48,15 @@ func (r *fakeCategoryRepo) UpdateCategory(ctx context.Context, id int64, name st
 }
 
 type fakeEventRepo struct {
-	createEvent       func(ctx context.Context, name string, status int16, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*biz.Event, error)
+	createEvent       func(ctx context.Context, name string, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error)
 	deleteEvent       func(ctx context.Context, id int64) error
 	getEvent          func(ctx context.Context, id int64) (*biz.Event, error)
 	listEvents        func(ctx context.Context, status int32, limit int32, offset int32) ([]biz.Event, error)
-	updateEvent       func(ctx context.Context, id int64, name string, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*biz.Event, error)
+	updateEvent       func(ctx context.Context, id int64, name string, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error)
 	updateEventStatus func(ctx context.Context, id int64, status int32) error
 }
 
-func (r *fakeEventRepo) CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
+func (r *fakeEventRepo) CreateEvent(ctx context.Context, name string, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
 	return r.createEvent(ctx, name, status, coverImage, mediaAssets, description, startAt, endAt)
 }
 
@@ -73,7 +72,7 @@ func (r *fakeEventRepo) ListEvents(ctx context.Context, status int32, limit int3
 	return r.listEvents(ctx, status, limit, offset)
 }
 
-func (r *fakeEventRepo) UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
+func (r *fakeEventRepo) UpdateEvent(ctx context.Context, id int64, name string, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
 	return r.updateEvent(ctx, id, name, coverImage, mediaAssets, description, startAt, endAt)
 }
 
@@ -183,17 +182,30 @@ func TestMallService_CreateEvent(t *testing.T) {
 	startAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
 	endAt := startAt.Add(2 * time.Hour)
 	createdAt := startAt.Add(-24 * time.Hour)
-	mediaAssets, err := structpb.NewStruct(map[string]any{
-		"banner":   "oss://events/banner.png",
-		"featured": true,
-	})
-	require.NoError(t, err)
+	mediaAssets := []*pb.MediaInfo{
+		{
+			OssUrl:      "oss://events/banner.png",
+			BucketName:  "bucket",
+			ObjectKey:   "events/banner.png",
+			ContentType: "image/png",
+			Size:        123,
+		},
+	}
+	wantMediaAssets := []biz.MediaInfo{
+		{
+			OssURL:      "oss://events/banner.png",
+			BucketName:  "bucket",
+			ObjectKey:   "events/banner.png",
+			ContentType: "image/png",
+			Size:        123,
+		},
+	}
 	s := newTestMallServiceWithEvent(&fakeEventRepo{
-		createEvent: func(ctx context.Context, name string, status int16, coverImage string, gotMediaAssets map[string]any, description string, gotStartAt time.Time, gotEndAt time.Time) (*biz.Event, error) {
+		createEvent: func(ctx context.Context, name string, status int16, coverImage []biz.MediaInfo, gotMediaAssets []biz.MediaInfo, description string, gotStartAt time.Time, gotEndAt time.Time) (*biz.Event, error) {
 			assert.Equal(t, "launch", name)
 			assert.Equal(t, int16(0), status)
-			assert.Equal(t, "https://cdn.test/cover.png", coverImage)
-			assert.Equal(t, mediaAssets.AsMap(), gotMediaAssets)
+			assert.Equal(t, []biz.MediaInfo{{OssURL: "https://cdn.test/cover.png"}}, coverImage)
+			assert.Equal(t, wantMediaAssets, gotMediaAssets)
 			assert.Equal(t, "new launch", description)
 			assert.Equal(t, startAt, gotStartAt)
 			assert.Equal(t, endAt, gotEndAt)
@@ -224,7 +236,12 @@ func TestMallService_CreateEvent(t *testing.T) {
 	assert.Equal(t, "launch", got.Name)
 	assert.Equal(t, int32(0), got.Status)
 	assert.Equal(t, "https://cdn.test/cover.png", got.CoverImage)
-	assert.Equal(t, mediaAssets.AsMap(), got.MediaAssets.AsMap())
+	require.Len(t, got.MediaAssets, 1)
+	assert.Equal(t, "oss://events/banner.png", got.MediaAssets[0].OssUrl)
+	assert.Equal(t, "bucket", got.MediaAssets[0].BucketName)
+	assert.Equal(t, "events/banner.png", got.MediaAssets[0].ObjectKey)
+	assert.Equal(t, "image/png", got.MediaAssets[0].ContentType)
+	assert.Equal(t, int64(123), got.MediaAssets[0].Size)
 	assert.Equal(t, startAt, got.StartAt.AsTime())
 	assert.Equal(t, endAt, got.EndAt.AsTime())
 	assert.Equal(t, createdAt, got.CreatedAt.AsTime())
@@ -256,8 +273,8 @@ func TestMallService_ListEvents_DefaultPagination(t *testing.T) {
 					ID:          31,
 					Name:        "active event",
 					Status:      1,
-					CoverImage:  "https://cdn.test/active.png",
-					MediaAssets: map[string]any{"banner": "oss://events/active.png"},
+					CoverImage:  []biz.MediaInfo{{OssURL: "https://cdn.test/active.png"}},
+					MediaAssets: []biz.MediaInfo{{OssURL: "oss://events/active.png", BucketName: "bucket"}},
 					Description: "active",
 					StartAt:     startAt,
 					EndAt:       startAt.Add(time.Hour),
@@ -271,13 +288,16 @@ func TestMallService_ListEvents_DefaultPagination(t *testing.T) {
 	require.Len(t, got.Events, 1)
 	assert.Equal(t, int64(31), got.Events[0].Id)
 	assert.Equal(t, "active event", got.Events[0].Name)
-	assert.Equal(t, "oss://events/active.png", got.Events[0].MediaAssets.AsMap()["banner"])
+	assert.Equal(t, "https://cdn.test/active.png", got.Events[0].CoverImage)
+	require.Len(t, got.Events[0].MediaAssets, 1)
+	assert.Equal(t, "oss://events/active.png", got.Events[0].MediaAssets[0].OssUrl)
+	assert.Equal(t, "bucket", got.Events[0].MediaAssets[0].BucketName)
 	assert.Equal(t, startAt, got.Events[0].StartAt.AsTime())
 }
 
 func TestMallService_UpdateEvent_NotFound(t *testing.T) {
 	s := newTestMallServiceWithEvent(&fakeEventRepo{
-		updateEvent: func(ctx context.Context, id int64, name string, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
+		updateEvent: func(ctx context.Context, id int64, name string, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
 			assert.Equal(t, int64(99), id)
 			return nil, nil
 		},
