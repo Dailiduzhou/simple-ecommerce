@@ -20,6 +20,8 @@ var _ = binding.EncodeURL
 const _ = http.SupportPackageIsVersion1
 
 const OperationPaymentCreatePayment = "/api.payment.v1.Payment/CreatePayment"
+const OperationPaymentCreateWechatPayCheckJob = "/api.payment.v1.Payment/CreateWechatPayCheckJob"
+const OperationPaymentGetMQJob = "/api.payment.v1.Payment/GetMQJob"
 const OperationPaymentGetPayment = "/api.payment.v1.Payment/GetPayment"
 const OperationPaymentGetPaymentByOrder = "/api.payment.v1.Payment/GetPaymentByOrder"
 const OperationPaymentNotifyPayment = "/api.payment.v1.Payment/NotifyPayment"
@@ -27,6 +29,8 @@ const OperationPaymentRefundPayment = "/api.payment.v1.Payment/RefundPayment"
 
 type PaymentHTTPServer interface {
 	CreatePayment(context.Context, *CreatePaymentRequest) (*PaymentInfo, error)
+	CreateWechatPayCheckJob(context.Context, *CreateWechatPayCheckJobRequest) (*MQJobInfo, error)
+	GetMQJob(context.Context, *GetMQJobRequest) (*MQJobInfo, error)
 	GetPayment(context.Context, *GetPaymentRequest) (*PaymentInfo, error)
 	GetPaymentByOrder(context.Context, *GetPaymentByOrderRequest) (*PaymentInfo, error)
 	// NotifyPayment 第三方支付回调
@@ -41,6 +45,8 @@ func RegisterPaymentHTTPServer(s *http.Server, srv PaymentHTTPServer) {
 	r.GET("/v1/orders/{order_id}/payment", _Payment_GetPaymentByOrder0_HTTP_Handler(srv))
 	r.POST("/v1/payments/notify", _Payment_NotifyPayment0_HTTP_Handler(srv))
 	r.POST("/v1/payments/{id}/refund", _Payment_RefundPayment0_HTTP_Handler(srv))
+	r.POST("/v1/pay/wechat/checks", _Payment_CreateWechatPayCheckJob0_HTTP_Handler(srv))
+	r.GET("/v1/payments/mq/jobs/{job_id}", _Payment_GetMQJob0_HTTP_Handler(srv))
 }
 
 func _Payment_CreatePayment0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
@@ -156,8 +162,54 @@ func _Payment_RefundPayment0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.C
 	}
 }
 
+func _Payment_CreateWechatPayCheckJob0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CreateWechatPayCheckJobRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationPaymentCreateWechatPayCheckJob)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.CreateWechatPayCheckJob(ctx, req.(*CreateWechatPayCheckJobRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*MQJobInfo)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _Payment_GetMQJob0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetMQJobRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationPaymentGetMQJob)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetMQJob(ctx, req.(*GetMQJobRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*MQJobInfo)
+		return ctx.Result(200, reply)
+	}
+}
+
 type PaymentHTTPClient interface {
 	CreatePayment(ctx context.Context, req *CreatePaymentRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
+	CreateWechatPayCheckJob(ctx context.Context, req *CreateWechatPayCheckJobRequest, opts ...http.CallOption) (rsp *MQJobInfo, err error)
+	GetMQJob(ctx context.Context, req *GetMQJobRequest, opts ...http.CallOption) (rsp *MQJobInfo, err error)
 	GetPayment(ctx context.Context, req *GetPaymentRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
 	GetPaymentByOrder(ctx context.Context, req *GetPaymentByOrderRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
 	// NotifyPayment 第三方支付回调
@@ -180,6 +232,32 @@ func (c *PaymentHTTPClientImpl) CreatePayment(ctx context.Context, in *CreatePay
 	opts = append(opts, http.Operation(OperationPaymentCreatePayment))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *PaymentHTTPClientImpl) CreateWechatPayCheckJob(ctx context.Context, in *CreateWechatPayCheckJobRequest, opts ...http.CallOption) (*MQJobInfo, error) {
+	var out MQJobInfo
+	pattern := "/v1/pay/wechat/checks"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationPaymentCreateWechatPayCheckJob))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *PaymentHTTPClientImpl) GetMQJob(ctx context.Context, in *GetMQJobRequest, opts ...http.CallOption) (*MQJobInfo, error) {
+	var out MQJobInfo
+	pattern := "/v1/payments/mq/jobs/{job_id}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationPaymentGetMQJob))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}

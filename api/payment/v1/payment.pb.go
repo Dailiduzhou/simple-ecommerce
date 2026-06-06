@@ -552,6 +552,342 @@ func (*RefundPaymentReply) Descriptor() ([]byte, []int) {
 	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{7}
 }
 
+type CreateWechatPayCheckJobRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	PaymentId           int64                  `protobuf:"varint,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	OrderId             int64                  `protobuf:"varint,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OutTradeNo          string                 `protobuf:"bytes,3,opt,name=out_trade_no,json=outTradeNo,proto3" json:"out_trade_no,omitempty"`
+	DelaySeconds        int32                  `protobuf:"varint,4,opt,name=delay_seconds,json=delaySeconds,proto3" json:"delay_seconds,omitempty"`
+	MaxPolls            int32                  `protobuf:"varint,5,opt,name=max_polls,json=maxPolls,proto3" json:"max_polls,omitempty"`
+	PollIntervalSeconds int32                  `protobuf:"varint,6,opt,name=poll_interval_seconds,json=pollIntervalSeconds,proto3" json:"poll_interval_seconds,omitempty"`
+	Source              string                 `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CreateWechatPayCheckJobRequest) Reset() {
+	*x = CreateWechatPayCheckJobRequest{}
+	mi := &file_api_payment_v1_payment_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWechatPayCheckJobRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWechatPayCheckJobRequest) ProtoMessage() {}
+
+func (x *CreateWechatPayCheckJobRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_payment_v1_payment_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWechatPayCheckJobRequest.ProtoReflect.Descriptor instead.
+func (*CreateWechatPayCheckJobRequest) Descriptor() ([]byte, []int) {
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CreateWechatPayCheckJobRequest) GetPaymentId() int64 {
+	if x != nil {
+		return x.PaymentId
+	}
+	return 0
+}
+
+func (x *CreateWechatPayCheckJobRequest) GetOrderId() int64 {
+	if x != nil {
+		return x.OrderId
+	}
+	return 0
+}
+
+func (x *CreateWechatPayCheckJobRequest) GetOutTradeNo() string {
+	if x != nil {
+		return x.OutTradeNo
+	}
+	return ""
+}
+
+func (x *CreateWechatPayCheckJobRequest) GetDelaySeconds() int32 {
+	if x != nil {
+		return x.DelaySeconds
+	}
+	return 0
+}
+
+func (x *CreateWechatPayCheckJobRequest) GetMaxPolls() int32 {
+	if x != nil {
+		return x.MaxPolls
+	}
+	return 0
+}
+
+func (x *CreateWechatPayCheckJobRequest) GetPollIntervalSeconds() int32 {
+	if x != nil {
+		return x.PollIntervalSeconds
+	}
+	return 0
+}
+
+func (x *CreateWechatPayCheckJobRequest) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+type GetMQJobRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         int64                  `protobuf:"varint,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMQJobRequest) Reset() {
+	*x = GetMQJobRequest{}
+	mi := &file_api_payment_v1_payment_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMQJobRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMQJobRequest) ProtoMessage() {}
+
+func (x *GetMQJobRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_payment_v1_payment_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMQJobRequest.ProtoReflect.Descriptor instead.
+func (*GetMQJobRequest) Descriptor() ([]byte, []int) {
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetMQJobRequest) GetJobId() int64 {
+	if x != nil {
+		return x.JobId
+	}
+	return 0
+}
+
+type MQJobInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         int64                  `protobuf:"varint,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Queue         string                 `protobuf:"bytes,3,opt,name=queue,proto3" json:"queue,omitempty"`
+	State         string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	Attempt       int32                  `protobuf:"varint,5,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	MaxAttempts   int32                  `protobuf:"varint,6,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
+	ArgsJson      string                 `protobuf:"bytes,7,opt,name=args_json,json=argsJson,proto3" json:"args_json,omitempty"`
+	Tags          []string               `protobuf:"bytes,8,rep,name=tags,proto3" json:"tags,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ScheduledAt   *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`
+	AttemptedAt   *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=attempted_at,json=attemptedAt,proto3" json:"attempted_at,omitempty"`
+	FinalizedAt   *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=finalized_at,json=finalizedAt,proto3" json:"finalized_at,omitempty"`
+	Errors        []*MQJobError          `protobuf:"bytes,13,rep,name=errors,proto3" json:"errors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MQJobInfo) Reset() {
+	*x = MQJobInfo{}
+	mi := &file_api_payment_v1_payment_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MQJobInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MQJobInfo) ProtoMessage() {}
+
+func (x *MQJobInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_api_payment_v1_payment_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MQJobInfo.ProtoReflect.Descriptor instead.
+func (*MQJobInfo) Descriptor() ([]byte, []int) {
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *MQJobInfo) GetJobId() int64 {
+	if x != nil {
+		return x.JobId
+	}
+	return 0
+}
+
+func (x *MQJobInfo) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *MQJobInfo) GetQueue() string {
+	if x != nil {
+		return x.Queue
+	}
+	return ""
+}
+
+func (x *MQJobInfo) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *MQJobInfo) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *MQJobInfo) GetMaxAttempts() int32 {
+	if x != nil {
+		return x.MaxAttempts
+	}
+	return 0
+}
+
+func (x *MQJobInfo) GetArgsJson() string {
+	if x != nil {
+		return x.ArgsJson
+	}
+	return ""
+}
+
+func (x *MQJobInfo) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *MQJobInfo) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *MQJobInfo) GetScheduledAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ScheduledAt
+	}
+	return nil
+}
+
+func (x *MQJobInfo) GetAttemptedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AttemptedAt
+	}
+	return nil
+}
+
+func (x *MQJobInfo) GetFinalizedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinalizedAt
+	}
+	return nil
+}
+
+func (x *MQJobInfo) GetErrors() []*MQJobError {
+	if x != nil {
+		return x.Errors
+	}
+	return nil
+}
+
+type MQJobError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Attempt       int32                  `protobuf:"varint,1,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	At            *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MQJobError) Reset() {
+	*x = MQJobError{}
+	mi := &file_api_payment_v1_payment_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MQJobError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MQJobError) ProtoMessage() {}
+
+func (x *MQJobError) ProtoReflect() protoreflect.Message {
+	mi := &file_api_payment_v1_payment_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MQJobError.ProtoReflect.Descriptor instead.
+func (*MQJobError) Descriptor() ([]byte, []int) {
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *MQJobError) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *MQJobError) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *MQJobError) GetAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
 // JSAPI 统一下单请求
 type PrepayJSAPIRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -565,7 +901,7 @@ type PrepayJSAPIRequest struct {
 
 func (x *PrepayJSAPIRequest) Reset() {
 	*x = PrepayJSAPIRequest{}
-	mi := &file_api_payment_v1_payment_proto_msgTypes[8]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -577,7 +913,7 @@ func (x *PrepayJSAPIRequest) String() string {
 func (*PrepayJSAPIRequest) ProtoMessage() {}
 
 func (x *PrepayJSAPIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_payment_v1_payment_proto_msgTypes[8]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -590,7 +926,7 @@ func (x *PrepayJSAPIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepayJSAPIRequest.ProtoReflect.Descriptor instead.
 func (*PrepayJSAPIRequest) Descriptor() ([]byte, []int) {
-	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{8}
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PrepayJSAPIRequest) GetOutTradeNo() string {
@@ -636,7 +972,7 @@ type PrepayJSAPIReply struct {
 
 func (x *PrepayJSAPIReply) Reset() {
 	*x = PrepayJSAPIReply{}
-	mi := &file_api_payment_v1_payment_proto_msgTypes[9]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +984,7 @@ func (x *PrepayJSAPIReply) String() string {
 func (*PrepayJSAPIReply) ProtoMessage() {}
 
 func (x *PrepayJSAPIReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_payment_v1_payment_proto_msgTypes[9]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +997,7 @@ func (x *PrepayJSAPIReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepayJSAPIReply.ProtoReflect.Descriptor instead.
 func (*PrepayJSAPIReply) Descriptor() ([]byte, []int) {
-	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{9}
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PrepayJSAPIReply) GetAppId() string {
@@ -716,7 +1052,7 @@ type QueryOrderRequest struct {
 
 func (x *QueryOrderRequest) Reset() {
 	*x = QueryOrderRequest{}
-	mi := &file_api_payment_v1_payment_proto_msgTypes[10]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +1064,7 @@ func (x *QueryOrderRequest) String() string {
 func (*QueryOrderRequest) ProtoMessage() {}
 
 func (x *QueryOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_payment_v1_payment_proto_msgTypes[10]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -741,7 +1077,7 @@ func (x *QueryOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryOrderRequest.ProtoReflect.Descriptor instead.
 func (*QueryOrderRequest) Descriptor() ([]byte, []int) {
-	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{10}
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *QueryOrderRequest) GetOutTradeNo() string {
@@ -764,7 +1100,7 @@ type QueryOrderReply struct {
 
 func (x *QueryOrderReply) Reset() {
 	*x = QueryOrderReply{}
-	mi := &file_api_payment_v1_payment_proto_msgTypes[11]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +1112,7 @@ func (x *QueryOrderReply) String() string {
 func (*QueryOrderReply) ProtoMessage() {}
 
 func (x *QueryOrderReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_payment_v1_payment_proto_msgTypes[11]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +1125,7 @@ func (x *QueryOrderReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryOrderReply.ProtoReflect.Descriptor instead.
 func (*QueryOrderReply) Descriptor() ([]byte, []int) {
-	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{11}
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *QueryOrderReply) GetOutTradeNo() string {
@@ -830,7 +1166,7 @@ type CloseOrderRequest struct {
 
 func (x *CloseOrderRequest) Reset() {
 	*x = CloseOrderRequest{}
-	mi := &file_api_payment_v1_payment_proto_msgTypes[12]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -842,7 +1178,7 @@ func (x *CloseOrderRequest) String() string {
 func (*CloseOrderRequest) ProtoMessage() {}
 
 func (x *CloseOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_payment_v1_payment_proto_msgTypes[12]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -855,7 +1191,7 @@ func (x *CloseOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseOrderRequest.ProtoReflect.Descriptor instead.
 func (*CloseOrderRequest) Descriptor() ([]byte, []int) {
-	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{12}
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CloseOrderRequest) GetOutTradeNo() string {
@@ -875,7 +1211,7 @@ type CloseOrderReply struct {
 
 func (x *CloseOrderReply) Reset() {
 	*x = CloseOrderReply{}
-	mi := &file_api_payment_v1_payment_proto_msgTypes[13]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -887,7 +1223,7 @@ func (x *CloseOrderReply) String() string {
 func (*CloseOrderReply) ProtoMessage() {}
 
 func (x *CloseOrderReply) ProtoReflect() protoreflect.Message {
-	mi := &file_api_payment_v1_payment_proto_msgTypes[13]
+	mi := &file_api_payment_v1_payment_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -900,7 +1236,7 @@ func (x *CloseOrderReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseOrderReply.ProtoReflect.Descriptor instead.
 func (*CloseOrderReply) Descriptor() ([]byte, []int) {
-	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{13}
+	return file_api_payment_v1_payment_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CloseOrderReply) GetSuccess() bool {
@@ -952,7 +1288,40 @@ const file_api_payment_v1_payment_proto_rawDesc = "" +
 	"\x06result\x18\x01 \x01(\tR\x06result\"&\n" +
 	"\x14RefundPaymentRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"\x14\n" +
-	"\x12RefundPaymentReply\"\x93\x01\n" +
+	"\x12RefundPaymentReply\"\x8a\x02\n" +
+	"\x1eCreateWechatPayCheckJobRequest\x12\x1d\n" +
+	"\n" +
+	"payment_id\x18\x01 \x01(\x03R\tpaymentId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\x03R\aorderId\x12 \n" +
+	"\fout_trade_no\x18\x03 \x01(\tR\n" +
+	"outTradeNo\x12#\n" +
+	"\rdelay_seconds\x18\x04 \x01(\x05R\fdelaySeconds\x12\x1b\n" +
+	"\tmax_polls\x18\x05 \x01(\x05R\bmaxPolls\x122\n" +
+	"\x15poll_interval_seconds\x18\x06 \x01(\x05R\x13pollIntervalSeconds\x12\x16\n" +
+	"\x06source\x18\a \x01(\tR\x06source\"(\n" +
+	"\x0fGetMQJobRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\x03R\x05jobId\"\xfc\x03\n" +
+	"\tMQJobInfo\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\x03R\x05jobId\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05queue\x18\x03 \x01(\tR\x05queue\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12\x18\n" +
+	"\aattempt\x18\x05 \x01(\x05R\aattempt\x12!\n" +
+	"\fmax_attempts\x18\x06 \x01(\x05R\vmaxAttempts\x12\x1b\n" +
+	"\targs_json\x18\a \x01(\tR\bargsJson\x12\x12\n" +
+	"\x04tags\x18\b \x03(\tR\x04tags\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12=\n" +
+	"\fscheduled_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\vscheduledAt\x12=\n" +
+	"\fattempted_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\vattemptedAt\x12=\n" +
+	"\ffinalized_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vfinalizedAt\x122\n" +
+	"\x06errors\x18\r \x03(\v2\x1a.api.payment.v1.MQJobErrorR\x06errors\"h\n" +
+	"\n" +
+	"MQJobError\x12\x18\n" +
+	"\aattempt\x18\x01 \x01(\x05R\aattempt\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12*\n" +
+	"\x02at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\x93\x01\n" +
 	"\x12PrepayJSAPIRequest\x12 \n" +
 	"\fout_trade_no\x18\x01 \x01(\tR\n" +
 	"outTradeNo\x12 \n" +
@@ -995,14 +1364,16 @@ const file_api_payment_v1_payment_proto_rawDesc = "" +
 	"\aREVOKED\x10\x05\x12\x0e\n" +
 	"\n" +
 	"USERPAYING\x10\x06\x12\f\n" +
-	"\bPAYERROR\x10\a2\xde\x04\n" +
+	"\bPAYERROR\x10\a2\xd6\x06\n" +
 	"\aPayment\x12k\n" +
 	"\rCreatePayment\x12$.api.payment.v1.CreatePaymentRequest\x1a\x1b.api.payment.v1.PaymentInfo\"\x17\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/payments\x12g\n" +
 	"\n" +
 	"GetPayment\x12!.api.payment.v1.GetPaymentRequest\x1a\x1b.api.payment.v1.PaymentInfo\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/payments/{id}\x12\x81\x01\n" +
 	"\x11GetPaymentByOrder\x12(.api.payment.v1.GetPaymentByOrderRequest\x1a\x1b.api.payment.v1.PaymentInfo\"%\x82\xd3\xe4\x93\x02\x1f\x12\x1d/v1/orders/{order_id}/payment\x12y\n" +
 	"\rNotifyPayment\x12$.api.payment.v1.NotifyPaymentRequest\x1a\".api.payment.v1.NotifyPaymentReply\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/payments/notify\x12~\n" +
-	"\rRefundPayment\x12$.api.payment.v1.RefundPaymentRequest\x1a\".api.payment.v1.RefundPaymentReply\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/payments/{id}/refund2\x97\x03\n" +
+	"\rRefundPayment\x12$.api.payment.v1.RefundPaymentRequest\x1a\".api.payment.v1.RefundPaymentReply\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/payments/{id}/refund\x12\x86\x01\n" +
+	"\x17CreateWechatPayCheckJob\x12..api.payment.v1.CreateWechatPayCheckJobRequest\x1a\x19.api.payment.v1.MQJobInfo\" \x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/pay/wechat/checks\x12m\n" +
+	"\bGetMQJob\x12\x1f.api.payment.v1.GetMQJobRequest\x1a\x19.api.payment.v1.MQJobInfo\"%\x82\xd3\xe4\x93\x02\x1f\x12\x1d/v1/payments/mq/jobs/{job_id}2\x97\x03\n" +
 	"\x10WechatPayService\x12{\n" +
 	"\vPrepayJSAPI\x12\".api.payment.v1.PrepayJSAPIRequest\x1a .api.payment.v1.PrepayJSAPIReply\"&\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/pay/wechat/prepay/jsapi\x12}\n" +
 	"\n" +
@@ -1024,50 +1395,64 @@ func file_api_payment_v1_payment_proto_rawDescGZIP() []byte {
 }
 
 var file_api_payment_v1_payment_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_api_payment_v1_payment_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_api_payment_v1_payment_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_api_payment_v1_payment_proto_goTypes = []any{
-	(TradeState)(0),                  // 0: api.payment.v1.TradeState
-	(*PaymentInfo)(nil),              // 1: api.payment.v1.PaymentInfo
-	(*CreatePaymentRequest)(nil),     // 2: api.payment.v1.CreatePaymentRequest
-	(*GetPaymentRequest)(nil),        // 3: api.payment.v1.GetPaymentRequest
-	(*GetPaymentByOrderRequest)(nil), // 4: api.payment.v1.GetPaymentByOrderRequest
-	(*NotifyPaymentRequest)(nil),     // 5: api.payment.v1.NotifyPaymentRequest
-	(*NotifyPaymentReply)(nil),       // 6: api.payment.v1.NotifyPaymentReply
-	(*RefundPaymentRequest)(nil),     // 7: api.payment.v1.RefundPaymentRequest
-	(*RefundPaymentReply)(nil),       // 8: api.payment.v1.RefundPaymentReply
-	(*PrepayJSAPIRequest)(nil),       // 9: api.payment.v1.PrepayJSAPIRequest
-	(*PrepayJSAPIReply)(nil),         // 10: api.payment.v1.PrepayJSAPIReply
-	(*QueryOrderRequest)(nil),        // 11: api.payment.v1.QueryOrderRequest
-	(*QueryOrderReply)(nil),          // 12: api.payment.v1.QueryOrderReply
-	(*CloseOrderRequest)(nil),        // 13: api.payment.v1.CloseOrderRequest
-	(*CloseOrderReply)(nil),          // 14: api.payment.v1.CloseOrderReply
-	(*timestamppb.Timestamp)(nil),    // 15: google.protobuf.Timestamp
+	(TradeState)(0),                        // 0: api.payment.v1.TradeState
+	(*PaymentInfo)(nil),                    // 1: api.payment.v1.PaymentInfo
+	(*CreatePaymentRequest)(nil),           // 2: api.payment.v1.CreatePaymentRequest
+	(*GetPaymentRequest)(nil),              // 3: api.payment.v1.GetPaymentRequest
+	(*GetPaymentByOrderRequest)(nil),       // 4: api.payment.v1.GetPaymentByOrderRequest
+	(*NotifyPaymentRequest)(nil),           // 5: api.payment.v1.NotifyPaymentRequest
+	(*NotifyPaymentReply)(nil),             // 6: api.payment.v1.NotifyPaymentReply
+	(*RefundPaymentRequest)(nil),           // 7: api.payment.v1.RefundPaymentRequest
+	(*RefundPaymentReply)(nil),             // 8: api.payment.v1.RefundPaymentReply
+	(*CreateWechatPayCheckJobRequest)(nil), // 9: api.payment.v1.CreateWechatPayCheckJobRequest
+	(*GetMQJobRequest)(nil),                // 10: api.payment.v1.GetMQJobRequest
+	(*MQJobInfo)(nil),                      // 11: api.payment.v1.MQJobInfo
+	(*MQJobError)(nil),                     // 12: api.payment.v1.MQJobError
+	(*PrepayJSAPIRequest)(nil),             // 13: api.payment.v1.PrepayJSAPIRequest
+	(*PrepayJSAPIReply)(nil),               // 14: api.payment.v1.PrepayJSAPIReply
+	(*QueryOrderRequest)(nil),              // 15: api.payment.v1.QueryOrderRequest
+	(*QueryOrderReply)(nil),                // 16: api.payment.v1.QueryOrderReply
+	(*CloseOrderRequest)(nil),              // 17: api.payment.v1.CloseOrderRequest
+	(*CloseOrderReply)(nil),                // 18: api.payment.v1.CloseOrderReply
+	(*timestamppb.Timestamp)(nil),          // 19: google.protobuf.Timestamp
 }
 var file_api_payment_v1_payment_proto_depIdxs = []int32{
-	15, // 0: api.payment.v1.PaymentInfo.paid_at:type_name -> google.protobuf.Timestamp
-	15, // 1: api.payment.v1.PaymentInfo.created_at:type_name -> google.protobuf.Timestamp
-	0,  // 2: api.payment.v1.QueryOrderReply.trade_state:type_name -> api.payment.v1.TradeState
-	2,  // 3: api.payment.v1.Payment.CreatePayment:input_type -> api.payment.v1.CreatePaymentRequest
-	3,  // 4: api.payment.v1.Payment.GetPayment:input_type -> api.payment.v1.GetPaymentRequest
-	4,  // 5: api.payment.v1.Payment.GetPaymentByOrder:input_type -> api.payment.v1.GetPaymentByOrderRequest
-	5,  // 6: api.payment.v1.Payment.NotifyPayment:input_type -> api.payment.v1.NotifyPaymentRequest
-	7,  // 7: api.payment.v1.Payment.RefundPayment:input_type -> api.payment.v1.RefundPaymentRequest
-	9,  // 8: api.payment.v1.WechatPayService.PrepayJSAPI:input_type -> api.payment.v1.PrepayJSAPIRequest
-	11, // 9: api.payment.v1.WechatPayService.QueryOrder:input_type -> api.payment.v1.QueryOrderRequest
-	13, // 10: api.payment.v1.WechatPayService.CloseOrder:input_type -> api.payment.v1.CloseOrderRequest
-	1,  // 11: api.payment.v1.Payment.CreatePayment:output_type -> api.payment.v1.PaymentInfo
-	1,  // 12: api.payment.v1.Payment.GetPayment:output_type -> api.payment.v1.PaymentInfo
-	1,  // 13: api.payment.v1.Payment.GetPaymentByOrder:output_type -> api.payment.v1.PaymentInfo
-	6,  // 14: api.payment.v1.Payment.NotifyPayment:output_type -> api.payment.v1.NotifyPaymentReply
-	8,  // 15: api.payment.v1.Payment.RefundPayment:output_type -> api.payment.v1.RefundPaymentReply
-	10, // 16: api.payment.v1.WechatPayService.PrepayJSAPI:output_type -> api.payment.v1.PrepayJSAPIReply
-	12, // 17: api.payment.v1.WechatPayService.QueryOrder:output_type -> api.payment.v1.QueryOrderReply
-	14, // 18: api.payment.v1.WechatPayService.CloseOrder:output_type -> api.payment.v1.CloseOrderReply
-	11, // [11:19] is the sub-list for method output_type
-	3,  // [3:11] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	19, // 0: api.payment.v1.PaymentInfo.paid_at:type_name -> google.protobuf.Timestamp
+	19, // 1: api.payment.v1.PaymentInfo.created_at:type_name -> google.protobuf.Timestamp
+	19, // 2: api.payment.v1.MQJobInfo.created_at:type_name -> google.protobuf.Timestamp
+	19, // 3: api.payment.v1.MQJobInfo.scheduled_at:type_name -> google.protobuf.Timestamp
+	19, // 4: api.payment.v1.MQJobInfo.attempted_at:type_name -> google.protobuf.Timestamp
+	19, // 5: api.payment.v1.MQJobInfo.finalized_at:type_name -> google.protobuf.Timestamp
+	12, // 6: api.payment.v1.MQJobInfo.errors:type_name -> api.payment.v1.MQJobError
+	19, // 7: api.payment.v1.MQJobError.at:type_name -> google.protobuf.Timestamp
+	0,  // 8: api.payment.v1.QueryOrderReply.trade_state:type_name -> api.payment.v1.TradeState
+	2,  // 9: api.payment.v1.Payment.CreatePayment:input_type -> api.payment.v1.CreatePaymentRequest
+	3,  // 10: api.payment.v1.Payment.GetPayment:input_type -> api.payment.v1.GetPaymentRequest
+	4,  // 11: api.payment.v1.Payment.GetPaymentByOrder:input_type -> api.payment.v1.GetPaymentByOrderRequest
+	5,  // 12: api.payment.v1.Payment.NotifyPayment:input_type -> api.payment.v1.NotifyPaymentRequest
+	7,  // 13: api.payment.v1.Payment.RefundPayment:input_type -> api.payment.v1.RefundPaymentRequest
+	9,  // 14: api.payment.v1.Payment.CreateWechatPayCheckJob:input_type -> api.payment.v1.CreateWechatPayCheckJobRequest
+	10, // 15: api.payment.v1.Payment.GetMQJob:input_type -> api.payment.v1.GetMQJobRequest
+	13, // 16: api.payment.v1.WechatPayService.PrepayJSAPI:input_type -> api.payment.v1.PrepayJSAPIRequest
+	15, // 17: api.payment.v1.WechatPayService.QueryOrder:input_type -> api.payment.v1.QueryOrderRequest
+	17, // 18: api.payment.v1.WechatPayService.CloseOrder:input_type -> api.payment.v1.CloseOrderRequest
+	1,  // 19: api.payment.v1.Payment.CreatePayment:output_type -> api.payment.v1.PaymentInfo
+	1,  // 20: api.payment.v1.Payment.GetPayment:output_type -> api.payment.v1.PaymentInfo
+	1,  // 21: api.payment.v1.Payment.GetPaymentByOrder:output_type -> api.payment.v1.PaymentInfo
+	6,  // 22: api.payment.v1.Payment.NotifyPayment:output_type -> api.payment.v1.NotifyPaymentReply
+	8,  // 23: api.payment.v1.Payment.RefundPayment:output_type -> api.payment.v1.RefundPaymentReply
+	11, // 24: api.payment.v1.Payment.CreateWechatPayCheckJob:output_type -> api.payment.v1.MQJobInfo
+	11, // 25: api.payment.v1.Payment.GetMQJob:output_type -> api.payment.v1.MQJobInfo
+	14, // 26: api.payment.v1.WechatPayService.PrepayJSAPI:output_type -> api.payment.v1.PrepayJSAPIReply
+	16, // 27: api.payment.v1.WechatPayService.QueryOrder:output_type -> api.payment.v1.QueryOrderReply
+	18, // 28: api.payment.v1.WechatPayService.CloseOrder:output_type -> api.payment.v1.CloseOrderReply
+	19, // [19:29] is the sub-list for method output_type
+	9,  // [9:19] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_api_payment_v1_payment_proto_init() }
@@ -1081,7 +1466,7 @@ func file_api_payment_v1_payment_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_payment_v1_payment_proto_rawDesc), len(file_api_payment_v1_payment_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -19,11 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Payment_CreatePayment_FullMethodName     = "/api.payment.v1.Payment/CreatePayment"
-	Payment_GetPayment_FullMethodName        = "/api.payment.v1.Payment/GetPayment"
-	Payment_GetPaymentByOrder_FullMethodName = "/api.payment.v1.Payment/GetPaymentByOrder"
-	Payment_NotifyPayment_FullMethodName     = "/api.payment.v1.Payment/NotifyPayment"
-	Payment_RefundPayment_FullMethodName     = "/api.payment.v1.Payment/RefundPayment"
+	Payment_CreatePayment_FullMethodName           = "/api.payment.v1.Payment/CreatePayment"
+	Payment_GetPayment_FullMethodName              = "/api.payment.v1.Payment/GetPayment"
+	Payment_GetPaymentByOrder_FullMethodName       = "/api.payment.v1.Payment/GetPaymentByOrder"
+	Payment_NotifyPayment_FullMethodName           = "/api.payment.v1.Payment/NotifyPayment"
+	Payment_RefundPayment_FullMethodName           = "/api.payment.v1.Payment/RefundPayment"
+	Payment_CreateWechatPayCheckJob_FullMethodName = "/api.payment.v1.Payment/CreateWechatPayCheckJob"
+	Payment_GetMQJob_FullMethodName                = "/api.payment.v1.Payment/GetMQJob"
 )
 
 // PaymentClient is the client API for Payment service.
@@ -36,6 +38,8 @@ type PaymentClient interface {
 	// 第三方支付回调
 	NotifyPayment(ctx context.Context, in *NotifyPaymentRequest, opts ...grpc.CallOption) (*NotifyPaymentReply, error)
 	RefundPayment(ctx context.Context, in *RefundPaymentRequest, opts ...grpc.CallOption) (*RefundPaymentReply, error)
+	CreateWechatPayCheckJob(ctx context.Context, in *CreateWechatPayCheckJobRequest, opts ...grpc.CallOption) (*MQJobInfo, error)
+	GetMQJob(ctx context.Context, in *GetMQJobRequest, opts ...grpc.CallOption) (*MQJobInfo, error)
 }
 
 type paymentClient struct {
@@ -96,6 +100,26 @@ func (c *paymentClient) RefundPayment(ctx context.Context, in *RefundPaymentRequ
 	return out, nil
 }
 
+func (c *paymentClient) CreateWechatPayCheckJob(ctx context.Context, in *CreateWechatPayCheckJobRequest, opts ...grpc.CallOption) (*MQJobInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MQJobInfo)
+	err := c.cc.Invoke(ctx, Payment_CreateWechatPayCheckJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentClient) GetMQJob(ctx context.Context, in *GetMQJobRequest, opts ...grpc.CallOption) (*MQJobInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MQJobInfo)
+	err := c.cc.Invoke(ctx, Payment_GetMQJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PaymentServer is the server API for Payment service.
 // All implementations must embed UnimplementedPaymentServer
 // for forward compatibility.
@@ -106,6 +130,8 @@ type PaymentServer interface {
 	// 第三方支付回调
 	NotifyPayment(context.Context, *NotifyPaymentRequest) (*NotifyPaymentReply, error)
 	RefundPayment(context.Context, *RefundPaymentRequest) (*RefundPaymentReply, error)
+	CreateWechatPayCheckJob(context.Context, *CreateWechatPayCheckJobRequest) (*MQJobInfo, error)
+	GetMQJob(context.Context, *GetMQJobRequest) (*MQJobInfo, error)
 	mustEmbedUnimplementedPaymentServer()
 }
 
@@ -130,6 +156,12 @@ func (UnimplementedPaymentServer) NotifyPayment(context.Context, *NotifyPaymentR
 }
 func (UnimplementedPaymentServer) RefundPayment(context.Context, *RefundPaymentRequest) (*RefundPaymentReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method RefundPayment not implemented")
+}
+func (UnimplementedPaymentServer) CreateWechatPayCheckJob(context.Context, *CreateWechatPayCheckJobRequest) (*MQJobInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateWechatPayCheckJob not implemented")
+}
+func (UnimplementedPaymentServer) GetMQJob(context.Context, *GetMQJobRequest) (*MQJobInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMQJob not implemented")
 }
 func (UnimplementedPaymentServer) mustEmbedUnimplementedPaymentServer() {}
 func (UnimplementedPaymentServer) testEmbeddedByValue()                 {}
@@ -242,6 +274,42 @@ func _Payment_RefundPayment_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Payment_CreateWechatPayCheckJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWechatPayCheckJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServer).CreateWechatPayCheckJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Payment_CreateWechatPayCheckJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServer).CreateWechatPayCheckJob(ctx, req.(*CreateWechatPayCheckJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Payment_GetMQJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMQJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServer).GetMQJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Payment_GetMQJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServer).GetMQJob(ctx, req.(*GetMQJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Payment_ServiceDesc is the grpc.ServiceDesc for Payment service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -268,6 +336,14 @@ var Payment_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RefundPayment",
 			Handler:    _Payment_RefundPayment_Handler,
+		},
+		{
+			MethodName: "CreateWechatPayCheckJob",
+			Handler:    _Payment_CreateWechatPayCheckJob_Handler,
+		},
+		{
+			MethodName: "GetMQJob",
+			Handler:    _Payment_GetMQJob_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

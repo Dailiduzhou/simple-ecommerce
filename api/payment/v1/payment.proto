@@ -39,6 +39,17 @@ service Payment {
       body: "*"
     };
   }
+  rpc CreateWechatPayCheckJob (CreateWechatPayCheckJobRequest) returns (MQJobInfo) {
+    option (google.api.http) = {
+      post: "/v1/pay/wechat/checks"
+      body: "*"
+    };
+  }
+  rpc GetMQJob (GetMQJobRequest) returns (MQJobInfo) {
+    option (google.api.http) = {
+      get: "/v1/payments/mq/jobs/{job_id}"
+    };
+  }
 }
 
 // 微信支付服务
@@ -109,6 +120,42 @@ message RefundPaymentRequest {
   int64 id = 1;
 }
 message RefundPaymentReply {}
+
+message CreateWechatPayCheckJobRequest {
+  int64  payment_id            = 1;
+  int64  order_id              = 2;
+  string out_trade_no          = 3;
+  int32  delay_seconds         = 4;
+  int32  max_polls             = 5;
+  int32  poll_interval_seconds = 6;
+  string source                = 7;
+}
+
+message GetMQJobRequest {
+  int64 job_id = 1;
+}
+
+message MQJobInfo {
+  int64  job_id       = 1;
+  string kind         = 2;
+  string queue        = 3;
+  string state        = 4;
+  int32  attempt      = 5;
+  int32  max_attempts = 6;
+  string args_json    = 7;
+  repeated string tags = 8;
+  google.protobuf.Timestamp created_at   = 9;
+  google.protobuf.Timestamp scheduled_at = 10;
+  google.protobuf.Timestamp attempted_at = 11;
+  google.protobuf.Timestamp finalized_at = 12;
+  repeated MQJobError errors = 13;
+}
+
+message MQJobError {
+  int32 attempt = 1;
+  string error  = 2;
+  google.protobuf.Timestamp at = 3;
+}
 
 // 微信支付交易状态枚举
 enum TradeState {

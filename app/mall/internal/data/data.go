@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/go-kratos/kratos/v2/log"
@@ -25,7 +26,7 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewWechatPayProvider,
+	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewWechatPayProvider, NewPaymentMQRepo, NewPaymentSyncRepo,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
@@ -33,6 +34,8 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.CategoryRepo), new(*CategoryRepo)),
 	wire.Bind(new(biz.WechatPayProvider), new(*WechatPayDataProvider)),
 	wire.Bind(new(biz.EventRepo), new(*EventRepo)),
+	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
+	wire.Bind(new(biz.PaymentSyncRepo), new(*PaymentSyncRepo)),
 )
 
 // Data .
@@ -46,10 +49,7 @@ type Data struct {
 
 // NewData .
 func NewData(c *conf.Data, pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx], rdb *redis.Client) (*Data, func(), error) {
-	ctx := context.Background()
-
 	cleanup := func() {
-		riverClient.Stop(ctx)
 		rdb.Close()
 		pool.Close()
 
@@ -92,8 +92,23 @@ func NewPgxPool(c *conf.Data) (*pgxpool.Pool, func(), error) {
 	return pool, cleanup, nil
 }
 
-func NewRiverClient(pool *pgxpool.Pool) (*river.Client[pgx.Tx], error) {
-	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers) (*river.Client[pgx.Tx], error) {
+	driver := riverpgxv5.New(pool)
+	migrator, err := rivermigrate.New(driver, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create river migrator: %w", err)
+	}
+	if _, err := migrator.Migrate(context.Background(), rivermigrate.DirectionUp, nil); err != nil {
+		return nil, fmt.Errorf("run river migrations: %w", err)
+	}
+
+	client, err := river.NewClient(driver, &river.Config{
+		Queues: map[string]river.QueueConfig{
+			river.QueueDefault: {MaxWorkers: 10},
+			"payments":         {MaxWorkers: 10},
+		},
+		Workers: workers,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create river client: %w", err)
 	}
