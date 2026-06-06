@@ -29,8 +29,8 @@ func testDBEvent(id int64) db.Event {
 		Status:      1,
 		StartAt:     pgtype.Timestamptz{Time: startAt, Valid: true},
 		EndAt:       pgtype.Timestamptz{Time: endAt, Valid: true},
-		CoverImage:  "https://cdn.test/cover.png",
-		MediaAssets: []byte(`{"banner":"oss://events/banner.png","featured":true}`),
+		CoverImage:  []byte(`[{"OssURL":"https://cdn.test/cover.png"}]`),
+		MediaAssets: []byte(`[{"OssURL":"oss://events/banner.png","BucketName":"bucket","ObjectKey":"events/banner.png","ContentType":"image/png","Size":123}]`),
 		Description: pgtype.Text{String: "new launch", Valid: true},
 		CreatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
 		UpdatedAt:   pgtype.Timestamptz{Time: now, Valid: true},
@@ -55,7 +55,11 @@ func TestEventRepo_GetEvent_CacheHit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), e1.ID)
 	assert.Equal(t, "launch", e1.Name)
-	assert.Equal(t, "oss://events/banner.png", e1.MediaAssets["banner"])
+	require.Len(t, e1.CoverImage, 1)
+	assert.Equal(t, "https://cdn.test/cover.png", e1.CoverImage[0].OssURL)
+	require.Len(t, e1.MediaAssets, 1)
+	assert.Equal(t, "oss://events/banner.png", e1.MediaAssets[0].OssURL)
+	assert.Equal(t, "bucket", e1.MediaAssets[0].BucketName)
 
 	e2, err := repo.GetEvent(context.Background(), 1)
 	require.NoError(t, err)
@@ -181,13 +185,15 @@ func TestEventRepo_CreateEvent_CachesDetailAndInvalidatesListCache(t *testing.T)
 
 	startAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
 	endAt := startAt.Add(2 * time.Hour)
-	mediaAssets := map[string]any{"banner": "oss://events/banner.png"}
+	coverImage := []biz.MediaInfo{{OssURL: "https://cdn.test/created.png"}}
+	mediaAssets := []biz.MediaInfo{{OssURL: "oss://events/banner.png", BucketName: "bucket"}}
 	mockEvent := testDBEvent(5)
 	mockEvent.Name = "created"
 	mockEvent.Status = 0
 	mockEvent.StartAt = pgtype.Timestamptz{Time: startAt, Valid: true}
 	mockEvent.EndAt = pgtype.Timestamptz{Time: endAt, Valid: true}
-	mockEvent.MediaAssets = []byte(`{"banner":"oss://events/banner.png"}`)
+	mockEvent.CoverImage = []byte(`[{"OssURL":"https://cdn.test/created.png"}]`)
+	mockEvent.MediaAssets = []byte(`[{"OssURL":"oss://events/banner.png","BucketName":"bucket"}]`)
 
 	mockQ.EXPECT().
 		CreateEvent(gomock.Any(), gomock.Any()).
@@ -199,15 +205,19 @@ func TestEventRepo_CreateEvent_CachesDetailAndInvalidatesListCache(t *testing.T)
 			assert.True(t, arg.StartAt.Valid)
 			assert.Equal(t, endAt, arg.EndAt.Time)
 			assert.True(t, arg.EndAt.Valid)
-			assert.Equal(t, "https://cdn.test/created.png", arg.CoverImage)
 			assert.Equal(t, pgtype.Text{String: "created event", Valid: true}, arg.Description)
-			var gotMediaAssets map[string]any
+
+			var gotCoverImage []biz.MediaInfo
+			require.NoError(t, json.Unmarshal(arg.CoverImage, &gotCoverImage))
+			assert.Equal(t, coverImage, gotCoverImage)
+
+			var gotMediaAssets []biz.MediaInfo
 			require.NoError(t, json.Unmarshal(arg.MediaAssets, &gotMediaAssets))
 			assert.Equal(t, mediaAssets, gotMediaAssets)
 			return mockEvent, nil
 		})
 
-	e, err := repo.CreateEvent(context.Background(), "created", 0, "https://cdn.test/created.png", mediaAssets, "created event", startAt, endAt)
+	e, err := repo.CreateEvent(context.Background(), "created", 0, coverImage, mediaAssets, "created event", startAt, endAt)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), e.ID)
 	assert.Equal(t, "created", e.Name)
@@ -232,11 +242,14 @@ func TestEventRepo_UpdateEvent_RefreshesDetailAndInvalidatesListCache(t *testing
 
 	startAt := time.Date(2026, 6, 3, 10, 0, 0, 0, time.UTC)
 	endAt := startAt.Add(2 * time.Hour)
+	coverImage := []biz.MediaInfo{{OssURL: "https://cdn.test/updated.png"}}
+	mediaAssets := []biz.MediaInfo{{OssURL: "oss://events/updated.png", BucketName: "bucket"}}
 	mockEvent := testDBEvent(6)
 	mockEvent.Name = "updated"
 	mockEvent.StartAt = pgtype.Timestamptz{Time: startAt, Valid: true}
 	mockEvent.EndAt = pgtype.Timestamptz{Time: endAt, Valid: true}
-	mockEvent.MediaAssets = []byte(`{"banner":"oss://events/updated.png"}`)
+	mockEvent.CoverImage = []byte(`[{"OssURL":"https://cdn.test/updated.png"}]`)
+	mockEvent.MediaAssets = []byte(`[{"OssURL":"oss://events/updated.png","BucketName":"bucket"}]`)
 
 	mockQ.EXPECT().
 		UpdateEvent(gomock.Any(), gomock.Any()).
@@ -246,10 +259,16 @@ func TestEventRepo_UpdateEvent_RefreshesDetailAndInvalidatesListCache(t *testing
 			assert.Equal(t, "updated", arg.Name)
 			assert.Equal(t, startAt, arg.StartAt.Time)
 			assert.Equal(t, endAt, arg.EndAt.Time)
+			var gotCoverImage []biz.MediaInfo
+			require.NoError(t, json.Unmarshal(arg.CoverImage, &gotCoverImage))
+			assert.Equal(t, coverImage, gotCoverImage)
+			var gotMediaAssets []biz.MediaInfo
+			require.NoError(t, json.Unmarshal(arg.MediaAssets, &gotMediaAssets))
+			assert.Equal(t, mediaAssets, gotMediaAssets)
 			return mockEvent, nil
 		})
 
-	e, err := repo.UpdateEvent(context.Background(), 6, "updated", "https://cdn.test/updated.png", map[string]any{"banner": "oss://events/updated.png"}, "updated event", startAt, endAt)
+	e, err := repo.UpdateEvent(context.Background(), 6, "updated", coverImage, mediaAssets, "updated event", startAt, endAt)
 	require.NoError(t, err)
 	assert.Equal(t, "updated", e.Name)
 
@@ -272,7 +291,7 @@ func TestEventRepo_UpdateEvent_NotFound(t *testing.T) {
 	d := newTestData(t, mockQ, mr)
 	repo := NewEventRepo(d, log.DefaultLogger)
 
-	e, err := repo.UpdateEvent(context.Background(), 404, "missing", "", nil, "", time.Time{}, time.Time{})
+	e, err := repo.UpdateEvent(context.Background(), 404, "missing", nil, nil, "", time.Time{}, time.Time{})
 	require.NoError(t, err)
 	assert.Nil(t, e)
 }

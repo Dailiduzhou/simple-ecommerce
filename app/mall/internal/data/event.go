@@ -28,8 +28,12 @@ func NewEventRepo(data *Data, logger log.Logger) *EventRepo {
 	return &EventRepo{data: data, log: log.NewHelper(logger)}
 }
 
-func (r *EventRepo) CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
-	mediaAssetsJSON, err := marshalEventMediaAssets(mediaAssets)
+func (r *EventRepo) CreateEvent(ctx context.Context, name string, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
+	coverImageJSON, err := json.Marshal(coverImage)
+	if err != nil {
+		return nil, err
+	}
+	mediaAssetsJSON, err := json.Marshal(mediaAssets)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +43,7 @@ func (r *EventRepo) CreateEvent(ctx context.Context, name string, status int16, 
 		Status:      status,
 		StartAt:     toPgTimestamp(startAt),
 		EndAt:       toPgTimestamp(endAt),
-		CoverImage:  coverImage,
+		CoverImage:  coverImageJSON,
 		MediaAssets: mediaAssetsJSON,
 		Description: pgtype.Text{String: description, Valid: description != ""},
 	})
@@ -141,8 +145,12 @@ func (r *EventRepo) ListEvents(ctx context.Context, status int32, limit int32, o
 	return val.([]biz.Event), nil
 }
 
-func (r *EventRepo) UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
-	mediaAssetsJSON, err := marshalEventMediaAssets(mediaAssets)
+func (r *EventRepo) UpdateEvent(ctx context.Context, id int64, name string, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
+	coverImageJSON, err := json.Marshal(coverImage)
+	if err != nil {
+		return nil, err
+	}
+	mediaAssetsJSON, err := json.Marshal(mediaAssets)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +160,7 @@ func (r *EventRepo) UpdateEvent(ctx context.Context, id int64, name string, cove
 		Name:        name,
 		StartAt:     toPgTimestamp(startAt),
 		EndAt:       toPgTimestamp(endAt),
-		CoverImage:  coverImage,
+		CoverImage:  coverImageJSON,
 		MediaAssets: mediaAssetsJSON,
 		Description: pgtype.Text{String: description, Valid: description != ""},
 	})
@@ -260,31 +268,13 @@ func toPgTimestamp(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: !t.IsZero()}
 }
 
-func marshalEventMediaAssets(mediaAssets map[string]any) ([]byte, error) {
-	if mediaAssets == nil {
-		return []byte("{}"), nil
-	}
-	return json.Marshal(mediaAssets)
-}
-
-func parseEventMediaAssets(data []byte) map[string]any {
-	if len(data) == 0 {
-		return nil
-	}
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil
-	}
-	return result
-}
-
 func toBizEvent(e db.Event) biz.Event {
 	return biz.Event{
 		ID:          e.ID,
 		Name:        e.Name,
 		Status:      e.Status,
-		CoverImage:  e.CoverImage,
-		MediaAssets: parseEventMediaAssets(e.MediaAssets),
+		CoverImage:  parseMediaInfoJSON(e.CoverImage),
+		MediaAssets: parseMediaInfoJSON(e.MediaAssets),
 		Description: e.Description.String,
 		StartAt:     e.StartAt.Time,
 		EndAt:       e.EndAt.Time,

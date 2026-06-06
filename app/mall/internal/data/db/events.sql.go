@@ -22,7 +22,7 @@ type CreateEventParams struct {
 	Status      int16
 	StartAt     pgtype.Timestamptz
 	EndAt       pgtype.Timestamptz
-	CoverImage  string
+	CoverImage  []byte
 	MediaAssets []byte
 	Description pgtype.Text
 }
@@ -232,7 +232,7 @@ type UpdateEventParams struct {
 	Name        string
 	StartAt     pgtype.Timestamptz
 	EndAt       pgtype.Timestamptz
-	CoverImage  string
+	CoverImage  []byte
 	MediaAssets []byte
 	Description pgtype.Text
 }

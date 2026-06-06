@@ -45,15 +45,15 @@ func (r *fakeCategoryRepo) UpdateCategory(ctx context.Context, id int64, name st
 }
 
 type fakeEventRepo struct {
-	createEvent       func(ctx context.Context, name string, status int16, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*Event, error)
+	createEvent       func(ctx context.Context, name string, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
 	deleteEvent       func(ctx context.Context, id int64) error
 	getEvent          func(ctx context.Context, id int64) (*Event, error)
 	listEvents        func(ctx context.Context, status int32, limit int32, offset int32) ([]Event, error)
-	updateEvent       func(ctx context.Context, id int64, name string, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*Event, error)
+	updateEvent       func(ctx context.Context, id int64, name string, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
 	updateEventStatus func(ctx context.Context, id int64, status int32) error
 }
 
-func (r *fakeEventRepo) CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+func (r *fakeEventRepo) CreateEvent(ctx context.Context, name string, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
 	return r.createEvent(ctx, name, status, coverImage, mediaAssets, description, startAt, endAt)
 }
 
@@ -69,7 +69,7 @@ func (r *fakeEventRepo) ListEvents(ctx context.Context, status int32, limit int3
 	return r.listEvents(ctx, status, limit, offset)
 }
 
-func (r *fakeEventRepo) UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets map[string]any, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+func (r *fakeEventRepo) UpdateEvent(ctx context.Context, id int64, name string, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
 	return r.updateEvent(ctx, id, name, coverImage, mediaAssets, description, startAt, endAt)
 }
 
@@ -168,12 +168,12 @@ func TestCategoryUsecase_DeleteCategory_PropagatesError(t *testing.T) {
 func TestEventUsecase_CreateEvent(t *testing.T) {
 	startAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
 	endAt := startAt.Add(2 * time.Hour)
-	mediaAssets := map[string]any{"banner": "oss://events/banner.png"}
+	mediaAssets := []MediaInfo{{OssURL: "oss://events/banner.png", BucketName: "bucket"}}
 	repo := &fakeEventRepo{
-		createEvent: func(ctx context.Context, name string, status int16, coverImage string, gotMediaAssets map[string]any, description string, gotStartAt time.Time, gotEndAt time.Time) (*Event, error) {
+		createEvent: func(ctx context.Context, name string, status int16, coverImage []MediaInfo, gotMediaAssets []MediaInfo, description string, gotStartAt time.Time, gotEndAt time.Time) (*Event, error) {
 			assert.Equal(t, "launch", name)
 			assert.Equal(t, int16(0), status)
-			assert.Equal(t, "https://cdn.test/cover.png", coverImage)
+			assert.Equal(t, []MediaInfo{{OssURL: "https://cdn.test/cover.png"}}, coverImage)
 			assert.Equal(t, mediaAssets, gotMediaAssets)
 			assert.Equal(t, "new launch", description)
 			assert.Equal(t, startAt, gotStartAt)
@@ -208,12 +208,12 @@ func TestEventUsecase_ListEvents_ComputesOffset(t *testing.T) {
 func TestEventUsecase_UpdateEvent(t *testing.T) {
 	startAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
 	endAt := startAt.Add(2 * time.Hour)
-	mediaAssets := map[string]any{"banner": "oss://events/banner.png"}
+	mediaAssets := []MediaInfo{{OssURL: "oss://events/banner.png", BucketName: "bucket"}}
 	repo := &fakeEventRepo{
-		updateEvent: func(ctx context.Context, id int64, name string, coverImage string, gotMediaAssets map[string]any, description string, gotStartAt time.Time, gotEndAt time.Time) (*Event, error) {
+		updateEvent: func(ctx context.Context, id int64, name string, coverImage []MediaInfo, gotMediaAssets []MediaInfo, description string, gotStartAt time.Time, gotEndAt time.Time) (*Event, error) {
 			assert.Equal(t, int64(7), id)
 			assert.Equal(t, "launch", name)
-			assert.Equal(t, "https://cdn.test/cover.png", coverImage)
+			assert.Equal(t, []MediaInfo{{OssURL: "https://cdn.test/cover.png"}}, coverImage)
 			assert.Equal(t, mediaAssets, gotMediaAssets)
 			assert.Equal(t, "updated launch", description)
 			assert.Equal(t, startAt, gotStartAt)

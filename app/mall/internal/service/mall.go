@@ -2,13 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/go-kratos/kratos/v2/log"
-	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -25,7 +23,7 @@ func NewMallService(productUc *biz.ProductUsecase, categoryUc *biz.CategoryUseca
 }
 
 func (s *MallService) CreateProduct(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
-	mediaAssets := structToMediaInfo(req.MediaAssets)
+	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
 	p, err := s.productUc.CreateProduct(ctx, req.CategoryId, req.Name, req.Price, req.Discount, req.Stock, 1, req.CoverImage, mediaAssets, req.Description)
 	if err != nil {
@@ -72,7 +70,7 @@ func (s *MallService) ListProducts(ctx context.Context, req *pb.ListProductsRequ
 }
 
 func (s *MallService) UpdateProduct(ctx context.Context, req *pb.UpdateProductRequest) (*pb.Product, error) {
-	mediaAssets := structToMediaInfo(req.MediaAssets)
+	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
 	p, err := s.productUc.UpdateProduct(ctx, req.Id, req.CategoryId, req.Name, req.Price, req.Discount, req.Stock, req.CoverImage, mediaAssets, req.Description)
 	if err != nil {
@@ -141,12 +139,14 @@ func (s *MallService) DeleteCategory(ctx context.Context, req *pb.DeleteCategory
 }
 
 func (s *MallService) CreateEvent(ctx context.Context, req *pb.CreateEventRequest) (*pb.Event, error) {
+	mediaAssets := protoToMediaInfo(req.MediaAssets)
+
 	e, err := s.eventUc.CreateEvent(
 		ctx,
 		req.Name,
 		0,
 		req.CoverImage,
-		structToMap(req.MediaAssets),
+		mediaAssets,
 		req.Description,
 		timestampToTime(req.StartAt),
 		timestampToTime(req.EndAt),
@@ -192,12 +192,14 @@ func (s *MallService) ListEvents(ctx context.Context, req *pb.ListEventsRequest)
 }
 
 func (s *MallService) UpdateEvent(ctx context.Context, req *pb.UpdateEventRequest) (*pb.Event, error) {
+	mediaAssets := protoToMediaInfo(req.MediaAssets)
+
 	e, err := s.eventUc.UpdateEvent(
 		ctx,
 		req.Id,
 		req.Name,
 		req.CoverImage,
-		structToMap(req.MediaAssets),
+		mediaAssets,
 		req.Description,
 		timestampToTime(req.StartAt),
 		timestampToTime(req.EndAt),
@@ -258,8 +260,8 @@ func toProtoEvent(e *biz.Event) *pb.Event {
 		Id:          e.ID,
 		Name:        e.Name,
 		Status:      int32(e.Status),
-		CoverImage:  e.CoverImage,
-		MediaAssets: mapToStruct(e.MediaAssets),
+		CoverImage:  coverImageURL(e.CoverImage),
+		MediaAssets: mediaInfoToProto(e.MediaAssets),
 		Description: e.Description,
 	}
 	if !e.StartAt.IsZero() {
@@ -288,20 +290,22 @@ func mediaInfoToProto(infos []biz.MediaInfo) []*pb.MediaInfo {
 	return result
 }
 
-func structToMap(s *structpb.Struct) map[string]any {
-	if s == nil {
+func protoToMediaInfo(infos []*pb.MediaInfo) []biz.MediaInfo {
+	if len(infos) == 0 {
 		return nil
 	}
-	return s.AsMap()
-}
-
-func mapToStruct(values map[string]any) *structpb.Struct {
-	if len(values) == 0 {
-		return nil
-	}
-	result, err := structpb.NewStruct(values)
-	if err != nil {
-		return nil
+	result := make([]biz.MediaInfo, len(infos))
+	for i, info := range infos {
+		if info == nil {
+			continue
+		}
+		result[i] = biz.MediaInfo{
+			OssURL:      info.OssUrl,
+			BucketName:  info.BucketName,
+			ObjectKey:   info.ObjectKey,
+			ContentType: info.ContentType,
+			Size:        info.Size,
+		}
 	}
 	return result
 }
@@ -318,19 +322,4 @@ func coverImageURL(infos []biz.MediaInfo) string {
 		return ""
 	}
 	return infos[0].OssURL
-}
-
-func structToMediaInfo(s *structpb.Struct) []biz.MediaInfo {
-	if s == nil {
-		return nil
-	}
-	data, err := json.Marshal(s.AsMap())
-	if err != nil {
-		return nil
-	}
-	var result []biz.MediaInfo
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil
-	}
-	return result
 }
