@@ -2,11 +2,16 @@ package data
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 
+	dbmigrations "github.com/Dailiduzhou/simple-ecommerce/app/mall/db"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -73,6 +78,10 @@ func NewRedisClient(c *conf.Data) (*redis.Client, error) {
 }
 
 func NewPgxPool(c *conf.Data) (*pgxpool.Pool, func(), error) {
+	if err := RunMigrations(c); err != nil {
+		return nil, nil, err
+	}
+
 	pool, err := pgxpool.New(context.Background(), c.Database.Source)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create pgx pool: %w", err)
@@ -87,4 +96,40 @@ func NewRiverClient(pool *pgxpool.Pool) (*river.Client[pgx.Tx], error) {
 		return nil, fmt.Errorf("create river client: %w", err)
 	}
 	return client, nil
+}
+
+func RunMigrations(c *conf.Data) error {
+	if c == nil || c.Database == nil || c.Database.Source == "" {
+		return fmt.Errorf("database source is required for migrations")
+	}
+
+	sourceDriver, err := iofs.New(dbmigrations.FS, "migrations")
+	if err != nil {
+		return fmt.Errorf("create migration source: %w", err)
+	}
+
+	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, c.Database.Source)
+	if err != nil {
+		return fmt.Errorf("create migrator: %w", err)
+	}
+	defer func() {
+		sourceErr, databaseErr := m.Close()
+		if sourceErr != nil {
+			log.Errorf("close migration source: %v", sourceErr)
+		}
+		if databaseErr != nil {
+			log.Errorf("close migration database: %v", databaseErr)
+		}
+	}()
+
+	if err := m.Up(); err != nil {
+		if stderrors.Is(err, migrate.ErrNoChange) {
+			log.Info("database migrations are up to date")
+			return nil
+		}
+		return fmt.Errorf("run database migrations: %w", err)
+	}
+
+	log.Info("database migrations applied")
+	return nil
 }
