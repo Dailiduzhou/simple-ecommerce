@@ -13,9 +13,9 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 
 	"github.com/go-kratos/kratos/v2/log"
+	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 	"github.com/go-kratos/kratos/v2/middleware/recovery"
 	"github.com/go-kratos/kratos/v2/middleware/selector"
-	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 	"github.com/go-kratos/kratos/v2/transport/grpc"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
@@ -59,6 +59,7 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc *biz.AuthUsecase, mall 
 	userv1.RegisterUserServer(srv, user)
 	orderv1.RegisterOrderServer(srv, order)
 	paymentv1.RegisterPaymentServer(srv, payment)
+	paymentv1.RegisterWechatPayServiceServer(srv, payment)
 	return srv
 }
 

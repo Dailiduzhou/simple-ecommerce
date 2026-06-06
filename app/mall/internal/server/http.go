@@ -10,21 +10,21 @@ import (
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
-	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 	custommid "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server/middleware"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 
 	"github.com/go-kratos/kratos/v2/log"
+	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 	"github.com/go-kratos/kratos/v2/middleware/recovery"
 	"github.com/go-kratos/kratos/v2/middleware/selector"
-	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 	"github.com/go-kratos/kratos/v2/transport/http"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 )
 
 const (
-	OperationUserRegister   = userv1.OperationUserRegister
-	OperationUserLogin      = userv1.OperationUserLogin
+	OperationUserRegister     = userv1.OperationUserRegister
+	OperationUserLogin        = userv1.OperationUserLogin
 	OperationUserRefreshToken = userv1.OperationUserRefreshToken
 )
 
@@ -66,13 +66,15 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc *biz.AuthUsecase, mall 
 	userv1.RegisterUserHTTPServer(srv, user)
 	orderv1.RegisterOrderHTTPServer(srv, order)
 	paymentv1.RegisterPaymentHTTPServer(srv, payment)
+	paymentv1.RegisterWechatPayServiceHTTPServer(srv, payment)
+	srv.Route("/").POST("/v1/pay/wechat/notify", payment.HandleWechatPayNotify)
 	return srv
 }
 
 func newWhiteListMatcher() selector.MatchFunc {
 	whiteList := map[string]struct{}{
-		OperationUserRegister:   {},
-		OperationUserLogin:      {},
+		OperationUserRegister:     {},
+		OperationUserLogin:        {},
 		OperationUserRefreshToken: {},
 	}
 	return func(ctx context.Context, operation string) bool {
