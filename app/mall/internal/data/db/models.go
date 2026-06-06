@@ -24,7 +24,7 @@ type Event struct {
 	Status      int16
 	StartAt     pgtype.Timestamptz
 	EndAt       pgtype.Timestamptz
-	CoverImage  string
+	CoverImage  []byte
 	MediaAssets []byte
 	Description pgtype.Text
 	CreatedAt   pgtype.Timestamptz

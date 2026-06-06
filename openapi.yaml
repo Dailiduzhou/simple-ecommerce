@@ -462,15 +462,12 @@ components:
             properties:
                 name:
                     type: string
-                price:
-                    type: string
-                stock:
-                    type: integer
-                    format: int32
                 coverImage:
                     type: string
                 mediaAssets:
-                    type: object
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MediaInfo'
                 description:
                     type: string
                 startAt:
@@ -496,7 +493,9 @@ components:
                 coverImage:
                     type: string
                 mediaAssets:
-                    type: object
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MediaInfo'
                 description:
                     type: string
         DeleteCategoryReply:
@@ -515,18 +514,15 @@ components:
                     type: string
                 name:
                     type: string
-                price:
-                    type: string
-                stock:
-                    type: integer
-                    format: int32
                 status:
                     type: integer
                     format: int32
                 coverImage:
                     type: string
                 mediaAssets:
-                    type: object
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MediaInfo'
                 description:
                     type: string
                 startAt:
@@ -646,15 +642,12 @@ components:
                     type: string
                 name:
                     type: string
-                price:
-                    type: string
-                stock:
-                    type: integer
-                    format: int32
                 coverImage:
                     type: string
                 mediaAssets:
-                    type: object
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MediaInfo'
                 description:
                     type: string
                 startAt:
@@ -693,7 +686,9 @@ components:
                 coverImage:
                     type: string
                 mediaAssets:
-                    type: object
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MediaInfo'
                 description:
                     type: string
         UpdateProductStatusReply:
