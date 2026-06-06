@@ -208,10 +208,10 @@ message DeleteProductRequest {
 message DeleteProductReply {}
 
 message Event {
+  reserved 3, 4;
+
   int64  id          = 1;
   string name        = 2;
-  string price       = 3;
-  int32  stock       = 4;
   int32  status      = 5;
   string cover_image = 6;
   google.protobuf.Struct media_assets = 7;
@@ -222,9 +222,9 @@ message Event {
 }
 
 message CreateEventRequest {
+  reserved 2, 3;
+
   string name        = 1;
-  string price       = 2;
-  int32  stock       = 3;
   string cover_image = 4;
   google.protobuf.Struct media_assets = 5;
   string description = 6;
@@ -246,10 +246,10 @@ message ListEventsReply {
 }
 
 message UpdateEventRequest {
+  reserved 3, 4;
+
   int64  id          = 1;
   string name        = 2;
-  string price       = 3;
-  int32  stock       = 4;
   string cover_image = 5;
   google.protobuf.Struct media_assets = 6;
   string description = 7;
