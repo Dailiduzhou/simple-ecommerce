@@ -160,3 +160,62 @@ func (uc *CategoryUsecase) UpdateCategory(ctx context.Context, id int64, name st
 func (uc *CategoryUsecase) DeleteCategory(ctx context.Context, id int64) error {
 	return uc.repo.DeleteCategory(ctx, id)
 }
+
+type Event struct {
+	ID          int64
+	Name        string
+	Status      int16
+	CoverImage  []MediaInfo
+	MediaAssets []MediaInfo
+	Description string
+	StartAt     time.Time
+	EndAt       time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DeletedAt   *time.Time
+}
+
+type EventRepo interface {
+	CreateEvent(ctx context.Context, name string, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
+	DeleteEvent(ctx context.Context, id int64) error
+	GetEvent(ctx context.Context, id int64) (*Event, error)
+	ListEvents(ctx context.Context, status int32, limit int32, offset int32) ([]Event, error)
+	UpdateEvent(ctx context.Context, id int64, name string, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
+	UpdateEventStatus(ctx context.Context, id int64, status int32) error
+}
+
+type EventUsecase struct {
+	repo EventRepo
+	log  *log.Helper
+}
+
+func NewEventUsecase(repo EventRepo, logger log.Logger) *EventUsecase {
+	return &EventUsecase{repo: repo, log: log.NewHelper(logger)}
+}
+
+func (uc *EventUsecase) CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+	cover := mediaFromCoverURL(coverImage)
+	return uc.repo.CreateEvent(ctx, name, status, cover, mediaAssets, description, startAt, endAt)
+}
+
+func (uc *EventUsecase) GetEvent(ctx context.Context, id int64) (*Event, error) {
+	return uc.repo.GetEvent(ctx, id)
+}
+
+func (uc *EventUsecase) ListEvents(ctx context.Context, status int32, pageSize int32, page int32) ([]Event, error) {
+	offset := (page - 1) * pageSize
+	return uc.repo.ListEvents(ctx, status, pageSize, offset)
+}
+
+func (uc *EventUsecase) UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+	cover := mediaFromCoverURL(coverImage)
+	return uc.repo.UpdateEvent(ctx, id, name, cover, mediaAssets, description, startAt, endAt)
+}
+
+func (uc *EventUsecase) UpdateEventStatus(ctx context.Context, id int64, status int32) error {
+	return uc.repo.UpdateEventStatus(ctx, id, status)
+}
+
+func (uc *EventUsecase) DeleteEvent(ctx context.Context, id int64) error {
+	return uc.repo.DeleteEvent(ctx, id)
+}
