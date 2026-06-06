@@ -465,19 +465,34 @@ func (mr *MockQuerierMockRecorder) HasOngoingPayments(ctx, userID interface{}) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasOngoingPayments", reflect.TypeOf((*MockQuerier)(nil).HasOngoingPayments), ctx, userID)
 }
 
-// ListActiveEvents mocks base method.
-func (m *MockQuerier) ListActiveEvents(ctx context.Context, arg db.ListActiveEventsParams) ([]db.Event, error) {
+// ListEvents mocks base method.
+func (m *MockQuerier) ListEvents(ctx context.Context, arg db.ListEventsParams) ([]db.Event, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListActiveEvents", ctx, arg)
+	ret := m.ctrl.Call(m, "ListEvents", ctx, arg)
 	ret0, _ := ret[0].([]db.Event)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListActiveEvents indicates an expected call of ListActiveEvents.
-func (mr *MockQuerierMockRecorder) ListActiveEvents(ctx, arg interface{}) *gomock.Call {
+// ListEvents indicates an expected call of ListEvents.
+func (mr *MockQuerierMockRecorder) ListEvents(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListActiveEvents", reflect.TypeOf((*MockQuerier)(nil).ListActiveEvents), ctx, arg)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEvents", reflect.TypeOf((*MockQuerier)(nil).ListEvents), ctx, arg)
+}
+
+// ListEventsByStatus mocks base method.
+func (m *MockQuerier) ListEventsByStatus(ctx context.Context, arg db.ListEventsByStatusParams) ([]db.Event, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEventsByStatus", ctx, arg)
+	ret0, _ := ret[0].([]db.Event)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEventsByStatus indicates an expected call of ListEventsByStatus.
+func (mr *MockQuerierMockRecorder) ListEventsByStatus(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEventsByStatus", reflect.TypeOf((*MockQuerier)(nil).ListEventsByStatus), ctx, arg)
 }
 
 // ListOngoingOrdersByUser mocks base method.
@@ -616,18 +631,18 @@ func (mr *MockQuerierMockRecorder) ListTopCategories(ctx interface{}) *gomock.Ca
 }
 
 // ListUpcomingEvents mocks base method.
-func (m *MockQuerier) ListUpcomingEvents(ctx context.Context) ([]db.Event, error) {
+func (m *MockQuerier) ListUpcomingEvents(ctx context.Context, arg db.ListUpcomingEventsParams) ([]db.Event, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListUpcomingEvents", ctx)
+	ret := m.ctrl.Call(m, "ListUpcomingEvents", ctx, arg)
 	ret0, _ := ret[0].([]db.Event)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListUpcomingEvents indicates an expected call of ListUpcomingEvents.
-func (mr *MockQuerierMockRecorder) ListUpcomingEvents(ctx interface{}) *gomock.Call {
+func (mr *MockQuerierMockRecorder) ListUpcomingEvents(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUpcomingEvents", reflect.TypeOf((*MockQuerier)(nil).ListUpcomingEvents), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUpcomingEvents", reflect.TypeOf((*MockQuerier)(nil).ListUpcomingEvents), ctx, arg)
 }
 
 // SetDefaultShippingAddress mocks base method.

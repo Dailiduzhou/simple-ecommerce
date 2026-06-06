@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
@@ -15,11 +16,12 @@ type MallService struct {
 	pb.UnimplementedMallServer
 	productUc  *biz.ProductUsecase
 	categoryUc *biz.CategoryUsecase
+	eventUc    *biz.EventUsecase
 	log        *log.Helper
 }
 
-func NewMallService(productUc *biz.ProductUsecase, categoryUc *biz.CategoryUsecase, logger log.Logger) *MallService {
-	return &MallService{productUc: productUc, categoryUc: categoryUc, log: log.NewHelper(logger)}
+func NewMallService(productUc *biz.ProductUsecase, categoryUc *biz.CategoryUsecase, eventUc *biz.EventUsecase, logger log.Logger) *MallService {
+	return &MallService{productUc: productUc, categoryUc: categoryUc, eventUc: eventUc, log: log.NewHelper(logger)}
 }
 
 func (s *MallService) CreateProduct(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
@@ -139,26 +141,87 @@ func (s *MallService) DeleteCategory(ctx context.Context, req *pb.DeleteCategory
 }
 
 func (s *MallService) CreateEvent(ctx context.Context, req *pb.CreateEventRequest) (*pb.Event, error) {
-	return &pb.Event{}, nil
+	e, err := s.eventUc.CreateEvent(
+		ctx,
+		req.Name,
+		0,
+		req.CoverImage,
+		structToMap(req.MediaAssets),
+		req.Description,
+		timestampToTime(req.StartAt),
+		timestampToTime(req.EndAt),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return toProtoEvent(e), nil
 }
 
 func (s *MallService) GetEvent(ctx context.Context, req *pb.GetEventRequest) (*pb.Event, error) {
-	return &pb.Event{}, nil
+	e, err := s.eventUc.GetEvent(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	if e == nil {
+		return nil, pb.ErrorEventNotFound("event %d not found", req.Id)
+	}
+	return toProtoEvent(e), nil
 }
 
 func (s *MallService) ListEvents(ctx context.Context, req *pb.ListEventsRequest) (*pb.ListEventsReply, error) {
-	return &pb.ListEventsReply{}, nil
+	pageSize := req.PageSize
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	page := req.Page
+	if page <= 0 {
+		page = 1
+	}
+
+	es, err := s.eventUc.ListEvents(ctx, req.Status, pageSize, page)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make([]*pb.Event, len(es))
+	for i := range es {
+		events[i] = toProtoEvent(&es[i])
+	}
+
+	return &pb.ListEventsReply{Events: events}, nil
 }
 
 func (s *MallService) UpdateEvent(ctx context.Context, req *pb.UpdateEventRequest) (*pb.Event, error) {
-	return &pb.Event{}, nil
+	e, err := s.eventUc.UpdateEvent(
+		ctx,
+		req.Id,
+		req.Name,
+		req.CoverImage,
+		structToMap(req.MediaAssets),
+		req.Description,
+		timestampToTime(req.StartAt),
+		timestampToTime(req.EndAt),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if e == nil {
+		return nil, pb.ErrorEventNotFound("event %d not found", req.Id)
+	}
+	return toProtoEvent(e), nil
 }
 
 func (s *MallService) UpdateEventStatus(ctx context.Context, req *pb.UpdateEventStatusRequest) (*pb.UpdateEventStatusReply, error) {
+	if err := s.eventUc.UpdateEventStatus(ctx, req.Id, req.Status); err != nil {
+		return nil, err
+	}
 	return &pb.UpdateEventStatusReply{}, nil
 }
 
 func (s *MallService) DeleteEvent(ctx context.Context, req *pb.DeleteEventRequest) (*pb.DeleteEventReply, error) {
+	if err := s.eventUc.DeleteEvent(ctx, req.Id); err != nil {
+		return nil, err
+	}
 	return &pb.DeleteEventReply{}, nil
 }
 
@@ -190,6 +253,27 @@ func toProtoCategory(c *biz.Category) *pb.Category {
 	}
 }
 
+func toProtoEvent(e *biz.Event) *pb.Event {
+	proto := &pb.Event{
+		Id:          e.ID,
+		Name:        e.Name,
+		Status:      int32(e.Status),
+		CoverImage:  e.CoverImage,
+		MediaAssets: mapToStruct(e.MediaAssets),
+		Description: e.Description,
+	}
+	if !e.StartAt.IsZero() {
+		proto.StartAt = timestamppb.New(e.StartAt)
+	}
+	if !e.EndAt.IsZero() {
+		proto.EndAt = timestamppb.New(e.EndAt)
+	}
+	if !e.CreatedAt.IsZero() {
+		proto.CreatedAt = timestamppb.New(e.CreatedAt)
+	}
+	return proto
+}
+
 func mediaInfoToProto(infos []biz.MediaInfo) []*pb.MediaInfo {
 	result := make([]*pb.MediaInfo, len(infos))
 	for i, info := range infos {
@@ -202,6 +286,31 @@ func mediaInfoToProto(infos []biz.MediaInfo) []*pb.MediaInfo {
 		}
 	}
 	return result
+}
+
+func structToMap(s *structpb.Struct) map[string]any {
+	if s == nil {
+		return nil
+	}
+	return s.AsMap()
+}
+
+func mapToStruct(values map[string]any) *structpb.Struct {
+	if len(values) == 0 {
+		return nil
+	}
+	result, err := structpb.NewStruct(values)
+	if err != nil {
+		return nil
+	}
+	return result
+}
+
+func timestampToTime(ts *timestamppb.Timestamp) time.Time {
+	if ts == nil {
+		return time.Time{}
+	}
+	return ts.AsTime()
 }
 
 func coverImageURL(infos []biz.MediaInfo) string {
