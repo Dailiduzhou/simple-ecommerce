@@ -3,17 +3,18 @@
 
 openapi: 3.0.3
 info:
-    title: Mall API
+    title: ""
     version: 0.0.1
 paths:
-    /v1/categories:
+    /v1/orders/{orderId}/payment:
         get:
             tags:
-                - Mall
-            operationId: Mall_ListCategories
+                - Payment
+            operationId: Payment_GetPaymentByOrder
             parameters:
-                - name: parentId
-                  in: query
+                - name: orderId
+                  in: path
+                  required: true
                   schema:
                     type: string
             responses:
@@ -22,44 +23,46 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListCategoriesReply'
+                                $ref: '#/components/schemas/PaymentInfo'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /v1/pay/wechat/order/{outTradeNo}:
+        get:
+            tags:
+                - WechatPayService
+            description: 查询订单状态
+            operationId: WechatPayService_QueryOrder
+            parameters:
+                - name: outTradeNo
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/QueryOrderReply'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/pay/wechat/order/{outTradeNo}/close:
         post:
             tags:
-                - Mall
-            description: Categories
-            operationId: Mall_CreateCategory
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/CreateCategoryRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Category'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/categories/{id}:
-        put:
-            tags:
-                - Mall
-            operationId: Mall_UpdateCategory
+                - WechatPayService
+            description: 关闭订单
+            operationId: WechatPayService_CloseOrder
             parameters:
-                - name: id
+                - name: outTradeNo
                   in: path
                   required: true
                   schema:
@@ -68,7 +71,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/UpdateCategoryRequest'
+                            $ref: '#/components/schemas/CloseOrderRequest'
                 required: true
             responses:
                 "200":
@@ -76,80 +79,24 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Category'
+                                $ref: '#/components/schemas/CloseOrderReply'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-        delete:
-            tags:
-                - Mall
-            operationId: Mall_DeleteCategory
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/DeleteCategoryReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/events:
-        get:
-            tags:
-                - Mall
-            operationId: Mall_ListEvents
-            parameters:
-                - name: status
-                  in: query
-                  schema:
-                    type: integer
-                    format: int32
-                - name: pageSize
-                  in: query
-                  schema:
-                    type: integer
-                    format: int32
-                - name: page
-                  in: query
-                  schema:
-                    type: integer
-                    format: int32
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ListEventsReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
+    /v1/pay/wechat/prepay/jsapi:
         post:
             tags:
-                - Mall
-            description: Events
-            operationId: Mall_CreateEvent
+                - WechatPayService
+            description: JSAPI 统一下单 (小程序/公众号支付)
+            operationId: WechatPayService_PrepayJSAPI
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/CreateEventRequest'
+                            $ref: '#/components/schemas/PrepayJSAPIRequest'
                 required: true
             responses:
                 "200":
@@ -157,162 +104,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Event'
+                                $ref: '#/components/schemas/PrepayJSAPIReply'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /v1/events/{id}:
-        get:
-            tags:
-                - Mall
-            operationId: Mall_GetEvent
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Event'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-        put:
-            tags:
-                - Mall
-            operationId: Mall_UpdateEvent
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/UpdateEventRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Event'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-        delete:
-            tags:
-                - Mall
-            operationId: Mall_DeleteEvent
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/DeleteEventReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/events/{id}/status:
-        patch:
-            tags:
-                - Mall
-            operationId: Mall_UpdateEventStatus
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/UpdateEventStatusRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/UpdateEventStatusReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/products:
-        get:
-            tags:
-                - Mall
-            operationId: Mall_ListProducts
-            parameters:
-                - name: categoryId
-                  in: query
-                  schema:
-                    type: string
-                - name: pageSize
-                  in: query
-                  schema:
-                    type: integer
-                    format: int32
-                - name: page
-                  in: query
-                  schema:
-                    type: integer
-                    format: int32
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ListProductsReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
+    /v1/payments:
         post:
             tags:
-                - Mall
-            description: Products
-            operationId: Mall_CreateProduct
+                - Payment
+            operationId: Payment_CreatePayment
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/CreateProductRequest'
+                            $ref: '#/components/schemas/CreatePaymentRequest'
                 required: true
             responses:
                 "200":
@@ -320,18 +128,43 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Product'
+                                $ref: '#/components/schemas/PaymentInfo'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /v1/products/{id}:
+    /v1/payments/notify:
+        post:
+            tags:
+                - Payment
+            description: 第三方支付回调
+            operationId: Payment_NotifyPayment
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/NotifyPaymentRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/NotifyPaymentReply'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/payments/{id}:
         get:
             tags:
-                - Mall
-            operationId: Mall_GetProduct
+                - Payment
+            operationId: Payment_GetPayment
             parameters:
                 - name: id
                   in: path
@@ -344,17 +177,18 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Product'
+                                $ref: '#/components/schemas/PaymentInfo'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-        put:
+    /v1/payments/{id}/refund:
+        post:
             tags:
-                - Mall
-            operationId: Mall_UpdateProduct
+                - Payment
+            operationId: Payment_RefundPayment
             parameters:
                 - name: id
                   in: path
@@ -365,7 +199,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/UpdateProductRequest'
+                            $ref: '#/components/schemas/RefundPaymentRequest'
                 required: true
             responses:
                 "200":
@@ -373,60 +207,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Product'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-        delete:
-            tags:
-                - Mall
-            operationId: Mall_DeleteProduct
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/DeleteProductReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/products/{id}/status:
-        patch:
-            tags:
-                - Mall
-            operationId: Mall_UpdateProductStatus
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/UpdateProductStatusRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/UpdateProductStatusReply'
+                                $ref: '#/components/schemas/RefundPaymentReply'
                 default:
                     description: Default error response
                     content:
@@ -435,109 +216,29 @@ paths:
                                 $ref: '#/components/schemas/Status'
 components:
     schemas:
-        Category:
+        CloseOrderReply:
             type: object
             properties:
-                id:
-                    type: string
-                parentId:
-                    type: string
-                name:
-                    type: string
-                sortOrder:
-                    type: integer
-                    format: int32
-        CreateCategoryRequest:
+                success:
+                    type: boolean
+            description: 关闭订单响应
+        CloseOrderRequest:
             type: object
             properties:
-                parentId:
+                outTradeNo:
                     type: string
-                name:
-                    type: string
-                sortOrder:
-                    type: integer
-                    format: int32
-        CreateEventRequest:
+            description: 关闭订单请求
+        CreatePaymentRequest:
             type: object
             properties:
-                name:
+                orderId:
                     type: string
-                price:
+                userId:
                     type: string
-                stock:
-                    type: integer
-                    format: int32
-                coverImage:
+                merchantId:
                     type: string
-                mediaAssets:
-                    type: object
-                description:
+                payChannel:
                     type: string
-                startAt:
-                    type: string
-                    format: date-time
-                endAt:
-                    type: string
-                    format: date-time
-        CreateProductRequest:
-            type: object
-            properties:
-                categoryId:
-                    type: string
-                name:
-                    type: string
-                price:
-                    type: string
-                discount:
-                    type: string
-                stock:
-                    type: integer
-                    format: int32
-                coverImage:
-                    type: string
-                mediaAssets:
-                    type: object
-                description:
-                    type: string
-        DeleteCategoryReply:
-            type: object
-            properties: {}
-        DeleteEventReply:
-            type: object
-            properties: {}
-        DeleteProductReply:
-            type: object
-            properties: {}
-        Event:
-            type: object
-            properties:
-                id:
-                    type: string
-                name:
-                    type: string
-                price:
-                    type: string
-                stock:
-                    type: integer
-                    format: int32
-                status:
-                    type: integer
-                    format: int32
-                coverImage:
-                    type: string
-                mediaAssets:
-                    type: object
-                description:
-                    type: string
-                startAt:
-                    type: string
-                    format: date-time
-                endAt:
-                    type: string
-                    format: date-time
-                createdAt:
-                    type: string
-                    format: date-time
         GoogleProtobufAny:
             type: object
             properties:
@@ -546,73 +247,98 @@ components:
                     description: The type of the serialized message.
             additionalProperties: true
             description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
-        ListCategoriesReply:
+        NotifyPaymentReply:
             type: object
             properties:
-                categories:
-                    type: array
-                    items:
-                        $ref: '#/components/schemas/Category'
-        ListEventsReply:
+                result:
+                    type: string
+        NotifyPaymentRequest:
             type: object
             properties:
-                events:
-                    type: array
-                    items:
-                        $ref: '#/components/schemas/Event'
-        ListProductsReply:
-            type: object
-            properties:
-                products:
-                    type: array
-                    items:
-                        $ref: '#/components/schemas/Product'
-                total:
-                    type: integer
-                    format: int32
-        MediaInfo:
-            type: object
-            properties:
-                ossUrl:
+                thirdPartyTxId:
                     type: string
-                bucketName:
+                payChannel:
                     type: string
-                objectKey:
+                status:
                     type: string
-                contentType:
+                paymentId:
                     type: string
-                size:
-                    type: string
-        Product:
+        PaymentInfo:
             type: object
             properties:
                 id:
                     type: string
-                categoryId:
+                orderId:
                     type: string
-                name:
+                userId:
                     type: string
-                price:
+                merchantId:
                     type: string
-                discount:
+                amount:
                     type: string
-                stock:
-                    type: integer
-                    format: int32
                 status:
-                    type: integer
-                    format: int32
-                coverImage:
                     type: string
-                mediaAssets:
-                    type: array
-                    items:
-                        $ref: '#/components/schemas/MediaInfo'
-                description:
+                payChannel:
                     type: string
+                thirdPartyTxId:
+                    type: string
+                paidAt:
+                    type: string
+                    format: date-time
                 createdAt:
                     type: string
                     format: date-time
+        PrepayJSAPIReply:
+            type: object
+            properties:
+                appId:
+                    type: string
+                timeStamp:
+                    type: string
+                nonceStr:
+                    type: string
+                package:
+                    type: string
+                signType:
+                    type: string
+                paySign:
+                    type: string
+            description: JSAPI 统一下单响应 (返回给前端唤起微信支付的核心参数)
+        PrepayJSAPIRequest:
+            type: object
+            properties:
+                outTradeNo:
+                    type: string
+                description:
+                    type: string
+                totalAmount:
+                    type: integer
+                    format: int32
+                openid:
+                    type: string
+            description: JSAPI 统一下单请求
+        QueryOrderReply:
+            type: object
+            properties:
+                outTradeNo:
+                    type: string
+                transactionId:
+                    type: string
+                tradeState:
+                    type: integer
+                    format: enum
+                totalAmount:
+                    type: integer
+                    format: int32
+            description: 查询订单响应
+        RefundPaymentReply:
+            type: object
+            properties: {}
+        RefundPaymentRequest:
+            type: object
+            properties:
+                id:
+                    type: string
         Status:
             type: object
             properties:
@@ -629,83 +355,7 @@ components:
                         $ref: '#/components/schemas/GoogleProtobufAny'
                     description: A list of messages that carry the error details.  There is a common set of message types for APIs to use.
             description: 'The `Status` type defines a logical error model that is suitable for different programming environments, including REST APIs and RPC APIs. It is used by [gRPC](https://github.com/grpc). Each `Status` message contains three pieces of data: error code, error message, and error details. You can find out more about this error model and how to work with it in the [API Design Guide](https://cloud.google.com/apis/design/errors).'
-        UpdateCategoryRequest:
-            type: object
-            properties:
-                id:
-                    type: string
-                name:
-                    type: string
-                sortOrder:
-                    type: integer
-                    format: int32
-        UpdateEventRequest:
-            type: object
-            properties:
-                id:
-                    type: string
-                name:
-                    type: string
-                price:
-                    type: string
-                stock:
-                    type: integer
-                    format: int32
-                coverImage:
-                    type: string
-                mediaAssets:
-                    type: object
-                description:
-                    type: string
-                startAt:
-                    type: string
-                    format: date-time
-                endAt:
-                    type: string
-                    format: date-time
-        UpdateEventStatusReply:
-            type: object
-            properties: {}
-        UpdateEventStatusRequest:
-            type: object
-            properties:
-                id:
-                    type: string
-                status:
-                    type: integer
-                    format: int32
-        UpdateProductRequest:
-            type: object
-            properties:
-                id:
-                    type: string
-                categoryId:
-                    type: string
-                name:
-                    type: string
-                price:
-                    type: string
-                discount:
-                    type: string
-                stock:
-                    type: integer
-                    format: int32
-                coverImage:
-                    type: string
-                mediaAssets:
-                    type: object
-                description:
-                    type: string
-        UpdateProductStatusReply:
-            type: object
-            properties: {}
-        UpdateProductStatusRequest:
-            type: object
-            properties:
-                id:
-                    type: string
-                status:
-                    type: integer
-                    format: int32
 tags:
-    - name: Mall
+    - name: Payment
+    - name: WechatPayService
+      description: 微信支付服务

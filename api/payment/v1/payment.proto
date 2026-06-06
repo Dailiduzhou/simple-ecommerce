@@ -41,6 +41,32 @@ service Payment {
   }
 }
 
+// 微信支付服务
+service WechatPayService {
+  // JSAPI 统一下单 (小程序/公众号支付)
+  rpc PrepayJSAPI (PrepayJSAPIRequest) returns (PrepayJSAPIReply) {
+    option (google.api.http) = {
+      post: "/v1/pay/wechat/prepay/jsapi"
+      body: "*"
+    };
+  }
+
+  // 查询订单状态
+  rpc QueryOrder (QueryOrderRequest) returns (QueryOrderReply) {
+    option (google.api.http) = {
+      get: "/v1/pay/wechat/order/{out_trade_no}"
+    };
+  }
+
+  // 关闭订单
+  rpc CloseOrder (CloseOrderRequest) returns (CloseOrderReply) {
+    option (google.api.http) = {
+      post: "/v1/pay/wechat/order/{out_trade_no}/close"
+      body: "*"
+    };
+  }
+}
+
 message PaymentInfo {
   int64  id               = 1;
   int64  order_id         = 2;
@@ -83,3 +109,56 @@ message RefundPaymentRequest {
   int64 id = 1;
 }
 message RefundPaymentReply {}
+
+// 微信支付交易状态枚举
+enum TradeState {
+  TRADE_STATE_UNSPECIFIED = 0;
+  SUCCESS = 1;       // 支付成功
+  REFUND = 2;        // 转入退款
+  NOTPAY = 3;        // 未支付
+  CLOSED = 4;        // 已关闭
+  REVOKED = 5;       // 已撤销
+  USERPAYING = 6;    // 用户支付中
+  PAYERROR = 7;      // 支付失败
+}
+
+// JSAPI 统一下单请求
+message PrepayJSAPIRequest {
+  string out_trade_no = 1; // 商户订单号
+  string description  = 2; // 商品描述
+  int32  total_amount = 3; // 订单总金额，单位为分
+  string openid       = 4; // 用户在商户 appid 下的唯一标识
+}
+
+// JSAPI 统一下单响应 (返回给前端唤起微信支付的核心参数)
+message PrepayJSAPIReply {
+  string app_id          = 1; // 应用ID
+  string time_stamp      = 2; // 时间戳
+  string nonce_str       = 3; // 随机字符串
+  string prepay_package  = 4 [json_name = "package"]; // 订单详情扩展字符串 (如 prepay_id=xxx)
+  string sign_type       = 5; // 签名方式 (通常是 RSA)
+  string pay_sign        = 6; // 签名
+}
+
+// 查询订单请求
+message QueryOrderRequest {
+  string out_trade_no = 1; // 商户订单号
+}
+
+// 查询订单响应
+message QueryOrderReply {
+  string out_trade_no    = 1; // 商户订单号
+  string transaction_id  = 2; // 微信支付系统生成的订单号
+  TradeState trade_state = 3; // 交易状态
+  int32  total_amount    = 4; // 订单总金额，单位为分
+}
+
+// 关闭订单请求
+message CloseOrderRequest {
+  string out_trade_no = 1; // 商户订单号
+}
+
+// 关闭订单响应
+message CloseOrderReply {
+  bool success = 1; // 是否关闭成功
+}
