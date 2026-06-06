@@ -43,7 +43,7 @@ func NewJSONLogger() log.Logger {
 	return log.With(logger,
 		"ts", log.DefaultTimestamp,
 		"caller", log.DefaultCaller,
-		"service.name", "simple-seckill",
+		"service.name", "mall",
 		"trace.id", tracing.TraceID(), // 自动从 context 提取 traceID
 		"span.id", tracing.SpanID(),
 	)
