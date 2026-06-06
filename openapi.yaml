@@ -3,88 +3,16 @@
 
 openapi: 3.0.3
 info:
-    title: User API
+    title: ""
     version: 0.0.1
 paths:
-    /v1/users/login:
-        post:
-            tags:
-                - User
-            operationId: User_Login
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/LoginRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/LoginReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/users/refresh:
-        post:
-            tags:
-                - User
-            operationId: User_RefreshToken
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/RefreshRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/RefreshReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/users/register:
-        post:
-            tags:
-                - User
-            operationId: User_Register
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/RegisterRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/RegisterReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/users/{id}:
+    /v1/orders/{orderId}/payment:
         get:
             tags:
-                - User
-            operationId: User_GetUser
+                - Payment
+            operationId: Payment_GetPaymentByOrder
             parameters:
-                - name: id
+                - name: orderId
                   in: path
                   required: true
                   schema:
@@ -95,28 +23,23 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/UserInfo'
+                                $ref: '#/components/schemas/PaymentInfo'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-        put:
+    /v1/pay/wechat/checks:
+        post:
             tags:
-                - User
-            operationId: User_UpdateUser
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
+                - Payment
+            operationId: Payment_CreateWechatPayCheckJob
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/UpdateUserRequest'
+                            $ref: '#/components/schemas/CreateWechatPayCheckJobRequest'
                 required: true
             responses:
                 "200":
@@ -124,43 +47,21 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/UserInfo'
+                                $ref: '#/components/schemas/MQJobInfo'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-        delete:
-            tags:
-                - User
-            operationId: User_DeleteUser
-            parameters:
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/DeleteUserReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/users/{userId}/addresses:
+    /v1/pay/wechat/order/{outTradeNo}:
         get:
             tags:
-                - User
-            operationId: User_ListShippingAddresses
+                - WechatPayService
+            description: 查询订单状态
+            operationId: WechatPayService_QueryOrder
             parameters:
-                - name: userId
+                - name: outTradeNo
                   in: path
                   required: true
                   schema:
@@ -171,20 +72,21 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListShippingAddressesReply'
+                                $ref: '#/components/schemas/QueryOrderReply'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
+    /v1/pay/wechat/order/{outTradeNo}/close:
         post:
             tags:
-                - User
-            description: Shipping Addresses
-            operationId: User_CreateShippingAddress
+                - WechatPayService
+            description: 关闭订单
+            operationId: WechatPayService_CloseOrder
             parameters:
-                - name: userId
+                - name: outTradeNo
                   in: path
                   required: true
                   schema:
@@ -193,7 +95,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/CreateShippingAddressRequest'
+                            $ref: '#/components/schemas/CloseOrderRequest'
                 required: true
             responses:
                 "200":
@@ -201,87 +103,141 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ShippingAddress'
+                                $ref: '#/components/schemas/CloseOrderReply'
                 default:
                     description: Default error response
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/Status'
-    /v1/users/{userId}/addresses/{id}:
-        put:
-            tags:
-                - User
-            operationId: User_UpdateShippingAddress
-            parameters:
-                - name: userId
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/UpdateShippingAddressRequest'
-                required: true
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ShippingAddress'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-        delete:
-            tags:
-                - User
-            operationId: User_DeleteShippingAddress
-            parameters:
-                - name: userId
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-                - name: id
-                  in: path
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                "200":
-                    description: OK
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/DeleteShippingAddressReply'
-                default:
-                    description: Default error response
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Status'
-    /v1/users/{userId}/addresses/{id}/default:
+    /v1/pay/wechat/prepay/jsapi:
         post:
             tags:
-                - User
-            operationId: User_SetDefaultShippingAddress
+                - WechatPayService
+            description: JSAPI 统一下单 (小程序/公众号支付)
+            operationId: WechatPayService_PrepayJSAPI
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PrepayJSAPIRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/PrepayJSAPIReply'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/payments:
+        post:
+            tags:
+                - Payment
+            operationId: Payment_CreatePayment
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreatePaymentRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/PaymentInfo'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/payments/mq/jobs/{jobId}:
+        get:
+            tags:
+                - Payment
+            operationId: Payment_GetMQJob
             parameters:
-                - name: userId
+                - name: jobId
                   in: path
                   required: true
                   schema:
                     type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/MQJobInfo'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/payments/notify:
+        post:
+            tags:
+                - Payment
+            description: 第三方支付回调
+            operationId: Payment_NotifyPayment
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/NotifyPaymentRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/NotifyPaymentReply'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/payments/{id}:
+        get:
+            tags:
+                - Payment
+            operationId: Payment_GetPayment
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/PaymentInfo'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/payments/{id}/refund:
+        post:
+            tags:
+                - Payment
+            operationId: Payment_RefundPayment
+            parameters:
                 - name: id
                   in: path
                   required: true
@@ -291,7 +247,7 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/SetDefaultShippingAddressRequest'
+                            $ref: '#/components/schemas/RefundPaymentRequest'
                 required: true
             responses:
                 "200":
@@ -299,7 +255,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/SetDefaultShippingAddressReply'
+                                $ref: '#/components/schemas/RefundPaymentReply'
                 default:
                     description: Default error response
                     content:
@@ -308,33 +264,49 @@ paths:
                                 $ref: '#/components/schemas/Status'
 components:
     schemas:
-        CreateShippingAddressRequest:
+        CloseOrderReply:
             type: object
             properties:
+                success:
+                    type: boolean
+            description: 关闭订单响应
+        CloseOrderRequest:
+            type: object
+            properties:
+                outTradeNo:
+                    type: string
+            description: 关闭订单请求
+        CreatePaymentRequest:
+            type: object
+            properties:
+                orderId:
+                    type: string
                 userId:
                     type: string
-                receiverName:
+                merchantId:
                     type: string
-                receiverPhone:
+                payChannel:
                     type: string
-                province:
-                    type: string
-                city:
-                    type: string
-                district:
-                    type: string
-                detailAddress:
-                    type: string
-                addressTag:
-                    type: string
-                isDefault:
-                    type: boolean
-        DeleteShippingAddressReply:
+        CreateWechatPayCheckJobRequest:
             type: object
-            properties: {}
-        DeleteUserReply:
-            type: object
-            properties: {}
+            properties:
+                paymentId:
+                    type: string
+                orderId:
+                    type: string
+                outTradeNo:
+                    type: string
+                delaySeconds:
+                    type: integer
+                    format: int32
+                maxPolls:
+                    type: integer
+                    format: int32
+                pollIntervalSeconds:
+                    type: integer
+                    format: int32
+                source:
+                    type: string
         GoogleProtobufAny:
             type: object
             properties:
@@ -343,84 +315,148 @@ components:
                     description: The type of the serialized message.
             additionalProperties: true
             description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
-        ListShippingAddressesReply:
+        MQJobError:
             type: object
             properties:
-                addresses:
+                attempt:
+                    type: integer
+                    format: int32
+                error:
+                    type: string
+                at:
+                    type: string
+                    format: date-time
+        MQJobInfo:
+            type: object
+            properties:
+                jobId:
+                    type: string
+                kind:
+                    type: string
+                queue:
+                    type: string
+                state:
+                    type: string
+                attempt:
+                    type: integer
+                    format: int32
+                maxAttempts:
+                    type: integer
+                    format: int32
+                argsJson:
+                    type: string
+                tags:
                     type: array
                     items:
-                        $ref: '#/components/schemas/ShippingAddress'
-        LoginReply:
+                        type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                scheduledAt:
+                    type: string
+                    format: date-time
+                attemptedAt:
+                    type: string
+                    format: date-time
+                finalizedAt:
+                    type: string
+                    format: date-time
+                errors:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MQJobError'
+        NotifyPaymentReply:
+            type: object
+            properties:
+                result:
+                    type: string
+        NotifyPaymentRequest:
+            type: object
+            properties:
+                thirdPartyTxId:
+                    type: string
+                payChannel:
+                    type: string
+                status:
+                    type: string
+                paymentId:
+                    type: string
+        PaymentInfo:
             type: object
             properties:
                 id:
                     type: string
-                token:
+                orderId:
                     type: string
-        LoginRequest:
+                userId:
+                    type: string
+                merchantId:
+                    type: string
+                amount:
+                    type: string
+                status:
+                    type: string
+                payChannel:
+                    type: string
+                thirdPartyTxId:
+                    type: string
+                paidAt:
+                    type: string
+                    format: date-time
+                createdAt:
+                    type: string
+                    format: date-time
+        PrepayJSAPIReply:
             type: object
             properties:
-                phone:
+                appId:
                     type: string
-                password:
+                timeStamp:
                     type: string
-        RefreshReply:
+                nonceStr:
+                    type: string
+                package:
+                    type: string
+                signType:
+                    type: string
+                paySign:
+                    type: string
+            description: JSAPI 统一下单响应 (返回给前端唤起微信支付的核心参数)
+        PrepayJSAPIRequest:
             type: object
             properties:
-                accessToken:
+                outTradeNo:
                     type: string
-                refreshToken:
+                description:
                     type: string
-        RefreshRequest:
+                totalAmount:
+                    type: integer
+                    format: int32
+                openid:
+                    type: string
+            description: JSAPI 统一下单请求
+        QueryOrderReply:
             type: object
             properties:
-                refreshToken:
+                outTradeNo:
                     type: string
-        RegisterReply:
-            type: object
-            properties:
-                id:
+                transactionId:
                     type: string
-        RegisterRequest:
-            type: object
-            properties:
-                phone:
-                    type: string
-                password:
-                    type: string
-        SetDefaultShippingAddressReply:
+                tradeState:
+                    type: integer
+                    format: enum
+                totalAmount:
+                    type: integer
+                    format: int32
+            description: 查询订单响应
+        RefundPaymentReply:
             type: object
             properties: {}
-        SetDefaultShippingAddressRequest:
-            type: object
-            properties:
-                userId:
-                    type: string
-                id:
-                    type: string
-        ShippingAddress:
+        RefundPaymentRequest:
             type: object
             properties:
                 id:
                     type: string
-                userId:
-                    type: string
-                receiverName:
-                    type: string
-                receiverPhone:
-                    type: string
-                province:
-                    type: string
-                city:
-                    type: string
-                district:
-                    type: string
-                detailAddress:
-                    type: string
-                addressTag:
-                    type: string
-                isDefault:
-                    type: boolean
         Status:
             type: object
             properties:
@@ -437,51 +473,7 @@ components:
                         $ref: '#/components/schemas/GoogleProtobufAny'
                     description: A list of messages that carry the error details.  There is a common set of message types for APIs to use.
             description: 'The `Status` type defines a logical error model that is suitable for different programming environments, including REST APIs and RPC APIs. It is used by [gRPC](https://github.com/grpc). Each `Status` message contains three pieces of data: error code, error message, and error details. You can find out more about this error model and how to work with it in the [API Design Guide](https://cloud.google.com/apis/design/errors).'
-        UpdateShippingAddressRequest:
-            type: object
-            properties:
-                id:
-                    type: string
-                userId:
-                    type: string
-                receiverName:
-                    type: string
-                receiverPhone:
-                    type: string
-                province:
-                    type: string
-                city:
-                    type: string
-                district:
-                    type: string
-                detailAddress:
-                    type: string
-                addressTag:
-                    type: string
-        UpdateUserRequest:
-            type: object
-            properties:
-                id:
-                    type: string
-                nickname:
-                    type: string
-                realName:
-                    type: string
-        UserInfo:
-            type: object
-            properties:
-                id:
-                    type: string
-                nickname:
-                    type: string
-                realName:
-                    type: string
-                phone:
-                    type: string
-                role:
-                    type: string
-                createdAt:
-                    type: string
-                    format: date-time
 tags:
-    - name: User
+    - name: Payment
+    - name: WechatPayService
+      description: 微信支付服务

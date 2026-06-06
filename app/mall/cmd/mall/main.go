@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/job"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/logger"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/trace"
 
@@ -34,7 +35,7 @@ func init() {
 	flag.StringVar(&flagconf, "conf", "../../configs", "config path, eg: -conf config.yaml")
 }
 
-func newApp(logger log.Logger, gs *grpc.Server, hs *http.Server) *kratos.App {
+func newApp(logger log.Logger, gs *grpc.Server, hs *http.Server, rs *job.RiverServer) *kratos.App {
 	return kratos.New(
 		kratos.ID(id),
 		kratos.Name(Name),
@@ -44,6 +45,7 @@ func newApp(logger log.Logger, gs *grpc.Server, hs *http.Server) *kratos.App {
 		kratos.Server(
 			gs,
 			hs,
+			rs,
 		),
 	)
 }

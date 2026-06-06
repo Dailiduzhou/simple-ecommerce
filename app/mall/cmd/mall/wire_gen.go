@@ -10,6 +10,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/job"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 	"github.com/go-kratos/kratos/v2"
@@ -28,7 +29,11 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logg
 	if err != nil {
 		return nil, nil, err
 	}
-	client, err := data.NewRiverClient(pool)
+	wechatPayDataProvider := data.NewWechatPayProvider(logger)
+	paymentSyncRepo := data.NewPaymentSyncRepo(pool)
+	checkWechatPayWorker := job.NewCheckWechatPayWorker(wechatPayDataProvider, paymentSyncRepo, logger)
+	workers := job.NewWorkers(checkWechatPayWorker, logger)
+	client, err := data.NewRiverClient(pool, workers)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -58,11 +63,13 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logg
 	shippingAddressUsecase := biz.NewShippingAddressUsecase(shippingAddressRepo, auth, logger)
 	userService := service.NewUserService(authUsecase, userUsecase, shippingAddressUsecase, auth, logger)
 	orderService := service.NewOrderService()
-	wechatPayProvider := data.NewWechatPayProvider(logger)
-	paymentService := service.NewPaymentService(wechatPayProvider)
+	paymentMQRepo := data.NewPaymentMQRepo(client, logger)
+	paymentJobUsecase := biz.NewPaymentJobUsecase(paymentMQRepo, logger)
+	paymentService := service.NewPaymentService(wechatPayDataProvider, paymentJobUsecase)
 	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
-	app := newApp(logger, grpcServer, httpServer)
+	riverServer := job.NewRiverServer(client)
+	app := newApp(logger, grpcServer, httpServer, riverServer)
 	return app, func() {
 		cleanup2()
 		cleanup()
