@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "6379:6379"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+
+  loki:
+    image: grafana/loki:2.9.0
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      - loki
+    volumes:
+      - ./deploy/promtail.yaml:/etc/promtail/config.yaml:ro
+      - mall_logs:/logs/mall:ro
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    depends_on:
+      - loki
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+
+  mall:
+    build:
+      context: .
+      dockerfile: app/mall/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+      loki:
+        condition: service_started
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+    volumes:
+      - ./app/mall/configs:/data/conf:ro
+      - mall_logs:/app/logs
+    ports:
+      - "8000:8000"
+      - "9000:9000"
+
+volumes:
+  grafana_data:
+  loki_data:
+  mall_logs:
+  postgres_data:
