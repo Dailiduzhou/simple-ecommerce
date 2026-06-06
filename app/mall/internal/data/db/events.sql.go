@@ -77,20 +77,65 @@ func (q *Queries) GetEvent(ctx context.Context, id int64) (Event, error) {
 	return i, err
 }
 
-const listActiveEvents = `-- name: ListActiveEvents :many
+const listEvents = `-- name: ListEvents :many
 SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
-WHERE status = 1 AND deleted_at IS NULL
+WHERE deleted_at IS NULL
 ORDER BY start_at ASC
 LIMIT $1 OFFSET $2
 `
 
-type ListActiveEventsParams struct {
+type ListEventsParams struct {
 	Limit  int32
 	Offset int32
 }
 
-func (q *Queries) ListActiveEvents(ctx context.Context, arg ListActiveEventsParams) ([]Event, error) {
-	rows, err := q.db.Query(ctx, listActiveEvents, arg.Limit, arg.Offset)
+func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listEvents, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Event
+	for rows.Next() {
+		var i Event
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Status,
+			&i.StartAt,
+			&i.EndAt,
+			&i.CoverImage,
+			&i.MediaAssets,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventsByStatus = `-- name: ListEventsByStatus :many
+SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
+WHERE status = $1 AND deleted_at IS NULL
+ORDER BY start_at ASC
+LIMIT $2 OFFSET $3
+`
+
+type ListEventsByStatusParams struct {
+	Status int16
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListEventsByStatus(ctx context.Context, arg ListEventsByStatusParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listEventsByStatus, arg.Status, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -125,10 +170,16 @@ const listUpcomingEvents = `-- name: ListUpcomingEvents :many
 SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
 WHERE status = 0 AND start_at > CURRENT_TIMESTAMP AND deleted_at IS NULL
 ORDER BY start_at ASC
+LIMIT $1 OFFSET $2
 `
 
-func (q *Queries) ListUpcomingEvents(ctx context.Context) ([]Event, error) {
-	rows, err := q.db.Query(ctx, listUpcomingEvents)
+type ListUpcomingEventsParams struct {
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error) {
+	rows, err := q.db.Query(ctx, listUpcomingEvents, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

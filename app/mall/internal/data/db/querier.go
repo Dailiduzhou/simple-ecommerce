@@ -40,7 +40,8 @@ type Querier interface {
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error)
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
 	HasOngoingPayments(ctx context.Context, userID int64) (bool, error)
-	ListActiveEvents(ctx context.Context, arg ListActiveEventsParams) ([]Event, error)
+	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
+	ListEventsByStatus(ctx context.Context, arg ListEventsByStatusParams) ([]Event, error)
 	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)
 	ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error)
 	ListOrderItemsWithProduct(ctx context.Context, orderID int64) ([]ListOrderItemsWithProductRow, error)
@@ -50,7 +51,7 @@ type Querier interface {
 	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
 	ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error)
 	ListTopCategories(ctx context.Context) ([]Category, error)
-	ListUpcomingEvents(ctx context.Context) ([]Event, error)
+	ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error)
 	SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) error
 	SoftDeleteEvent(ctx context.Context, id int64) error
 	SoftDeleteProduct(ctx context.Context, id int64) error
