@@ -13,12 +13,13 @@ import (
 
 type MallService struct {
 	pb.UnimplementedMallServer
-	productUc *biz.ProductUsecase
-	log       *log.Helper
+	productUc  *biz.ProductUsecase
+	categoryUc *biz.CategoryUsecase
+	log        *log.Helper
 }
 
-func NewMallService(productUc *biz.ProductUsecase, logger log.Logger) *MallService {
-	return &MallService{productUc: productUc, log: log.NewHelper(logger)}
+func NewMallService(productUc *biz.ProductUsecase, categoryUc *biz.CategoryUsecase, logger log.Logger) *MallService {
+	return &MallService{productUc: productUc, categoryUc: categoryUc, log: log.NewHelper(logger)}
 }
 
 func (s *MallService) CreateProduct(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
@@ -98,18 +99,42 @@ func (s *MallService) DeleteProduct(ctx context.Context, req *pb.DeleteProductRe
 }
 
 func (s *MallService) CreateCategory(ctx context.Context, req *pb.CreateCategoryRequest) (*pb.Category, error) {
-	return &pb.Category{}, nil
+	c, err := s.categoryUc.CreateCategory(ctx, req.ParentId, req.Name, req.SortOrder)
+	if err != nil {
+		return nil, err
+	}
+	return toProtoCategory(c), nil
 }
 
 func (s *MallService) ListCategories(ctx context.Context, req *pb.ListCategoriesRequest) (*pb.ListCategoriesReply, error) {
-	return &pb.ListCategoriesReply{}, nil
+	cs, err := s.categoryUc.ListCategories(ctx, req.ParentId)
+	if err != nil {
+		return nil, err
+	}
+
+	categories := make([]*pb.Category, len(cs))
+	for i := range cs {
+		categories[i] = toProtoCategory(&cs[i])
+	}
+
+	return &pb.ListCategoriesReply{Categories: categories}, nil
 }
 
 func (s *MallService) UpdateCategory(ctx context.Context, req *pb.UpdateCategoryRequest) (*pb.Category, error) {
-	return &pb.Category{}, nil
+	c, err := s.categoryUc.UpdateCategory(ctx, req.Id, req.Name, req.SortOrder)
+	if err != nil {
+		return nil, err
+	}
+	if c == nil {
+		return nil, pb.ErrorCategoryNotFound("category %d not found", req.Id)
+	}
+	return toProtoCategory(c), nil
 }
 
 func (s *MallService) DeleteCategory(ctx context.Context, req *pb.DeleteCategoryRequest) (*pb.DeleteCategoryReply, error) {
+	if err := s.categoryUc.DeleteCategory(ctx, req.Id); err != nil {
+		return nil, err
+	}
 	return &pb.DeleteCategoryReply{}, nil
 }
 
@@ -154,6 +179,15 @@ func toProtoProduct(p *biz.Product) *pb.Product {
 		proto.CreatedAt = timestamppb.New(p.CreatedAt)
 	}
 	return proto
+}
+
+func toProtoCategory(c *biz.Category) *pb.Category {
+	return &pb.Category{
+		Id:        c.ID,
+		ParentId:  c.ParentID,
+		Name:      c.Name,
+		SortOrder: c.SortOrder,
+	}
 }
 
 func mediaInfoToProto(infos []biz.MediaInfo) []*pb.MediaInfo {

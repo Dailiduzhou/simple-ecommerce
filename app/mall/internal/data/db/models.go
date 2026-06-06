@@ -15,6 +15,7 @@ type Category struct {
 	Name      string
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+	SortOrder int32
 }
 
 type Event struct {
