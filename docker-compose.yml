@@ -62,6 +62,8 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./deploy/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/grafana/dashboard-definitions:/var/lib/grafana/dashboards:ro
 
   mall:
     build:
