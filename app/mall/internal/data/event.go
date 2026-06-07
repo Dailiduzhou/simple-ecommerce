@@ -232,19 +232,38 @@ func (r *EventRepo) setListCache(ctx context.Context, key string, es []biz.Event
 	r.data.rdb.Set(ctx, key, data, eventCacheExpiration())
 }
 
+
 func (r *EventRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Del(ctx, key).Err(); err != nil {
+	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
 		r.log.WithContext(ctx).Errorf("delete cache %s", key)
 	}
 }
 
 func (r *EventRepo) deleteListCaches(ctx context.Context) {
-	iter := r.data.rdb.Scan(ctx, 0, "event:list:*", 0).Iterator()
+	iter := r.data.rdb.Scan(ctx, 0, "event:list:*", 100).Iterator()
+
+	var keys []string
+	const batchSize = 100
+
 	for iter.Next(ctx) {
-		r.deleteCache(ctx, iter.Val())
+		keys = append(keys, iter.Val())
+
+		if len(keys) >= batchSize {
+			if err := r.data.rdb.Unlink(ctx, keys...).Err(); err != nil {
+				r.log.WithContext(ctx).Errorf("batch unlink event list cache: %v", err)
+			}
+			keys = keys[:0]
+		}
 	}
+
 	if err := iter.Err(); err != nil {
 		r.log.WithContext(ctx).Errorf("scan event list cache: %v", err)
+	}
+
+	if len(keys) > 0 {
+		if err := r.data.rdb.Unlink(ctx, keys...).Err(); err != nil {
+			r.log.WithContext(ctx).Errorf("batch unlink remaining event list cache: %v", err)
+		}
 	}
 }
 

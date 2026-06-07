@@ -240,7 +240,7 @@ func (r *CategoryRepo) setListCache(ctx context.Context, key string, cs []biz.Ca
 }
 
 func (r *CategoryRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Del(ctx, key).Err(); err != nil {
+	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
 		r.log.WithContext(ctx).Errorf("delete cache %s", key)
 		return
 	}

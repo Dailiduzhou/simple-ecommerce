@@ -195,7 +195,7 @@ func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.User) {
 }
 
 func (r *UserRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Del(ctx, key).Err(); err != nil {
+	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
 		r.log.WithContext(ctx).Errorf("delete cache %s", key)
 		return
 	}
@@ -280,14 +280,14 @@ func (r *ShippingAddressRepo) setListCache(ctx context.Context, key string, sas 
 }
 
 func (r *ShippingAddressRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Del(ctx, key).Err(); err != nil {
+	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
 		r.log.WithContext(ctx).Errorf("delete cache %s", key)
 		return
 	}
 }
 
 func (r *ShippingAddressRepo) deleteListCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Del(ctx, key).Err(); err != nil {
+	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
 		r.log.WithContext(ctx).Errorf("delete list cache %s", key)
 		return
 	}
