@@ -2,17 +2,143 @@ package biz
 
 import (
 	"context"
+	"strings"
 	"time"
 
-	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 )
 
-type WechatPayProvider interface {
-	PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error)
-	QueryOrder(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error)
-	CloseOrder(ctx context.Context, outTradeNo string) (*pb.CloseOrderReply, error)
+const (
+	PayChannelWechat = "wechat"
+	PayChannelAlipay = "alipay"
+)
+
+type TradeState string
+
+const (
+	TradeStateUnspecified TradeState = "TRADE_STATE_UNSPECIFIED"
+	TradeStateSuccess     TradeState = "SUCCESS"
+	TradeStateRefund      TradeState = "REFUND"
+	TradeStateNotPay      TradeState = "NOTPAY"
+	TradeStateClosed      TradeState = "CLOSED"
+	TradeStateRevoked     TradeState = "REVOKED"
+	TradeStateUserPaying  TradeState = "USERPAYING"
+	TradeStatePayError    TradeState = "PAYERROR"
+)
+
+func (s TradeState) String() string {
+	return string(s)
+}
+
+func (s TradeState) IsTerminal() bool {
+	switch s {
+	case TradeStateSuccess, TradeStateRefund, TradeStateClosed, TradeStateRevoked, TradeStatePayError:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s TradeState) IsPending() bool {
+	switch s {
+	case TradeStateNotPay, TradeStateUserPaying, TradeStateUnspecified:
+		return true
+	default:
+		return false
+	}
+}
+
+func NormalizePayChannel(channel string) string {
+	return strings.ToLower(strings.TrimSpace(channel))
+}
+
+func ParseTradeState(state string) TradeState {
+	switch strings.ToUpper(strings.TrimSpace(state)) {
+	case TradeStateSuccess.String():
+		return TradeStateSuccess
+	case TradeStateRefund.String():
+		return TradeStateRefund
+	case TradeStateNotPay.String():
+		return TradeStateNotPay
+	case TradeStateClosed.String():
+		return TradeStateClosed
+	case TradeStateRevoked.String():
+		return TradeStateRevoked
+	case TradeStateUserPaying.String():
+		return TradeStateUserPaying
+	case TradeStatePayError.String():
+		return TradeStatePayError
+	default:
+		return TradeStateUnspecified
+	}
+}
+
+type PaymentPrepayRequest struct {
+	Channel     string
+	OutTradeNo  string
+	Description string
+	TotalAmount int32
+	OpenID      string
+	NotifyURL   string
+}
+
+type PaymentPrepayResult struct {
+	Channel    string
+	OutTradeNo string
+
+	PrepayID string
+	AppID    string
+	TimeStamp string
+	NonceStr string
+	Package  string
+	SignType string
+	PaySign  string
+
+	CodeURL string
+	PayURL  string
+}
+
+type PaymentQueryRequest struct {
+	Channel       string
+	OutTradeNo    string
+	TransactionID string
+}
+
+type PaymentQueryResult struct {
+	Channel        string
+	OutTradeNo     string
+	TransactionID  string
+	TradeState     TradeState
+	TradeStateDesc string
+	RawTradeState  string
+	TotalAmount    int32
+}
+
+type PaymentCloseRequest struct {
+	Channel       string
+	OutTradeNo    string
+	TransactionID string
+}
+
+type PaymentCloseResult struct {
+	Channel       string
+	OutTradeNo    string
+	TransactionID string
+	Success       bool
+}
+
+type PaymentAdapter interface {
+	Channel() string
+	Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
+	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
+	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
+}
+
+type PaymentGateway interface {
+	Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
+	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
+	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
 }
 
 const CheckWechatPayJobKind = "check_wechat_pay"
@@ -58,7 +184,7 @@ type PaymentMQRepo interface {
 }
 
 type PaymentSyncRepo interface {
-	ApplyWechatPayQuery(ctx context.Context, args CheckWechatPayArgs, result *pb.QueryOrderReply) error
+	ApplyWechatPayQuery(ctx context.Context, args CheckWechatPayArgs, result *PaymentQueryResult) error
 	MarkWechatPayExpired(ctx context.Context, args CheckWechatPayArgs) error
 }
 

@@ -19,21 +19,25 @@ import (
 )
 
 type fakeWechatPayProvider struct {
-	prepay func(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error)
-	query  func(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error)
-	close  func(ctx context.Context, outTradeNo string) (*pb.CloseOrderReply, error)
+	prepay func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error)
+	query  func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
+	close  func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error)
 }
 
-func (p *fakeWechatPayProvider) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error) {
+func (p *fakeWechatPayProvider) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 	return p.prepay(ctx, req)
 }
 
-func (p *fakeWechatPayProvider) QueryOrder(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error) {
-	return p.query(ctx, outTradeNo)
+func (p *fakeWechatPayProvider) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+	return p.query(ctx, req)
 }
 
-func (p *fakeWechatPayProvider) CloseOrder(ctx context.Context, outTradeNo string) (*pb.CloseOrderReply, error) {
-	return p.close(ctx, outTradeNo)
+func (p *fakeWechatPayProvider) CloseOrder(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+	return p.close(ctx, req)
+}
+
+func (p *fakeWechatPayProvider) Channel() string {
+	return biz.PayChannelWechat
 }
 
 type fakePaymentMQRepo struct {
@@ -51,18 +55,18 @@ func (r *fakePaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJ
 
 func TestPaymentService_WechatPayDelegatesToProvider(t *testing.T) {
 	s := NewPaymentService(&fakeWechatPayProvider{
-		prepay: func(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error) {
+		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 			assert.Equal(t, "order-1", req.OutTradeNo)
 			assert.Equal(t, int32(9900), req.TotalAmount)
-			return &pb.PrepayJSAPIReply{AppId: "appid", PrepayPackage: "prepay_id=wx123"}, nil
+			return &biz.PaymentPrepayResult{AppID: "appid", Package: "prepay_id=wx123"}, nil
 		},
-		query: func(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error) {
-			assert.Equal(t, "order-1", outTradeNo)
-			return &pb.QueryOrderReply{OutTradeNo: outTradeNo, TradeState: pb.TradeState_SUCCESS, TotalAmount: 9900}, nil
+		query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+			assert.Equal(t, "order-1", req.OutTradeNo)
+			return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateSuccess, TotalAmount: 9900}, nil
 		},
-		close: func(ctx context.Context, outTradeNo string) (*pb.CloseOrderReply, error) {
-			assert.Equal(t, "order-1", outTradeNo)
-			return &pb.CloseOrderReply{Success: true}, nil
+		close: func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+			assert.Equal(t, "order-1", req.OutTradeNo)
+			return &biz.PaymentCloseResult{Success: true}, nil
 		},
 	}, nil)
 
@@ -89,7 +93,7 @@ func TestPaymentService_WechatPayDelegatesToProvider(t *testing.T) {
 func TestPaymentService_WechatPayPropagatesProviderError(t *testing.T) {
 	wantErr := errors.New("wechat failed")
 	s := NewPaymentService(&fakeWechatPayProvider{
-		prepay: func(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error) {
+		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 			return nil, wantErr
 		},
 	}, nil)

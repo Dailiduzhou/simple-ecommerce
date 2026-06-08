@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/riverqueue/river"
@@ -14,14 +13,14 @@ import (
 type CheckWechatPayWorker struct {
 	river.WorkerDefaults[biz.CheckWechatPayArgs]
 
-	wechatPay biz.WechatPayProvider
+	paymentGateway biz.PaymentGateway
 	syncRepo  biz.PaymentSyncRepo
 	log       *log.Helper
 }
 
-func NewCheckWechatPayWorker(wechatPay biz.WechatPayProvider, syncRepo biz.PaymentSyncRepo, logger log.Logger) *CheckWechatPayWorker {
+func NewCheckWechatPayWorker(paymentGateway biz.PaymentGateway, syncRepo biz.PaymentSyncRepo, logger log.Logger) *CheckWechatPayWorker {
 	return &CheckWechatPayWorker{
-		wechatPay: wechatPay,
+		paymentGateway: paymentGateway,
 		syncRepo:  syncRepo,
 		log:       log.NewHelper(logger),
 	}
@@ -32,19 +31,22 @@ func (w *CheckWechatPayWorker) Work(ctx context.Context, job *river.Job[biz.Chec
 	if err := validateCheckWechatPayArgs(args); err != nil {
 		return river.JobCancel(err)
 	}
-	if w.wechatPay == nil || w.syncRepo == nil {
+	if w.paymentGateway == nil || w.syncRepo == nil {
 		return river.JobCancel(fmt.Errorf("wechat pay worker dependencies are not configured"))
 	}
 
-	result, err := w.wechatPay.QueryOrder(ctx, args.OutTradeNo)
+	result, err := w.paymentGateway.QueryOrder(ctx, biz.PaymentQueryRequest{
+		Channel:    biz.PayChannelWechat,
+		OutTradeNo: args.OutTradeNo,
+	})
 	if err != nil {
 		return err
 	}
 
-	switch result.TradeState {
-	case pb.TradeState_SUCCESS, pb.TradeState_REFUND, pb.TradeState_CLOSED, pb.TradeState_REVOKED, pb.TradeState_PAYERROR:
+	switch {
+	case result.TradeState.IsTerminal():
 		return w.syncRepo.ApplyWechatPayQuery(ctx, args, result)
-	case pb.TradeState_NOTPAY, pb.TradeState_USERPAYING, pb.TradeState_TRADE_STATE_UNSPECIFIED:
+	case result.TradeState.IsPending():
 		if job.Attempt >= args.MaxPolls {
 			w.log.WithContext(ctx).Infof("wechat pay check expired payment_id=%d out_trade_no=%s attempts=%d", args.PaymentID, args.OutTradeNo, job.Attempt)
 			return w.syncRepo.MarkWechatPayExpired(ctx, args)
