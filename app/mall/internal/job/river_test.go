@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/riverqueue/river"
@@ -16,27 +15,31 @@ import (
 )
 
 type fakeWorkerWechatPayProvider struct {
-	query func(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error)
+	query func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
 }
 
-func (p *fakeWorkerWechatPayProvider) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error) {
+func (p *fakeWorkerWechatPayProvider) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (p *fakeWorkerWechatPayProvider) QueryOrder(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error) {
-	return p.query(ctx, outTradeNo)
+func (p *fakeWorkerWechatPayProvider) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+	return p.query(ctx, req)
 }
 
-func (p *fakeWorkerWechatPayProvider) CloseOrder(ctx context.Context, outTradeNo string) (*pb.CloseOrderReply, error) {
+func (p *fakeWorkerWechatPayProvider) CloseOrder(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (p *fakeWorkerWechatPayProvider) Channel() string {
+	return biz.PayChannelWechat
 }
 
 type fakePaymentSyncRepo struct {
-	apply   func(ctx context.Context, args biz.CheckWechatPayArgs, result *pb.QueryOrderReply) error
+	apply   func(ctx context.Context, args biz.CheckWechatPayArgs, result *biz.PaymentQueryResult) error
 	expired func(ctx context.Context, args biz.CheckWechatPayArgs) error
 }
 
-func (r *fakePaymentSyncRepo) ApplyWechatPayQuery(ctx context.Context, args biz.CheckWechatPayArgs, result *pb.QueryOrderReply) error {
+func (r *fakePaymentSyncRepo) ApplyWechatPayQuery(ctx context.Context, args biz.CheckWechatPayArgs, result *biz.PaymentQueryResult) error {
 	return r.apply(ctx, args, result)
 }
 
@@ -48,21 +51,21 @@ func TestCheckWechatPayWorker_ApplyTerminalState(t *testing.T) {
 	args := biz.CheckWechatPayArgs{PaymentID: 12, OutTradeNo: "order-12", MaxPolls: 5, PollIntervalSeconds: 30}
 	worker := NewCheckWechatPayWorker(
 		&fakeWorkerWechatPayProvider{
-			query: func(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error) {
-				assert.Equal(t, "order-12", outTradeNo)
-				return &pb.QueryOrderReply{
-					OutTradeNo:    outTradeNo,
-					TransactionId: "wx-12",
-					TradeState:    pb.TradeState_SUCCESS,
+			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+				assert.Equal(t, "order-12", req.OutTradeNo)
+				return &biz.PaymentQueryResult{
+					OutTradeNo:    req.OutTradeNo,
+					TransactionID: "wx-12",
+					TradeState:    biz.TradeStateSuccess,
 					TotalAmount:   9900,
 				}, nil
 			},
 		},
 		&fakePaymentSyncRepo{
-			apply: func(ctx context.Context, gotArgs biz.CheckWechatPayArgs, result *pb.QueryOrderReply) error {
+			apply: func(ctx context.Context, gotArgs biz.CheckWechatPayArgs, result *biz.PaymentQueryResult) error {
 				assert.Equal(t, args, gotArgs)
-				assert.Equal(t, pb.TradeState_SUCCESS, result.TradeState)
-				assert.Equal(t, "wx-12", result.TransactionId)
+				assert.Equal(t, biz.TradeStateSuccess, result.TradeState)
+				assert.Equal(t, "wx-12", result.TransactionID)
 				return nil
 			},
 			expired: func(ctx context.Context, args biz.CheckWechatPayArgs) error {
@@ -83,12 +86,12 @@ func TestCheckWechatPayWorker_ApplyTerminalState(t *testing.T) {
 func TestCheckWechatPayWorker_RetriesPendingState(t *testing.T) {
 	worker := NewCheckWechatPayWorker(
 		&fakeWorkerWechatPayProvider{
-			query: func(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error) {
-				return &pb.QueryOrderReply{OutTradeNo: outTradeNo, TradeState: pb.TradeState_NOTPAY}, nil
+			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+				return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateNotPay}, nil
 			},
 		},
 		&fakePaymentSyncRepo{
-			apply: func(ctx context.Context, args biz.CheckWechatPayArgs, result *pb.QueryOrderReply) error {
+			apply: func(ctx context.Context, args biz.CheckWechatPayArgs, result *biz.PaymentQueryResult) error {
 				t.Fatalf("ApplyWechatPayQuery should not be called")
 				return nil
 			},
@@ -112,12 +115,12 @@ func TestCheckWechatPayWorker_MarksExpiredOnLastPendingAttempt(t *testing.T) {
 	args := biz.CheckWechatPayArgs{PaymentID: 12, OrderID: 34, OutTradeNo: "order-12", MaxPolls: 3, PollIntervalSeconds: 30}
 	worker := NewCheckWechatPayWorker(
 		&fakeWorkerWechatPayProvider{
-			query: func(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error) {
-				return &pb.QueryOrderReply{OutTradeNo: outTradeNo, TradeState: pb.TradeState_USERPAYING}, nil
+			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+				return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateUserPaying}, nil
 			},
 		},
 		&fakePaymentSyncRepo{
-			apply: func(ctx context.Context, args biz.CheckWechatPayArgs, result *pb.QueryOrderReply) error {
+			apply: func(ctx context.Context, args biz.CheckWechatPayArgs, result *biz.PaymentQueryResult) error {
 				t.Fatalf("ApplyWechatPayQuery should not be called")
 				return nil
 			},
@@ -139,7 +142,7 @@ func TestCheckWechatPayWorker_MarksExpiredOnLastPendingAttempt(t *testing.T) {
 func TestCheckWechatPayWorker_CancelsInvalidArgs(t *testing.T) {
 	worker := NewCheckWechatPayWorker(
 		&fakeWorkerWechatPayProvider{
-			query: func(ctx context.Context, outTradeNo string) (*pb.QueryOrderReply, error) {
+			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
 				t.Fatalf("QueryOrder should not be called")
 				return nil, nil
 			},

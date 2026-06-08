@@ -29,9 +29,12 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logg
 	if err != nil {
 		return nil, nil, err
 	}
-	wechatPayDataProvider := data.NewWechatPayProvider(logger)
+	wechatPaymentAdapter := data.NewWechatPaymentAdapter(logger)
+	alipayPaymentAdapter := data.NewAlipayPaymentAdapter(logger)
+	paymentAdapters := data.NewPaymentAdapters(wechatPaymentAdapter, alipayPaymentAdapter)
+	paymentGateway := biz.NewPaymentGateway(paymentAdapters)
 	paymentSyncRepo := data.NewPaymentSyncRepo(pool)
-	checkWechatPayWorker := job.NewCheckWechatPayWorker(wechatPayDataProvider, paymentSyncRepo, logger)
+	checkWechatPayWorker := job.NewCheckWechatPayWorker(paymentGateway, paymentSyncRepo, logger)
 	workers := job.NewWorkers(checkWechatPayWorker, logger)
 	client, err := data.NewRiverClient(pool, workers)
 	if err != nil {
@@ -65,7 +68,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logg
 	orderService := service.NewOrderService()
 	paymentMQRepo := data.NewPaymentMQRepo(client, logger)
 	paymentJobUsecase := biz.NewPaymentJobUsecase(paymentMQRepo, logger)
-	paymentService := service.NewPaymentService(wechatPayDataProvider, paymentJobUsecase)
+	paymentService := service.NewPaymentService(paymentGateway, paymentJobUsecase)
 	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	riverServer := job.NewRiverServer(client)

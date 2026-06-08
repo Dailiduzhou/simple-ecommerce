@@ -15,12 +15,12 @@ import (
 type PaymentService struct {
 	pb.UnimplementedPaymentServer
 	pb.UnimplementedWechatPayServiceServer
-	wechatPay   biz.WechatPayProvider
+	paymentGateway biz.PaymentGateway
 	paymentJobs *biz.PaymentJobUsecase
 }
 
-func NewPaymentService(wechatPay biz.WechatPayProvider, paymentJobs *biz.PaymentJobUsecase) *PaymentService {
-	return &PaymentService{wechatPay: wechatPay, paymentJobs: paymentJobs}
+func NewPaymentService(paymentGateway biz.PaymentGateway, paymentJobs *biz.PaymentJobUsecase) *PaymentService {
+	return &PaymentService{paymentGateway: paymentGateway, paymentJobs: paymentJobs}
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymentRequest) (*pb.PaymentInfo, error) {
@@ -72,24 +72,60 @@ func (s *PaymentService) GetMQJob(ctx context.Context, req *pb.GetMQJobRequest) 
 }
 
 func (s *PaymentService) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error) {
-	if s.wechatPay == nil {
+	if s.paymentGateway == nil {
 		return nil, wechatPayProviderMissing()
 	}
-	return s.wechatPay.PrepayJSAPI(ctx, req)
+	result, err := s.paymentGateway.Prepay(ctx, biz.PaymentPrepayRequest{
+		Channel:     biz.PayChannelWechat,
+		OutTradeNo:  req.OutTradeNo,
+		Description: req.Description,
+		TotalAmount: req.TotalAmount,
+		OpenID:      req.Openid,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.PrepayJSAPIReply{
+		AppId:         result.AppID,
+		TimeStamp:     result.TimeStamp,
+		NonceStr:      result.NonceStr,
+		PrepayPackage: result.Package,
+		SignType:      result.SignType,
+		PaySign:       result.PaySign,
+	}, nil
 }
 
 func (s *PaymentService) QueryOrder(ctx context.Context, req *pb.QueryOrderRequest) (*pb.QueryOrderReply, error) {
-	if s.wechatPay == nil {
+	if s.paymentGateway == nil {
 		return nil, wechatPayProviderMissing()
 	}
-	return s.wechatPay.QueryOrder(ctx, req.OutTradeNo)
+	result, err := s.paymentGateway.QueryOrder(ctx, biz.PaymentQueryRequest{
+		Channel:    biz.PayChannelWechat,
+		OutTradeNo: req.OutTradeNo,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.QueryOrderReply{
+		OutTradeNo:    result.OutTradeNo,
+		TransactionId: result.TransactionID,
+		TradeState:    toProtoTradeState(result.TradeState),
+		TotalAmount:   result.TotalAmount,
+	}, nil
 }
 
 func (s *PaymentService) CloseOrder(ctx context.Context, req *pb.CloseOrderRequest) (*pb.CloseOrderReply, error) {
-	if s.wechatPay == nil {
+	if s.paymentGateway == nil {
 		return nil, wechatPayProviderMissing()
 	}
-	return s.wechatPay.CloseOrder(ctx, req.OutTradeNo)
+	result, err := s.paymentGateway.CloseOrder(ctx, biz.PaymentCloseRequest{
+		Channel:    biz.PayChannelWechat,
+		OutTradeNo: req.OutTradeNo,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.CloseOrderReply{Success: result.Success}, nil
 }
 
 func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
@@ -108,7 +144,7 @@ type wechatPayNotifyAck struct {
 }
 
 func wechatPayProviderMissing() error {
-	return errors.ServiceUnavailable("WECHAT_PAY_NOT_CONFIGURED", "wechat pay provider is not configured")
+	return errors.ServiceUnavailable("WECHAT_PAY_NOT_CONFIGURED", "wechat pay gateway is not configured")
 }
 
 func paymentMQMissing() error {
@@ -152,4 +188,25 @@ func toProtoMQJob(job *biz.MQJob) *pb.MQJobInfo {
 		}
 	}
 	return result
+}
+
+func toProtoTradeState(state biz.TradeState) pb.TradeState {
+	switch state {
+	case biz.TradeStateSuccess:
+		return pb.TradeState_SUCCESS
+	case biz.TradeStateRefund:
+		return pb.TradeState_REFUND
+	case biz.TradeStateNotPay:
+		return pb.TradeState_NOTPAY
+	case biz.TradeStateClosed:
+		return pb.TradeState_CLOSED
+	case biz.TradeStateRevoked:
+		return pb.TradeState_REVOKED
+	case biz.TradeStateUserPaying:
+		return pb.TradeState_USERPAYING
+	case biz.TradeStatePayError:
+		return pb.TradeState_PAYERROR
+	default:
+		return pb.TradeState_TRADE_STATE_UNSPECIFIED
+	}
 }
