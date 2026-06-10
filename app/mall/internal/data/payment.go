@@ -22,10 +22,12 @@ import (
 	"github.com/riverqueue/river/rivertype"
 )
 
-var _ biz.PaymentAdapter = (*WechatPaymentAdapter)(nil)
-var _ biz.PaymentAdapter = (*AlipayPaymentAdapter)(nil)
-var _ biz.PaymentMQRepo = (*PaymentMQRepo)(nil)
-var _ biz.PaymentSyncRepo = (*PaymentSyncRepo)(nil)
+var (
+	_ biz.PaymentAdapter  = (*WechatPaymentAdapter)(nil)
+	_ biz.PaymentAdapter  = (*AlipayPaymentAdapter)(nil)
+	_ biz.PaymentMQRepo   = (*PaymentMQRepo)(nil)
+	_ biz.PaymentSyncRepo = (*PaymentSyncRepo)(nil)
+)
 
 type WechatPaymentAdapter struct {
 	client *gopaywechat.Client
@@ -37,7 +39,7 @@ func NewWechatPaymentAdapter(logger log.Logger) *WechatPaymentAdapter {
 }
 
 func (a *WechatPaymentAdapter) Channel() string {
-	return biz.PayChannelWechat
+	return string(biz.Wechat)
 }
 
 func (a *WechatPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
@@ -67,7 +69,7 @@ func (a *WechatPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 	timeStamp := strconv.FormatInt(time.Now().Unix(), 10)
 	pkg := "prepay_id=" + wxRsp.PrepayId
 	return &biz.PaymentPrepayResult{
-		Channel:    biz.PayChannelWechat,
+		Channel:    string(biz.Wechat),
 		OutTradeNo: req.OutTradeNo,
 		PrepayID:   wxRsp.PrepayId,
 		AppID:      a.client.AppId,
@@ -102,7 +104,7 @@ func (a *WechatPaymentAdapter) QueryOrder(ctx context.Context, req biz.PaymentQu
 	}
 	totalAmount, _ := strconv.Atoi(wxRsp.TotalFee)
 	return &biz.PaymentQueryResult{
-		Channel:        biz.PayChannelWechat,
+		Channel:        string(biz.Wechat),
 		OutTradeNo:     wxRsp.OutTradeNo,
 		TransactionID:  wxRsp.TransactionId,
 		TradeState:     biz.ParseTradeState(wxRsp.TradeState),
@@ -127,7 +129,7 @@ func (a *WechatPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 	}
 
 	return &biz.PaymentCloseResult{
-		Channel:    biz.PayChannelWechat,
+		Channel:    string(biz.Wechat),
 		OutTradeNo: req.OutTradeNo,
 		Success:    wxRsp.ReturnCode == "SUCCESS" && wxRsp.ResultCode == "SUCCESS",
 	}, nil
@@ -143,7 +145,7 @@ func NewAlipayPaymentAdapter(logger log.Logger) *AlipayPaymentAdapter {
 }
 
 func (a *AlipayPaymentAdapter) Channel() string {
-	return biz.PayChannelAlipay
+	return string(biz.Alipay)
 }
 
 func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
@@ -166,7 +168,7 @@ func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 	}
 
 	return &biz.PaymentPrepayResult{
-		Channel:    biz.PayChannelAlipay,
+		Channel:    string(biz.Alipay),
 		OutTradeNo: req.OutTradeNo,
 		CodeURL:    aliRsp.Response.QrCode,
 	}, nil
@@ -194,7 +196,7 @@ func (a *AlipayPaymentAdapter) QueryOrder(ctx context.Context, req biz.PaymentQu
 	totalAmount, _ := yuanToFen(aliRsp.Response.TotalAmount)
 	state, stateDesc := mapAlipayTradeState(aliRsp.Response.TradeStatus)
 	return &biz.PaymentQueryResult{
-		Channel:        biz.PayChannelAlipay,
+		Channel:        string(biz.Alipay),
 		OutTradeNo:     aliRsp.Response.OutTradeNo,
 		TransactionID:  aliRsp.Response.TradeNo,
 		TradeState:     state,
@@ -224,7 +226,7 @@ func (a *AlipayPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 	}
 
 	return &biz.PaymentCloseResult{
-		Channel:       biz.PayChannelAlipay,
+		Channel:       string(biz.Alipay),
 		OutTradeNo:    aliRsp.Response.OutTradeNo,
 		TransactionID: aliRsp.Response.TradeNo,
 		Success:       aliRsp.Response != nil,

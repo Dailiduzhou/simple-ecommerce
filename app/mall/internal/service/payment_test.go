@@ -37,7 +37,7 @@ func (p *fakeWechatPayProvider) CloseOrder(ctx context.Context, req biz.PaymentC
 }
 
 func (p *fakeWechatPayProvider) Channel() string {
-	return biz.PayChannelWechat
+	return string(biz.Wechat)
 }
 
 type fakePaymentMQRepo struct {

@@ -36,7 +36,7 @@ func (w *CheckWechatPayWorker) Work(ctx context.Context, job *river.Job[biz.Chec
 	}
 
 	result, err := w.paymentGateway.QueryOrder(ctx, biz.PaymentQueryRequest{
-		Channel:    biz.PayChannelWechat,
+		Channel:    string(biz.Wechat),
 		OutTradeNo: args.OutTradeNo,
 	})
 	if err != nil {

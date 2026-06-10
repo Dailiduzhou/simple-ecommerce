@@ -76,7 +76,7 @@ func (s *PaymentService) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIReq
 		return nil, wechatPayProviderMissing()
 	}
 	result, err := s.paymentGateway.Prepay(ctx, biz.PaymentPrepayRequest{
-		Channel:     biz.PayChannelWechat,
+		Channel:     string(biz.Wechat),
 		OutTradeNo:  req.OutTradeNo,
 		Description: req.Description,
 		TotalAmount: req.TotalAmount,
@@ -100,7 +100,7 @@ func (s *PaymentService) QueryOrder(ctx context.Context, req *pb.QueryOrderReque
 		return nil, wechatPayProviderMissing()
 	}
 	result, err := s.paymentGateway.QueryOrder(ctx, biz.PaymentQueryRequest{
-		Channel:    biz.PayChannelWechat,
+		Channel:    string(biz.Wechat),
 		OutTradeNo: req.OutTradeNo,
 	})
 	if err != nil {
@@ -119,7 +119,7 @@ func (s *PaymentService) CloseOrder(ctx context.Context, req *pb.CloseOrderReque
 		return nil, wechatPayProviderMissing()
 	}
 	result, err := s.paymentGateway.CloseOrder(ctx, biz.PaymentCloseRequest{
-		Channel:    biz.PayChannelWechat,
+		Channel:    string(biz.Wechat),
 		OutTradeNo: req.OutTradeNo,
 	})
 	if err != nil {
