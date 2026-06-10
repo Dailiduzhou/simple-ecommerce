@@ -9,9 +9,11 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 )
 
+type PayChannel string
+
 const (
-	PayChannelWechat = "wechat"
-	PayChannelAlipay = "alipay"
+	Wechat PayChannel = "wechat"
+	Alipay PayChannel = "alipay"
 )
 
 type TradeState string
@@ -87,13 +89,13 @@ type PaymentPrepayResult struct {
 	Channel    string
 	OutTradeNo string
 
-	PrepayID string
-	AppID    string
+	PrepayID  string
+	AppID     string
 	TimeStamp string
-	NonceStr string
-	Package  string
-	SignType string
-	PaySign  string
+	NonceStr  string
+	Package   string
+	SignType  string
+	PaySign   string
 
 	CodeURL string
 	PayURL  string
