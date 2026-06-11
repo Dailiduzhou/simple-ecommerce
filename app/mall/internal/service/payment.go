@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"io"
+	"strconv"
 	"time"
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
@@ -16,25 +17,59 @@ type PaymentService struct {
 	pb.UnimplementedPaymentServer
 	pb.UnimplementedWechatPayServiceServer
 	paymentGateway biz.PaymentGateway
-	paymentJobs *biz.PaymentJobUsecase
+	paymentRepo    biz.PaymentRepo
+	orderRepo      biz.OrderRepo
+	paymentJobs    *biz.PaymentJobUsecase
 }
 
-func NewPaymentService(paymentGateway biz.PaymentGateway, paymentJobs *biz.PaymentJobUsecase) *PaymentService {
-	return &PaymentService{paymentGateway: paymentGateway, paymentJobs: paymentJobs}
+func NewPaymentService(paymentGateway biz.PaymentGateway, paymentRepo biz.PaymentRepo, orderRepo biz.OrderRepo, paymentJobs *biz.PaymentJobUsecase) *PaymentService {
+	return &PaymentService{
+		paymentGateway: paymentGateway,
+		paymentRepo:    paymentRepo,
+		orderRepo:      orderRepo,
+		paymentJobs:    paymentJobs,
+	}
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymentRequest) (*pb.PaymentInfo, error) {
-	return &pb.PaymentInfo{}, nil
+	order, err := s.orderRepo.GetOrder(ctx, req.OrderId)
+	if err != nil {
+		return nil, err
+	}
+	channel := payChannelWithDefault(req.PayChannel)
+	payment, err := s.paymentRepo.CreatePayment(ctx, biz.CreatePaymentArgs{
+		OrderID:    req.OrderId,
+		UserID:     req.UserId,
+		MerchantID: req.MerchantId,
+		Amount:     order.TotalAmount,
+		PayChannel: channel,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toProtoPaymentInfo(payment), nil
 }
+
 func (s *PaymentService) GetPayment(ctx context.Context, req *pb.GetPaymentRequest) (*pb.PaymentInfo, error) {
-	return &pb.PaymentInfo{}, nil
+	payment, err := s.paymentRepo.GetPayment(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	return toProtoPaymentInfo(payment), nil
 }
+
 func (s *PaymentService) GetPaymentByOrder(ctx context.Context, req *pb.GetPaymentByOrderRequest) (*pb.PaymentInfo, error) {
-	return &pb.PaymentInfo{}, nil
+	payment, err := s.paymentRepo.GetPaymentByOrder(ctx, req.OrderId)
+	if err != nil {
+		return nil, err
+	}
+	return toProtoPaymentInfo(payment), nil
 }
+
 func (s *PaymentService) NotifyPayment(ctx context.Context, req *pb.NotifyPaymentRequest) (*pb.NotifyPaymentReply, error) {
-	return &pb.NotifyPaymentReply{}, nil
+	return &pb.NotifyPaymentReply{Result: "success"}, nil
 }
+
 func (s *PaymentService) RefundPayment(ctx context.Context, req *pb.RefundPaymentRequest) (*pb.RefundPaymentReply, error) {
 	return &pb.RefundPaymentReply{}, nil
 }
@@ -46,7 +81,7 @@ func (s *PaymentService) CreateWechatPayCheckJob(ctx context.Context, req *pb.Cr
 	if req.DelaySeconds < 0 {
 		return nil, errors.BadRequest("DELAY_SECONDS_INVALID", "delay_seconds must be greater than or equal to 0")
 	}
-	job, err := s.paymentJobs.EnqueueCheckWechatPay(ctx, biz.CheckWechatPayArgs{
+	job, err := s.paymentJobs.EnqueueCheckPay(ctx, biz.CheckPayArgs{
 		PaymentID:           req.PaymentId,
 		OrderID:             req.OrderId,
 		OutTradeNo:          req.OutTradeNo,
@@ -73,10 +108,10 @@ func (s *PaymentService) GetMQJob(ctx context.Context, req *pb.GetMQJobRequest) 
 
 func (s *PaymentService) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error) {
 	if s.paymentGateway == nil {
-		return nil, wechatPayProviderMissing()
+		return nil, paymentGatewayMissing()
 	}
 	result, err := s.paymentGateway.Prepay(ctx, biz.PaymentPrepayRequest{
-		Channel:     string(biz.Wechat),
+		Channel:     payChannelWithDefault(req.PayChannel),
 		OutTradeNo:  req.OutTradeNo,
 		Description: req.Description,
 		TotalAmount: req.TotalAmount,
@@ -97,10 +132,10 @@ func (s *PaymentService) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIReq
 
 func (s *PaymentService) QueryOrder(ctx context.Context, req *pb.QueryOrderRequest) (*pb.QueryOrderReply, error) {
 	if s.paymentGateway == nil {
-		return nil, wechatPayProviderMissing()
+		return nil, paymentGatewayMissing()
 	}
 	result, err := s.paymentGateway.QueryOrder(ctx, biz.PaymentQueryRequest{
-		Channel:    string(biz.Wechat),
+		Channel:    payChannelWithDefault(req.PayChannel),
 		OutTradeNo: req.OutTradeNo,
 	})
 	if err != nil {
@@ -116,10 +151,10 @@ func (s *PaymentService) QueryOrder(ctx context.Context, req *pb.QueryOrderReque
 
 func (s *PaymentService) CloseOrder(ctx context.Context, req *pb.CloseOrderRequest) (*pb.CloseOrderReply, error) {
 	if s.paymentGateway == nil {
-		return nil, wechatPayProviderMissing()
+		return nil, paymentGatewayMissing()
 	}
 	result, err := s.paymentGateway.CloseOrder(ctx, biz.PaymentCloseRequest{
-		Channel:    string(biz.Wechat),
+		Channel:    payChannelWithDefault(req.PayChannel),
 		OutTradeNo: req.OutTradeNo,
 	})
 	if err != nil {
@@ -143,12 +178,40 @@ type wechatPayNotifyAck struct {
 	Message string `json:"message"`
 }
 
-func wechatPayProviderMissing() error {
-	return errors.ServiceUnavailable("WECHAT_PAY_NOT_CONFIGURED", "wechat pay gateway is not configured")
+func payChannelWithDefault(channel string) string {
+	if c := biz.NormalizePayChannel(channel); c != "" {
+		return c
+	}
+	return string(biz.Wechat)
+}
+
+func paymentGatewayMissing() error {
+	return errors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
 }
 
 func paymentMQMissing() error {
 	return errors.ServiceUnavailable("PAYMENT_MQ_NOT_CONFIGURED", "payment mq is not configured")
+}
+
+func toProtoPaymentInfo(p *biz.PaymentDO) *pb.PaymentInfo {
+	if p == nil {
+		return nil
+	}
+	result := &pb.PaymentInfo{
+		Id:             p.ID,
+		OrderId:        p.OrderID,
+		UserId:         p.UserID,
+		MerchantId:     p.MerchantID,
+		Amount:         formatAmount(p.Amount),
+		Status:         p.Status,
+		PayChannel:     p.PayChannel,
+		ThirdPartyTxId: p.ThirdPartyTxID,
+		CreatedAt:      timestamppb.New(p.CreatedAt),
+	}
+	if p.PaidAt != nil {
+		result.PaidAt = timestamppb.New(*p.PaidAt)
+	}
+	return result
 }
 
 func toProtoMQJob(job *biz.MQJob) *pb.MQJobInfo {
@@ -157,14 +220,14 @@ func toProtoMQJob(job *biz.MQJob) *pb.MQJobInfo {
 	}
 	result := &pb.MQJobInfo{
 		JobId:       job.ID,
-		Kind:        job.Kind,
-		Queue:       job.Queue,
-		State:       job.State,
-		Attempt:     int32(job.Attempt),
-		MaxAttempts: int32(job.MaxAttempts),
-		ArgsJson:    job.ArgsJSON,
-		Tags:        job.Tags,
-		Errors:      make([]*pb.MQJobError, len(job.Errors)),
+		Kind:         job.Kind,
+		Queue:        job.Queue,
+		State:        job.State,
+		Attempt:      int32(job.Attempt),
+		MaxAttempts:  int32(job.MaxAttempts),
+		ArgsJson:     job.ArgsJSON,
+		Tags:         job.Tags,
+		Errors:       make([]*pb.MQJobError, len(job.Errors)),
 	}
 	if !job.CreatedAt.IsZero() {
 		result.CreatedAt = timestamppb.New(job.CreatedAt)
@@ -188,6 +251,10 @@ func toProtoMQJob(job *biz.MQJob) *pb.MQJobInfo {
 		}
 	}
 	return result
+}
+
+func formatAmount(amountInFen int32) string {
+	return strconv.FormatInt(int64(amountInFen), 10)
 }
 
 func toProtoTradeState(state biz.TradeState) pb.TradeState {

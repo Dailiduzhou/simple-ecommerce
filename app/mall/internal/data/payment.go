@@ -20,11 +20,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+	"github.com/shopspring/decimal"
 )
 
 var (
 	_ biz.PaymentAdapter  = (*WechatPaymentAdapter)(nil)
 	_ biz.PaymentAdapter  = (*AlipayPaymentAdapter)(nil)
+	_ biz.PaymentRepo     = (*PaymentRepo)(nil)
 	_ biz.PaymentMQRepo   = (*PaymentMQRepo)(nil)
 	_ biz.PaymentSyncRepo = (*PaymentSyncRepo)(nil)
 )
@@ -233,6 +235,67 @@ func (a *AlipayPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 	}, nil
 }
 
+type PaymentRepo struct {
+	pool *pgxpool.Pool
+	q    db.Querier
+}
+
+func NewPaymentRepo(pool *pgxpool.Pool) *PaymentRepo {
+	return &PaymentRepo{pool: pool, q: db.New(pool)}
+}
+
+func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
+	amount := decimal.NewFromInt(int64(args.Amount))
+	payment, err := r.q.CreatePayment(ctx, db.CreatePaymentParams{
+		OrderID:    args.OrderID,
+		UserID:     args.UserID,
+		MerchantID: args.MerchantID,
+		Amount:     amount,
+		Status:     "pending",
+		PayChannel: args.PayChannel,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toBizPaymentDO(payment), nil
+}
+
+func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
+	payment, err := r.q.GetPayment(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return toBizPaymentDO(payment), nil
+}
+
+func (r *PaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
+	payment, err := r.q.GetPaymentByOrder(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	return toBizPaymentDO(payment), nil
+}
+
+func toBizPaymentDO(p db.Payment) *biz.PaymentDO {
+	d := &biz.PaymentDO{
+		ID:             p.ID,
+		OrderID:        p.OrderID,
+		UserID:         p.UserID,
+		MerchantID:     p.MerchantID,
+		Amount:         int32(p.Amount.IntPart()),
+		Status:         p.Status,
+		PayChannel:     p.PayChannel,
+		ThirdPartyTxID: p.ThirdPartyTxID.String,
+		CreatedAt:      p.CreatedAt.Time,
+		UpdatedAt:      p.UpdatedAt.Time,
+	}
+	if p.PaidAt.Valid {
+		t := p.PaidAt.Time
+		d.PaidAt = &t
+	}
+	return d
+}
+
 func wechatPayNotConfigured() error {
 	return errors.ServiceUnavailable("WECHAT_PAY_NOT_CONFIGURED", "wechat pay adapter is not configured")
 }
@@ -250,12 +313,12 @@ func NewPaymentMQRepo(client *river.Client[pgx.Tx], logger log.Logger) *PaymentM
 	return &PaymentMQRepo{client: client, log: log.NewHelper(logger)}
 }
 
-func (r *PaymentMQRepo) EnqueueCheckWechatPay(ctx context.Context, args biz.CheckWechatPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
+func (r *PaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
 	opts := &river.InsertOpts{
 		MaxAttempts: args.MaxPolls,
 		Queue:       "payments",
 		Tags: []string{
-			"wechat-pay",
+			fmt.Sprintf("pay-channel-%s", args.Channel),
 			fmt.Sprintf("payment-%d", args.PaymentID),
 		},
 		UniqueOpts: river.UniqueOpts{
@@ -296,7 +359,7 @@ func NewPaymentSyncRepo(pool *pgxpool.Pool) *PaymentSyncRepo {
 	return &PaymentSyncRepo{pool: pool}
 }
 
-func (r *PaymentSyncRepo) ApplyWechatPayQuery(ctx context.Context, args biz.CheckWechatPayArgs, result *biz.PaymentQueryResult) error {
+func (r *PaymentSyncRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -353,7 +416,7 @@ func (r *PaymentSyncRepo) ApplyWechatPayQuery(ctx context.Context, args biz.Chec
 	return tx.Commit(ctx)
 }
 
-func (r *PaymentSyncRepo) MarkWechatPayExpired(ctx context.Context, args biz.CheckWechatPayArgs) error {
+func (r *PaymentSyncRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err

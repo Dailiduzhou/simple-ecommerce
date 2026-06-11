@@ -66,6 +66,10 @@ paths:
                   required: true
                   schema:
                     type: string
+                - name: payChannel
+                  in: query
+                  schema:
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -275,6 +279,8 @@ components:
             properties:
                 outTradeNo:
                     type: string
+                payChannel:
+                    type: string
             description: 关闭订单请求
         CreatePaymentRequest:
             type: object
@@ -433,6 +439,8 @@ components:
                     type: integer
                     format: int32
                 openid:
+                    type: string
+                payChannel:
                     type: string
             description: JSAPI 统一下单请求
         QueryOrderReply:
