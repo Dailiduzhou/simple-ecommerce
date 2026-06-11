@@ -69,7 +69,7 @@ func newTestUserService(userRepo biz.UserRepo) *UserService {
 	ac := testAuthConf()
 	authUc := biz.NewAuthUsecase(userRepo, &fakeAuthRepo{}, ac)
 	userUc := biz.NewUserUsecase(userRepo, ac, log.DefaultLogger)
-	return NewUserService(authUc, userUc, nil, ac, log.DefaultLogger)
+	return NewUserService(authUc, userUc, nil, log.DefaultLogger)
 }
 
 func TestUserService_Register(t *testing.T) {

@@ -30,7 +30,46 @@ type OrderRepo interface {
 	UpdateOrderStatus(ctx context.Context, id int64, status string) (Order, error)
 }
 
-type OrderUsecase struct {
+type OrderUsecase interface {
+	CreateOrder(ctx context.Context, req *CreateOrderReq) (*Order, error)
+	GetOrder(ctx context.Context, id int64) (*Order, error)
+	ListOrders(ctx context.Context, req *ListOrdersReq) ([]Order, error)
+	CancelOrder(ctx context.Context, id int64) error
+}
+
+type orderUsecase struct {
 	repo OrderRepo
 	log  *log.Helper
+}
+
+func (uc *orderUsecase) CreateOrder(ctx context.Context, req *CreateOrderReq) (*Order, error) {
+	return nil, nil
+}
+
+func (uc *orderUsecase) GetOrder(ctx context.Context, id int64) (*Order, error) {
+	return nil, nil
+}
+
+func (uc *orderUsecase) ListOrders(ctx context.Context, req *ListOrdersReq) ([]Order, error) {
+	return nil, nil
+}
+
+func (uc *orderUsecase) CancelOrder(ctx context.Context, id int64) error {
+	return nil
+}
+
+func NewOrderUsecase(repo OrderRepo, logger log.Logger) OrderUsecase {
+	return &orderUsecase{repo: repo, log: log.NewHelper(logger)}
+}
+
+type CreateOrderReq struct {
+	UserID    int64
+	AddressID int64
+	Amount    int32
+}
+
+type ListOrdersReq struct {
+	UserID   int64
+	Limit    int32
+	Offset   int32
 }
