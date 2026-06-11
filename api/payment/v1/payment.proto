@@ -175,6 +175,7 @@ message PrepayJSAPIRequest {
   string description  = 2; // 商品描述
   int32  total_amount = 3; // 订单总金额，单位为分
   string openid       = 4; // 用户在商户 appid 下的唯一标识
+  string pay_channel  = 5; // 支付渠道 (wechat/alipay)
 }
 
 // JSAPI 统一下单响应 (返回给前端唤起微信支付的核心参数)
@@ -190,6 +191,7 @@ message PrepayJSAPIReply {
 // 查询订单请求
 message QueryOrderRequest {
   string out_trade_no = 1; // 商户订单号
+  string pay_channel  = 2; // 支付渠道 (wechat/alipay)
 }
 
 // 查询订单响应
@@ -203,6 +205,7 @@ message QueryOrderReply {
 // 关闭订单请求
 message CloseOrderRequest {
   string out_trade_no = 1; // 商户订单号
+  string pay_channel  = 2; // 支付渠道 (wechat/alipay)
 }
 
 // 关闭订单响应

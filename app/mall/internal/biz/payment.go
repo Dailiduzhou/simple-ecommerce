@@ -143,19 +143,20 @@ type PaymentGateway interface {
 	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
 }
 
-const CheckWechatPayJobKind = "check_wechat_pay"
+const CheckPayJobKind = "check_pay"
 
-type CheckWechatPayArgs struct {
+type CheckPayArgs struct {
 	PaymentID           int64  `json:"payment_id"`
 	OrderID             int64  `json:"order_id"`
 	OutTradeNo          string `json:"out_trade_no" river:"unique"`
 	MaxPolls            int    `json:"max_polls"`
 	PollIntervalSeconds int    `json:"poll_interval_seconds"`
 	Source              string `json:"source"`
+	Channel             string `json:"channel"`
 }
 
-func (CheckWechatPayArgs) Kind() string {
-	return CheckWechatPayJobKind
+func (CheckPayArgs) Kind() string {
+	return CheckPayJobKind
 }
 
 type MQJob struct {
@@ -180,14 +181,42 @@ type MQJobError struct {
 	At      time.Time
 }
 
+type PaymentDO struct {
+	ID             int64
+	OrderID        int64
+	UserID         int64
+	MerchantID     int64
+	Amount         int32
+	Status         string
+	PayChannel     string
+	ThirdPartyTxID string
+	PaidAt         *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type PaymentRepo interface {
+	CreatePayment(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error)
+	GetPayment(ctx context.Context, id int64) (*PaymentDO, error)
+	GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error)
+}
+
+type CreatePaymentArgs struct {
+	OrderID    int64
+	UserID     int64
+	MerchantID int64
+	Amount     int32
+	PayChannel string
+}
+
 type PaymentMQRepo interface {
-	EnqueueCheckWechatPay(ctx context.Context, args CheckWechatPayArgs, scheduledAt time.Time) (*MQJob, error)
+	EnqueueCheckPay(ctx context.Context, args CheckPayArgs, scheduledAt time.Time) (*MQJob, error)
 	GetMQJob(ctx context.Context, jobID int64) (*MQJob, error)
 }
 
 type PaymentSyncRepo interface {
-	ApplyWechatPayQuery(ctx context.Context, args CheckWechatPayArgs, result *PaymentQueryResult) error
-	MarkWechatPayExpired(ctx context.Context, args CheckWechatPayArgs) error
+	ApplyPayQuery(ctx context.Context, args CheckPayArgs, result *PaymentQueryResult) error
+	MarkPayExpired(ctx context.Context, args CheckPayArgs) error
 }
 
 type PaymentJobUsecase struct {
@@ -199,8 +228,8 @@ func NewPaymentJobUsecase(repo PaymentMQRepo, logger log.Logger) *PaymentJobUsec
 	return &PaymentJobUsecase{repo: repo, log: log.NewHelper(logger)}
 }
 
-func (uc *PaymentJobUsecase) EnqueueCheckWechatPay(ctx context.Context, args CheckWechatPayArgs, delay time.Duration) (*MQJob, error) {
-	args = normalizeCheckWechatPayArgs(args)
+func (uc *PaymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
+	args = normalizeCheckPayArgs(args)
 	if args.PaymentID <= 0 {
 		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
 	}
@@ -211,11 +240,11 @@ func (uc *PaymentJobUsecase) EnqueueCheckWechatPay(ctx context.Context, args Che
 	if delay > 0 {
 		scheduledAt = time.Now().Add(delay)
 	}
-	job, err := uc.repo.EnqueueCheckWechatPay(ctx, args, scheduledAt)
+	job, err := uc.repo.EnqueueCheckPay(ctx, args, scheduledAt)
 	if err != nil {
 		return nil, err
 	}
-	uc.log.WithContext(ctx).Infof("enqueued wechat pay check job_id=%d out_trade_no=%s", job.ID, args.OutTradeNo)
+	uc.log.WithContext(ctx).Infof("enqueued pay check job_id=%d out_trade_no=%s channel=%s", job.ID, args.OutTradeNo, args.Channel)
 	return job, nil
 }
 
@@ -226,7 +255,7 @@ func (uc *PaymentJobUsecase) GetMQJob(ctx context.Context, jobID int64) (*MQJob,
 	return uc.repo.GetMQJob(ctx, jobID)
 }
 
-func normalizeCheckWechatPayArgs(args CheckWechatPayArgs) CheckWechatPayArgs {
+func normalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
 	if args.MaxPolls <= 0 {
 		args.MaxPolls = 5
 	}
