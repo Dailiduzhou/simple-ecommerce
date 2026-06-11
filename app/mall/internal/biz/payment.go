@@ -219,16 +219,21 @@ type PaymentSyncRepo interface {
 	MarkPayExpired(ctx context.Context, args CheckPayArgs) error
 }
 
-type PaymentJobUsecase struct {
+type PaymentJobUsecase interface {
+	EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error)
+	GetMQJob(ctx context.Context, jobID int64) (*MQJob, error)
+}
+
+type paymentJobUsecase struct {
 	repo PaymentMQRepo
 	log  *log.Helper
 }
 
-func NewPaymentJobUsecase(repo PaymentMQRepo, logger log.Logger) *PaymentJobUsecase {
-	return &PaymentJobUsecase{repo: repo, log: log.NewHelper(logger)}
+func NewPaymentJobUsecase(repo PaymentMQRepo, logger log.Logger) PaymentJobUsecase {
+	return &paymentJobUsecase{repo: repo, log: log.NewHelper(logger)}
 }
 
-func (uc *PaymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
+func (uc *paymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
 	args = normalizeCheckPayArgs(args)
 	if args.PaymentID <= 0 {
 		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
@@ -248,7 +253,7 @@ func (uc *PaymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayA
 	return job, nil
 }
 
-func (uc *PaymentJobUsecase) GetMQJob(ctx context.Context, jobID int64) (*MQJob, error) {
+func (uc *paymentJobUsecase) GetMQJob(ctx context.Context, jobID int64) (*MQJob, error) {
 	if jobID <= 0 {
 		return nil, errors.BadRequest("MQ_JOB_ID_REQUIRED", "job_id is required")
 	}
@@ -266,4 +271,88 @@ func normalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
 		args.Source = "api"
 	}
 	return args
+}
+
+type PaymentUsecase interface {
+	CreatePayment(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*PaymentDO, error)
+	GetPayment(ctx context.Context, id int64) (*PaymentDO, error)
+	GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error)
+	Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
+	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
+	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
+}
+
+type paymentUsecase struct {
+	gateway    PaymentGateway
+	paymentRepo PaymentRepo
+	orderRepo   OrderRepo
+	log         *log.Helper
+}
+
+func NewPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, orderRepo OrderRepo, logger log.Logger) PaymentUsecase {
+	return &paymentUsecase{
+		gateway:     gateway,
+		paymentRepo: paymentRepo,
+		orderRepo:   orderRepo,
+		log:         log.NewHelper(logger),
+	}
+}
+
+func (uc *paymentUsecase) CreatePayment(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*PaymentDO, error) {
+	order, err := uc.orderRepo.GetOrder(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	channel := NormalizePayChannel(payChannel)
+	if channel == "" {
+		channel = string(Wechat)
+	}
+	return uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
+		OrderID:    orderID,
+		UserID:     userID,
+		MerchantID: merchantID,
+		Amount:     order.TotalAmount,
+		PayChannel: channel,
+	})
+}
+
+func (uc *paymentUsecase) GetPayment(ctx context.Context, id int64) (*PaymentDO, error) {
+	return uc.paymentRepo.GetPayment(ctx, id)
+}
+
+func (uc *paymentUsecase) GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error) {
+	return uc.paymentRepo.GetPaymentByOrder(ctx, orderID)
+}
+
+func (uc *paymentUsecase) Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
+	if uc.gateway == nil {
+		return nil, errors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
+	}
+	req.Channel = NormalizePayChannel(req.Channel)
+	if req.Channel == "" {
+		req.Channel = string(Wechat)
+	}
+	return uc.gateway.Prepay(ctx, req)
+}
+
+func (uc *paymentUsecase) QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error) {
+	if uc.gateway == nil {
+		return nil, errors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
+	}
+	req.Channel = NormalizePayChannel(req.Channel)
+	if req.Channel == "" {
+		req.Channel = string(Wechat)
+	}
+	return uc.gateway.QueryOrder(ctx, req)
+}
+
+func (uc *paymentUsecase) CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error) {
+	if uc.gateway == nil {
+		return nil, errors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
+	}
+	req.Channel = NormalizePayChannel(req.Channel)
+	if req.Channel == "" {
+		req.Channel = string(Wechat)
+	}
+	return uc.gateway.CloseOrder(ctx, req)
 }

@@ -18,50 +18,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type fakePaymentGateway struct {
-	channel string
-	prepay  func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error)
-	query   func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
-	close   func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error)
+type fakePaymentUsecase struct {
+	create        func(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*biz.PaymentDO, error)
+	get           func(ctx context.Context, id int64) (*biz.PaymentDO, error)
+	getByOrder    func(ctx context.Context, orderID int64) (*biz.PaymentDO, error)
+	prepay        func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error)
+	queryOrder    func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
+	closeOrder    func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error)
 }
 
-func (g *fakePaymentGateway) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
-	return g.prepay(ctx, req)
+func (u *fakePaymentUsecase) CreatePayment(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*biz.PaymentDO, error) {
+	return u.create(ctx, orderID, userID, merchantID, payChannel)
 }
 
-func (g *fakePaymentGateway) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
-	return g.query(ctx, req)
+func (u *fakePaymentUsecase) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
+	return u.get(ctx, id)
 }
 
-func (g *fakePaymentGateway) CloseOrder(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
-	return g.close(ctx, req)
+func (u *fakePaymentUsecase) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
+	return u.getByOrder(ctx, orderID)
 }
 
-type fakePaymentRepo struct {
-	create         func(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error)
-	get            func(ctx context.Context, id int64) (*biz.PaymentDO, error)
-	getByOrder     func(ctx context.Context, orderID int64) (*biz.PaymentDO, error)
+func (u *fakePaymentUsecase) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
+	return u.prepay(ctx, req)
 }
 
-func (r *fakePaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
-	return r.create(ctx, args)
+func (u *fakePaymentUsecase) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+	return u.queryOrder(ctx, req)
 }
 
-func (r *fakePaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
-	return r.get(ctx, id)
-}
-
-func (r *fakePaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
-	return r.getByOrder(ctx, orderID)
-}
-
-type fakeOrderRepo struct {
-	biz.OrderRepo
-	getOrder func(ctx context.Context, id int64) (biz.Order, error)
-}
-
-func (r *fakeOrderRepo) GetOrder(ctx context.Context, id int64) (biz.Order, error) {
-	return r.getOrder(ctx, id)
+func (u *fakePaymentUsecase) CloseOrder(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+	return u.closeOrder(ctx, req)
 }
 
 type fakePaymentMQRepo struct {
@@ -78,24 +65,24 @@ func (r *fakePaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJ
 }
 
 func TestPaymentService_PrepayDelegatesToGateway(t *testing.T) {
-	s := NewPaymentService(&fakePaymentGateway{
+	s := NewPaymentService(&fakePaymentUsecase{
 		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 			assert.Equal(t, "order-1", req.OutTradeNo)
 			assert.Equal(t, int32(9900), req.TotalAmount)
-			assert.Equal(t, string(biz.Wechat), req.Channel)
+			assert.Equal(t, "wechat", req.Channel)
 			return &biz.PaymentPrepayResult{AppID: "appid", Package: "prepay_id=wx123"}, nil
 		},
-		query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+		queryOrder: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
 			assert.Equal(t, "order-1", req.OutTradeNo)
-			assert.Equal(t, string(biz.Wechat), req.Channel)
+			assert.Equal(t, "wechat", req.Channel)
 			return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateSuccess, TotalAmount: 9900}, nil
 		},
-		close: func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+		closeOrder: func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
 			assert.Equal(t, "order-1", req.OutTradeNo)
-			assert.Equal(t, string(biz.Wechat), req.Channel)
+			assert.Equal(t, "wechat", req.Channel)
 			return &biz.PaymentCloseResult{Success: true}, nil
 		},
-	}, nil, nil, nil)
+	}, nil)
 
 	prepay, err := s.PrepayJSAPI(context.Background(), &pb.PrepayJSAPIRequest{
 		OutTradeNo:  "order-1",
@@ -124,13 +111,13 @@ func TestPaymentService_PrepayDelegatesToGateway(t *testing.T) {
 	assert.True(t, closed.Success)
 }
 
-func TestPaymentService_PrepayDefaultsChannelToWechat(t *testing.T) {
-	s := NewPaymentService(&fakePaymentGateway{
+func TestPaymentService_PrepayPassesChannelUnmodified(t *testing.T) {
+	s := NewPaymentService(&fakePaymentUsecase{
 		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
-			assert.Equal(t, string(biz.Wechat), req.Channel, "should default to wechat")
+			assert.Equal(t, "", req.Channel)
 			return &biz.PaymentPrepayResult{}, nil
 		},
-	}, nil, nil, nil)
+	}, nil)
 
 	_, err := s.PrepayJSAPI(context.Background(), &pb.PrepayJSAPIRequest{
 		OutTradeNo: "order-default",
@@ -139,12 +126,12 @@ func TestPaymentService_PrepayDefaultsChannelToWechat(t *testing.T) {
 }
 
 func TestPaymentService_PrepayUsesAlipayChannel(t *testing.T) {
-	s := NewPaymentService(&fakePaymentGateway{
+	s := NewPaymentService(&fakePaymentUsecase{
 		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 			assert.Equal(t, string(biz.Alipay), req.Channel)
 			return &biz.PaymentPrepayResult{}, nil
 		},
-	}, nil, nil, nil)
+	}, nil)
 
 	_, err := s.PrepayJSAPI(context.Background(), &pb.PrepayJSAPIRequest{
 		OutTradeNo: "order-alipay",
@@ -155,11 +142,11 @@ func TestPaymentService_PrepayUsesAlipayChannel(t *testing.T) {
 
 func TestPaymentService_PrepayPropagatesGatewayError(t *testing.T) {
 	wantErr := errors.New("gateway failed")
-	s := NewPaymentService(&fakePaymentGateway{
+	s := NewPaymentService(&fakePaymentUsecase{
 		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 			return nil, wantErr
 		},
-	}, nil, nil, nil)
+	}, nil)
 
 	got, err := s.PrepayJSAPI(context.Background(), &pb.PrepayJSAPIRequest{OutTradeNo: "order-2"})
 	assert.ErrorIs(t, err, wantErr)
@@ -167,7 +154,11 @@ func TestPaymentService_PrepayPropagatesGatewayError(t *testing.T) {
 }
 
 func TestPaymentService_GatewayMissing(t *testing.T) {
-	s := NewPaymentService(nil, nil, nil, nil)
+	s := NewPaymentService(&fakePaymentUsecase{
+		queryOrder: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+			return nil, kratoserrors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
+		},
+	}, nil)
 
 	got, err := s.QueryOrder(context.Background(), &pb.QueryOrderRequest{OutTradeNo: "order-3"})
 	require.Error(t, err)
@@ -179,7 +170,7 @@ func TestPaymentService_GatewayMissing(t *testing.T) {
 }
 
 func TestPaymentService_HandleWechatPayNotify(t *testing.T) {
-	s := NewPaymentService(nil, nil, nil, nil)
+	s := NewPaymentService(nil, nil)
 	srv := khttp.NewServer()
 	srv.Route("/").POST("/v1/pay/wechat/notify", s.HandleWechatPayNotify)
 
@@ -213,7 +204,7 @@ func TestPaymentService_CreateWechatPayCheckJob(t *testing.T) {
 			}, nil
 		},
 	}
-	s := NewPaymentService(nil, nil, nil, biz.NewPaymentJobUsecase(repo, log.DefaultLogger))
+	s := NewPaymentService(nil, biz.NewPaymentJobUsecase(repo, log.DefaultLogger))
 
 	before := time.Now().Add(2 * time.Second)
 	got, err := s.CreateWechatPayCheckJob(context.Background(), &pb.CreateWechatPayCheckJobRequest{
@@ -248,7 +239,7 @@ func TestPaymentService_CreateWechatPayCheckJob(t *testing.T) {
 }
 
 func TestPaymentService_CreateWechatPayCheckJobRejectsNegativeDelay(t *testing.T) {
-	s := NewPaymentService(nil, nil, nil, biz.NewPaymentJobUsecase(&fakePaymentMQRepo{
+	s := NewPaymentService(nil, biz.NewPaymentJobUsecase(&fakePaymentMQRepo{
 		enqueue: func(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
 			t.Fatalf("EnqueueCheckPay should not be called")
 			return nil, nil
@@ -292,7 +283,7 @@ func TestPaymentService_GetMQJob(t *testing.T) {
 			}, nil
 		},
 	}
-	s := NewPaymentService(nil, nil, nil, biz.NewPaymentJobUsecase(repo, log.DefaultLogger))
+	s := NewPaymentService(nil, biz.NewPaymentJobUsecase(repo, log.DefaultLogger))
 
 	got, err := s.GetMQJob(context.Background(), &pb.GetMQJobRequest{JobId: 101})
 	require.NoError(t, err)
@@ -308,7 +299,7 @@ func TestPaymentService_GetMQJob(t *testing.T) {
 }
 
 func TestPaymentService_PaymentMQMissing(t *testing.T) {
-	s := NewPaymentService(nil, nil, nil, nil)
+	s := NewPaymentService(nil, nil)
 
 	got, err := s.GetMQJob(context.Background(), &pb.GetMQJobRequest{JobId: 101})
 	require.Error(t, err)

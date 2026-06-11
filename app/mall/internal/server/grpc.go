@@ -22,7 +22,7 @@ import (
 )
 
 // NewGRPCServer new a gRPC server.
-func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc *biz.AuthUsecase, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, logger log.Logger) *grpc.Server {
+func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, logger log.Logger) *grpc.Server {
 	jwtMiddleware := kratosjwt.Server(
 		func(t *jwtv5.Token) (any, error) {
 			return []byte(ac.AccessTokenSecret), nil

@@ -9,7 +9,7 @@ import (
 	"github.com/go-kratos/kratos/v2/middleware"
 )
 
-func CheckBlacklist(authUc *biz.AuthUsecase) middleware.Middleware {
+func CheckBlacklist(authUc biz.AuthUsecase) middleware.Middleware {
 	return func(handler middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (any, error) {
 			claims, ok := kratosjwt.FromContext(ctx)

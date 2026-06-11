@@ -16,34 +16,19 @@ import (
 type PaymentService struct {
 	pb.UnimplementedPaymentServer
 	pb.UnimplementedWechatPayServiceServer
-	paymentGateway biz.PaymentGateway
-	paymentRepo    biz.PaymentRepo
-	orderRepo      biz.OrderRepo
-	paymentJobs    *biz.PaymentJobUsecase
+	paymentUc  biz.PaymentUsecase
+	paymentJobs biz.PaymentJobUsecase
 }
 
-func NewPaymentService(paymentGateway biz.PaymentGateway, paymentRepo biz.PaymentRepo, orderRepo biz.OrderRepo, paymentJobs *biz.PaymentJobUsecase) *PaymentService {
+func NewPaymentService(paymentUc biz.PaymentUsecase, paymentJobs biz.PaymentJobUsecase) *PaymentService {
 	return &PaymentService{
-		paymentGateway: paymentGateway,
-		paymentRepo:    paymentRepo,
-		orderRepo:      orderRepo,
-		paymentJobs:    paymentJobs,
+		paymentUc:  paymentUc,
+		paymentJobs: paymentJobs,
 	}
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymentRequest) (*pb.PaymentInfo, error) {
-	order, err := s.orderRepo.GetOrder(ctx, req.OrderId)
-	if err != nil {
-		return nil, err
-	}
-	channel := payChannelWithDefault(req.PayChannel)
-	payment, err := s.paymentRepo.CreatePayment(ctx, biz.CreatePaymentArgs{
-		OrderID:    req.OrderId,
-		UserID:     req.UserId,
-		MerchantID: req.MerchantId,
-		Amount:     order.TotalAmount,
-		PayChannel: channel,
-	})
+	payment, err := s.paymentUc.CreatePayment(ctx, req.OrderId, req.UserId, req.MerchantId, req.PayChannel)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +36,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymen
 }
 
 func (s *PaymentService) GetPayment(ctx context.Context, req *pb.GetPaymentRequest) (*pb.PaymentInfo, error) {
-	payment, err := s.paymentRepo.GetPayment(ctx, req.Id)
+	payment, err := s.paymentUc.GetPayment(ctx, req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +44,7 @@ func (s *PaymentService) GetPayment(ctx context.Context, req *pb.GetPaymentReque
 }
 
 func (s *PaymentService) GetPaymentByOrder(ctx context.Context, req *pb.GetPaymentByOrderRequest) (*pb.PaymentInfo, error) {
-	payment, err := s.paymentRepo.GetPaymentByOrder(ctx, req.OrderId)
+	payment, err := s.paymentUc.GetPaymentByOrder(ctx, req.OrderId)
 	if err != nil {
 		return nil, err
 	}
@@ -107,11 +92,8 @@ func (s *PaymentService) GetMQJob(ctx context.Context, req *pb.GetMQJobRequest) 
 }
 
 func (s *PaymentService) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error) {
-	if s.paymentGateway == nil {
-		return nil, paymentGatewayMissing()
-	}
-	result, err := s.paymentGateway.Prepay(ctx, biz.PaymentPrepayRequest{
-		Channel:     payChannelWithDefault(req.PayChannel),
+	result, err := s.paymentUc.Prepay(ctx, biz.PaymentPrepayRequest{
+		Channel:     req.PayChannel,
 		OutTradeNo:  req.OutTradeNo,
 		Description: req.Description,
 		TotalAmount: req.TotalAmount,
@@ -131,11 +113,8 @@ func (s *PaymentService) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIReq
 }
 
 func (s *PaymentService) QueryOrder(ctx context.Context, req *pb.QueryOrderRequest) (*pb.QueryOrderReply, error) {
-	if s.paymentGateway == nil {
-		return nil, paymentGatewayMissing()
-	}
-	result, err := s.paymentGateway.QueryOrder(ctx, biz.PaymentQueryRequest{
-		Channel:    payChannelWithDefault(req.PayChannel),
+	result, err := s.paymentUc.QueryOrder(ctx, biz.PaymentQueryRequest{
+		Channel:    req.PayChannel,
 		OutTradeNo: req.OutTradeNo,
 	})
 	if err != nil {
@@ -150,11 +129,8 @@ func (s *PaymentService) QueryOrder(ctx context.Context, req *pb.QueryOrderReque
 }
 
 func (s *PaymentService) CloseOrder(ctx context.Context, req *pb.CloseOrderRequest) (*pb.CloseOrderReply, error) {
-	if s.paymentGateway == nil {
-		return nil, paymentGatewayMissing()
-	}
-	result, err := s.paymentGateway.CloseOrder(ctx, biz.PaymentCloseRequest{
-		Channel:    payChannelWithDefault(req.PayChannel),
+	result, err := s.paymentUc.CloseOrder(ctx, biz.PaymentCloseRequest{
+		Channel:    req.PayChannel,
 		OutTradeNo: req.OutTradeNo,
 	})
 	if err != nil {
@@ -176,17 +152,6 @@ func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
 type wechatPayNotifyAck struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
-}
-
-func payChannelWithDefault(channel string) string {
-	if c := biz.NormalizePayChannel(channel); c != "" {
-		return c
-	}
-	return string(biz.Wechat)
-}
-
-func paymentGatewayMissing() error {
-	return errors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
 }
 
 func paymentMQMissing() error {
