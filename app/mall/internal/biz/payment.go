@@ -283,7 +283,7 @@ type PaymentUsecase interface {
 }
 
 type paymentUsecase struct {
-	gateway    PaymentGateway
+	gateway     PaymentGateway
 	paymentRepo PaymentRepo
 	orderRepo   OrderRepo
 	log         *log.Helper
