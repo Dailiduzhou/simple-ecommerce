@@ -26,7 +26,7 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentSyncRepo,
+	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentSyncRepo, NewTransaction,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
@@ -37,6 +37,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.PaymentRepo), new(*PaymentRepo)),
 	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
 	wire.Bind(new(biz.PaymentSyncRepo), new(*PaymentSyncRepo)),
+	wire.Bind(new(biz.Transaction), new(*transaction)),
 )
 
 type (
@@ -158,10 +159,7 @@ func RunMigrations(c *conf.Data) error {
 }
 
 func (d *Data) DB(ctx context.Context) db.Querier {
-	if q, ok := ctx.Value(ctxTxKey{}).(db.Querier); ok {
-		return q
-	}
-	return d.q
+	return querierFromContext(ctx, d.q)
 }
 
 func (d *Data) GetPgTx(ctx context.Context) pgx.Tx {
@@ -169,4 +167,11 @@ func (d *Data) GetPgTx(ctx context.Context) pgx.Tx {
 		return tx
 	}
 	return nil
+}
+
+func querierFromContext(ctx context.Context, fallback db.Querier) db.Querier {
+	if q, ok := ctx.Value(ctxTxKey{}).(db.Querier); ok {
+		return q
+	}
+	return fallback
 }

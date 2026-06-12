@@ -20,15 +20,15 @@ func NewOrderRepo(pool *pgxpool.Pool) *OrderRepo {
 }
 
 func (r *OrderRepo) CancelOrder(ctx context.Context, id int64) error {
-	return r.q.CancelOrder(ctx, id)
+	return querierFromContext(ctx, r.q).CancelOrder(ctx, id)
 }
 
 func (r *OrderRepo) CompleteOrder(ctx context.Context, id int64) error {
-	return r.q.CompleteOrder(ctx, id)
+	return querierFromContext(ctx, r.q).CompleteOrder(ctx, id)
 }
 
 func (r *OrderRepo) CreateOrder(ctx context.Context, userID int64, addressID int64, amount int32) (biz.Order, error) {
-	order, err := r.q.CreateOrder(ctx, db.CreateOrderParams{
+	order, err := querierFromContext(ctx, r.q).CreateOrder(ctx, db.CreateOrderParams{
 		UserID:      userID,
 		AddressID:   addressID,
 		TotalAmount: amount,
@@ -40,7 +40,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, userID int64, addressID int
 }
 
 func (r *OrderRepo) GetOrder(ctx context.Context, id int64) (biz.Order, error) {
-	order, err := r.q.GetOrder(ctx, id)
+	order, err := querierFromContext(ctx, r.q).GetOrder(ctx, id)
 	if err != nil {
 		return biz.Order{}, err
 	}
@@ -48,7 +48,7 @@ func (r *OrderRepo) GetOrder(ctx context.Context, id int64) (biz.Order, error) {
 }
 
 func (r *OrderRepo) GetOrderByUser(ctx context.Context, id int64, userID int64) (biz.Order, error) {
-	order, err := r.q.GetOrderByUser(ctx, db.GetOrderByUserParams{
+	order, err := querierFromContext(ctx, r.q).GetOrderByUser(ctx, db.GetOrderByUserParams{
 		ID:     id,
 		UserID: userID,
 	})
@@ -59,11 +59,11 @@ func (r *OrderRepo) GetOrderByUser(ctx context.Context, id int64, userID int64) 
 }
 
 func (r *OrderRepo) HasOngoingOrders(ctx context.Context, userID int64) (bool, error) {
-	return r.q.HasOngoingOrders(ctx, userID)
+	return querierFromContext(ctx, r.q).HasOngoingOrders(ctx, userID)
 }
 
 func (r *OrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]biz.Order, error) {
-	orders, err := r.q.ListOngoingOrdersByUser(ctx, userID)
+	orders, err := querierFromContext(ctx, r.q).ListOngoingOrdersByUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (r *OrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64) (
 }
 
 func (r *OrderRepo) ListOrdersByUser(ctx context.Context, userID int64, limit int32, offset int32) ([]biz.Order, error) {
-	orders, err := r.q.ListOrdersByUser(ctx, db.ListOrdersByUserParams{
+	orders, err := querierFromContext(ctx, r.q).ListOrdersByUser(ctx, db.ListOrdersByUserParams{
 		UserID: userID,
 		Limit:  limit,
 		Offset: offset,
@@ -91,7 +91,7 @@ func (r *OrderRepo) ListOrdersByUser(ctx context.Context, userID int64, limit in
 }
 
 func (r *OrderRepo) UpdateOrderStatus(ctx context.Context, id int64, status string) (biz.Order, error) {
-	order, err := r.q.UpdateOrderStatus(ctx, db.UpdateOrderStatusParams{
+	order, err := querierFromContext(ctx, r.q).UpdateOrderStatus(ctx, db.UpdateOrderStatusParams{
 		ID:     id,
 		Status: status,
 	})
@@ -113,4 +113,3 @@ func toBizOrder(o db.Order) biz.Order {
 		UpdatedAt:   o.UpdatedAt.Time,
 	}
 }
-
