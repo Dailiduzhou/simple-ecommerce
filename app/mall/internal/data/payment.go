@@ -246,7 +246,7 @@ func NewPaymentRepo(pool *pgxpool.Pool) *PaymentRepo {
 
 func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
 	amount := decimal.NewFromInt(int64(args.Amount))
-	payment, err := r.q.CreatePayment(ctx, db.CreatePaymentParams{
+	payment, err := querierFromContext(ctx, r.q).CreatePayment(ctx, db.CreatePaymentParams{
 		OrderID:    args.OrderID,
 		UserID:     args.UserID,
 		MerchantID: args.MerchantID,
@@ -261,7 +261,7 @@ func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentA
 }
 
 func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
-	payment, err := r.q.GetPayment(ctx, id)
+	payment, err := querierFromContext(ctx, r.q).GetPayment(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO,
 }
 
 func (r *PaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
-	payment, err := r.q.GetPaymentByOrder(ctx, orderID)
+	payment, err := querierFromContext(ctx, r.q).GetPaymentByOrder(ctx, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -352,51 +352,75 @@ func (r *PaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJob, 
 }
 
 type PaymentSyncRepo struct {
-	pool *pgxpool.Pool
+	q  db.Querier
+	tx biz.Transaction
 }
 
-func NewPaymentSyncRepo(pool *pgxpool.Pool) *PaymentSyncRepo {
-	return &PaymentSyncRepo{pool: pool}
+func NewPaymentSyncRepo(pool *pgxpool.Pool, tx biz.Transaction) *PaymentSyncRepo {
+	return &PaymentSyncRepo{q: db.New(pool), tx: tx}
 }
 
 func (r *PaymentSyncRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
+	return r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, r.q)
+		orderID := args.OrderID
 
-	q := db.New(tx)
-	orderID := args.OrderID
-
-	switch result.TradeState {
-	case biz.TradeStateSuccess:
-		payment, err := q.UpdatePaymentSuccess(ctx, db.UpdatePaymentSuccessParams{
-			ID: args.PaymentID,
-			ThirdPartyTxID: pgtype.Text{
-				String: result.TransactionID,
-				Valid:  result.TransactionID != "",
-			},
-		})
-		if err != nil {
-			return err
-		}
-		if orderID <= 0 {
-			orderID = payment.OrderID
-		}
-		if orderID > 0 {
-			if err := q.CompleteOrder(ctx, orderID); err != nil {
+		switch result.TradeState {
+		case biz.TradeStateSuccess:
+			payment, err := q.UpdatePaymentSuccess(ctx, db.UpdatePaymentSuccessParams{
+				ID: args.PaymentID,
+				ThirdPartyTxID: pgtype.Text{
+					String: result.TransactionID,
+					Valid:  result.TransactionID != "",
+				},
+			})
+			if err != nil {
 				return err
 			}
+			if orderID <= 0 {
+				orderID = payment.OrderID
+			}
+			if orderID > 0 {
+				if err := q.CompleteOrder(ctx, orderID); err != nil {
+					return err
+				}
+			}
+		case biz.TradeStateRefund:
+			if err := q.UpdatePaymentRefunded(ctx, args.PaymentID); err != nil {
+				return err
+			}
+		case biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError:
+			if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
+				return err
+			}
+			if orderID <= 0 {
+				payment, err := q.GetPayment(ctx, args.PaymentID)
+				if err != nil {
+					return err
+				}
+				orderID = payment.OrderID
+			}
+			if orderID > 0 {
+				if err := q.CancelOrder(ctx, orderID); err != nil {
+					return err
+				}
+			}
+		default:
+			return fmt.Errorf("wechat pay state %s is not terminal", result.TradeState.String())
 		}
-	case biz.TradeStateRefund:
-		if err := q.UpdatePaymentRefunded(ctx, args.PaymentID); err != nil {
-			return err
-		}
-	case biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError:
+
+		return nil
+	})
+}
+
+func (r *PaymentSyncRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
+	return r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, r.q)
 		if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
 			return err
 		}
+
+		orderID := args.OrderID
 		if orderID <= 0 {
 			payment, err := q.GetPayment(ctx, args.PaymentID)
 			if err != nil {
@@ -409,40 +433,9 @@ func (r *PaymentSyncRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayAr
 				return err
 			}
 		}
-	default:
-		return fmt.Errorf("wechat pay state %s is not terminal", result.TradeState.String())
-	}
 
-	return tx.Commit(ctx)
-}
-
-func (r *PaymentSyncRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	q := db.New(tx)
-	if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
-		return err
-	}
-
-	orderID := args.OrderID
-	if orderID <= 0 {
-		payment, err := q.GetPayment(ctx, args.PaymentID)
-		if err != nil {
-			return err
-		}
-		orderID = payment.OrderID
-	}
-	if orderID > 0 {
-		if err := q.CancelOrder(ctx, orderID); err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit(ctx)
+		return nil
+	})
 }
 
 func toBizMQJob(row *rivertype.JobRow) *biz.MQJob {
