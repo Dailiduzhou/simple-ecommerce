@@ -39,6 +39,11 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.PaymentSyncRepo), new(*PaymentSyncRepo)),
 )
 
+type (
+	ctxTxKey      struct{}
+	ctxRawPgTxKey struct{}
+)
+
 // Data .
 type Data struct {
 	pool        *pgxpool.Pool
@@ -149,5 +154,19 @@ func RunMigrations(c *conf.Data) error {
 	}
 
 	log.Info("database migrations applied")
+	return nil
+}
+
+func (d *Data) DB(ctx context.Context) db.Querier {
+	if q, ok := ctx.Value(ctxTxKey{}).(db.Querier); ok {
+		return q
+	}
+	return d.q
+}
+
+func (d *Data) GetPgTx(ctx context.Context) pgx.Tx {
+	if tx, ok := ctx.Value(ctxRawPgTxKey{}).(pgx.Tx); ok {
+		return tx
+	}
 	return nil
 }
