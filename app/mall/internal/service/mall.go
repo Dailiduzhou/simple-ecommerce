@@ -12,13 +12,13 @@ import (
 
 type MallService struct {
 	pb.UnimplementedMallServer
-	productUc  *biz.ProductUsecase
-	categoryUc *biz.CategoryUsecase
-	eventUc    *biz.EventUsecase
+	productUc  biz.ProductUsecase
+	categoryUc biz.CategoryUsecase
+	eventUc    biz.EventUsecase
 	log        *log.Helper
 }
 
-func NewMallService(productUc *biz.ProductUsecase, categoryUc *biz.CategoryUsecase, eventUc *biz.EventUsecase, logger log.Logger) *MallService {
+func NewMallService(productUc biz.ProductUsecase, categoryUc biz.CategoryUsecase, eventUc biz.EventUsecase, logger log.Logger) *MallService {
 	return &MallService{productUc: productUc, categoryUc: categoryUc, eventUc: eventUc, log: log.NewHelper(logger)}
 }
 

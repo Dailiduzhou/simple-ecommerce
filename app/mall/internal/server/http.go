@@ -29,7 +29,7 @@ const (
 )
 
 // NewHTTPServer new an HTTP server.
-func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc *biz.AuthUsecase, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, logger log.Logger) *http.Server {
+func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, logger log.Logger) *http.Server {
 	jwtMiddleware := kratosjwt.Server(
 		func(t *jwtv5.Token) (any, error) {
 			return []byte(ac.AccessTokenSecret), nil

@@ -895,6 +895,7 @@ type PrepayJSAPIRequest struct {
 	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`                     // 商品描述
 	TotalAmount   int32                  `protobuf:"varint,3,opt,name=total_amount,json=totalAmount,proto3" json:"total_amount,omitempty"` // 订单总金额，单位为分
 	Openid        string                 `protobuf:"bytes,4,opt,name=openid,proto3" json:"openid,omitempty"`                               // 用户在商户 appid 下的唯一标识
+	PayChannel    string                 `protobuf:"bytes,5,opt,name=pay_channel,json=payChannel,proto3" json:"pay_channel,omitempty"`     // 支付渠道 (wechat/alipay)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -953,6 +954,13 @@ func (x *PrepayJSAPIRequest) GetTotalAmount() int32 {
 func (x *PrepayJSAPIRequest) GetOpenid() string {
 	if x != nil {
 		return x.Openid
+	}
+	return ""
+}
+
+func (x *PrepayJSAPIRequest) GetPayChannel() string {
+	if x != nil {
+		return x.PayChannel
 	}
 	return ""
 }
@@ -1046,6 +1054,7 @@ func (x *PrepayJSAPIReply) GetPaySign() string {
 type QueryOrderRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OutTradeNo    string                 `protobuf:"bytes,1,opt,name=out_trade_no,json=outTradeNo,proto3" json:"out_trade_no,omitempty"` // 商户订单号
+	PayChannel    string                 `protobuf:"bytes,2,opt,name=pay_channel,json=payChannel,proto3" json:"pay_channel,omitempty"`   // 支付渠道 (wechat/alipay)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1083,6 +1092,13 @@ func (*QueryOrderRequest) Descriptor() ([]byte, []int) {
 func (x *QueryOrderRequest) GetOutTradeNo() string {
 	if x != nil {
 		return x.OutTradeNo
+	}
+	return ""
+}
+
+func (x *QueryOrderRequest) GetPayChannel() string {
+	if x != nil {
+		return x.PayChannel
 	}
 	return ""
 }
@@ -1160,6 +1176,7 @@ func (x *QueryOrderReply) GetTotalAmount() int32 {
 type CloseOrderRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OutTradeNo    string                 `protobuf:"bytes,1,opt,name=out_trade_no,json=outTradeNo,proto3" json:"out_trade_no,omitempty"` // 商户订单号
+	PayChannel    string                 `protobuf:"bytes,2,opt,name=pay_channel,json=payChannel,proto3" json:"pay_channel,omitempty"`   // 支付渠道 (wechat/alipay)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1197,6 +1214,13 @@ func (*CloseOrderRequest) Descriptor() ([]byte, []int) {
 func (x *CloseOrderRequest) GetOutTradeNo() string {
 	if x != nil {
 		return x.OutTradeNo
+	}
+	return ""
+}
+
+func (x *CloseOrderRequest) GetPayChannel() string {
+	if x != nil {
+		return x.PayChannel
 	}
 	return ""
 }
@@ -1321,13 +1345,15 @@ const file_api_payment_v1_payment_proto_rawDesc = "" +
 	"MQJobError\x12\x18\n" +
 	"\aattempt\x18\x01 \x01(\x05R\aattempt\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12*\n" +
-	"\x02at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\x93\x01\n" +
+	"\x02at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\"\xb4\x01\n" +
 	"\x12PrepayJSAPIRequest\x12 \n" +
 	"\fout_trade_no\x18\x01 \x01(\tR\n" +
 	"outTradeNo\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12!\n" +
 	"\ftotal_amount\x18\x03 \x01(\x05R\vtotalAmount\x12\x16\n" +
-	"\x06openid\x18\x04 \x01(\tR\x06openid\"\xbe\x01\n" +
+	"\x06openid\x18\x04 \x01(\tR\x06openid\x12\x1f\n" +
+	"\vpay_channel\x18\x05 \x01(\tR\n" +
+	"payChannel\"\xbe\x01\n" +
 	"\x10PrepayJSAPIReply\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1d\n" +
 	"\n" +
@@ -1335,20 +1361,24 @@ const file_api_payment_v1_payment_proto_rawDesc = "" +
 	"\tnonce_str\x18\x03 \x01(\tR\bnonceStr\x12\x1f\n" +
 	"\x0eprepay_package\x18\x04 \x01(\tR\apackage\x12\x1b\n" +
 	"\tsign_type\x18\x05 \x01(\tR\bsignType\x12\x19\n" +
-	"\bpay_sign\x18\x06 \x01(\tR\apaySign\"5\n" +
+	"\bpay_sign\x18\x06 \x01(\tR\apaySign\"V\n" +
 	"\x11QueryOrderRequest\x12 \n" +
 	"\fout_trade_no\x18\x01 \x01(\tR\n" +
-	"outTradeNo\"\xba\x01\n" +
+	"outTradeNo\x12\x1f\n" +
+	"\vpay_channel\x18\x02 \x01(\tR\n" +
+	"payChannel\"\xba\x01\n" +
 	"\x0fQueryOrderReply\x12 \n" +
 	"\fout_trade_no\x18\x01 \x01(\tR\n" +
 	"outTradeNo\x12%\n" +
 	"\x0etransaction_id\x18\x02 \x01(\tR\rtransactionId\x12;\n" +
 	"\vtrade_state\x18\x03 \x01(\x0e2\x1a.api.payment.v1.TradeStateR\n" +
 	"tradeState\x12!\n" +
-	"\ftotal_amount\x18\x04 \x01(\x05R\vtotalAmount\"5\n" +
+	"\ftotal_amount\x18\x04 \x01(\x05R\vtotalAmount\"V\n" +
 	"\x11CloseOrderRequest\x12 \n" +
 	"\fout_trade_no\x18\x01 \x01(\tR\n" +
-	"outTradeNo\"+\n" +
+	"outTradeNo\x12\x1f\n" +
+	"\vpay_channel\x18\x02 \x01(\tR\n" +
+	"payChannel\"+\n" +
 	"\x0fCloseOrderReply\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess*\x85\x01\n" +
 	"\n" +

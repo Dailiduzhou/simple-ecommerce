@@ -24,10 +24,12 @@ type UserRepo interface {
 	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
 }
+
 type ShippingAddress struct {
 	ID                   int64
 	UserID               int64
 	ReceiverName         string
+	ReceiverPhone        string
 	ReceiverPhoneHash    string
 	ReceiverPhoneEncrypt string
 	Province             string
@@ -49,14 +51,23 @@ type ShippingAddressRepo interface {
 	DeleteShippingAddress(ctx context.Context, id int64, userID int64) error
 }
 
-type ShippingAddressUsecase struct {
+type ShippingAddressUsecase interface {
+	CreateShippingAddress(ctx context.Context, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string, isDefault bool) (*ShippingAddress, error)
+	GetShippingAddress(ctx context.Context, id int64, userID int64) (*ShippingAddress, error)
+	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
+	UpdateShippingAddress(ctx context.Context, id int64, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string) (*ShippingAddress, error)
+	SetDefaultShippingAddress(ctx context.Context, id int64, userID int64) error
+	DeleteShippingAddress(ctx context.Context, id int64, userID int64) error
+}
+
+type shippingAddressUsecase struct {
 	addressRepo ShippingAddressRepo
 	phoneSecret string
 	log         *log.Helper
 }
 
-func NewShippingAddressUsecase(addressRepo ShippingAddressRepo, ac *conf.Auth, logger log.Logger) *ShippingAddressUsecase {
-	return &ShippingAddressUsecase{
+func NewShippingAddressUsecase(addressRepo ShippingAddressRepo, ac *conf.Auth, logger log.Logger) ShippingAddressUsecase {
+	return &shippingAddressUsecase{
 		addressRepo: addressRepo,
 		phoneSecret: ac.PhoneSecret,
 		log:         log.NewHelper(logger),
@@ -75,14 +86,22 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
-type UserUsecase struct {
+type UserUsecase interface {
+	Register(ctx context.Context, phone string, password string) (*User, error)
+	Login(ctx context.Context, phone string, password string) (*User, error)
+	GetUser(ctx context.Context, id int64) (*User, error)
+	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
+	DeleteUser(ctx context.Context, id int64) error
+}
+
+type userUsecase struct {
 	userRepo    UserRepo
 	phoneSecret string
 	log         *log.Helper
 }
 
-func NewUserUsecase(userRepo UserRepo, ac *conf.Auth, logger log.Logger) *UserUsecase {
-	return &UserUsecase{
+func NewUserUsecase(userRepo UserRepo, ac *conf.Auth, logger log.Logger) UserUsecase {
+	return &userUsecase{
 		userRepo:    userRepo,
 		phoneSecret: ac.PhoneSecret,
 		log:         log.NewHelper(logger),
@@ -100,7 +119,16 @@ type EcommerceClaims struct {
 	jwt.RegisteredClaims
 }
 
-type AuthUsecase struct {
+type AuthUsecase interface {
+	GenerateAccessToken(userID int64, role string) (string, error)
+	GenerateRefreshToken(userID int64, role string) (string, error)
+	ParseAccessToken(tokenStr string) (*EcommerceClaims, error)
+	ParseRefreshToken(tokenStr string) (*EcommerceClaims, error)
+	BlacklistToken(ctx context.Context, tokenID string, expiresAt time.Time) error
+	IsTokenBlacklisted(ctx context.Context, tokenID string) (bool, error)
+}
+
+type authUsecase struct {
 	userRepo       UserRepo
 	authRepo       AuthRepo
 	accessSecret   string
@@ -109,8 +137,8 @@ type AuthUsecase struct {
 	refreshTimeout time.Duration
 }
 
-func NewAuthUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth) *AuthUsecase {
-	return &AuthUsecase{
+func NewAuthUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth) AuthUsecase {
+	return &authUsecase{
 		userRepo:       userRepo,
 		authRepo:       authRepo,
 		accessSecret:   ac.AccessTokenSecret,
@@ -120,7 +148,7 @@ func NewAuthUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth) *AuthUs
 	}
 }
 
-func (uc *AuthUsecase) GenerateAccessToken(userID int64, role string) (string, error) {
+func (uc *authUsecase) GenerateAccessToken(userID int64, role string) (string, error) {
 	now := time.Now()
 	tokenID := generateTokenID()
 	claims := EcommerceClaims{
@@ -136,7 +164,7 @@ func (uc *AuthUsecase) GenerateAccessToken(userID int64, role string) (string, e
 	return token.SignedString([]byte(uc.accessSecret))
 }
 
-func (uc *AuthUsecase) GenerateRefreshToken(userID int64, role string) (string, error) {
+func (uc *authUsecase) GenerateRefreshToken(userID int64, role string) (string, error) {
 	now := time.Now()
 	tokenID := generateTokenID()
 	claims := EcommerceClaims{
@@ -152,15 +180,15 @@ func (uc *AuthUsecase) GenerateRefreshToken(userID int64, role string) (string, 
 	return token.SignedString([]byte(uc.refreshSecret))
 }
 
-func (uc *AuthUsecase) ParseAccessToken(tokenStr string) (*EcommerceClaims, error) {
+func (uc *authUsecase) ParseAccessToken(tokenStr string) (*EcommerceClaims, error) {
 	return uc.parseToken(tokenStr, uc.accessSecret)
 }
 
-func (uc *AuthUsecase) ParseRefreshToken(tokenStr string) (*EcommerceClaims, error) {
+func (uc *authUsecase) ParseRefreshToken(tokenStr string) (*EcommerceClaims, error) {
 	return uc.parseToken(tokenStr, uc.refreshSecret)
 }
 
-func (uc *AuthUsecase) BlacklistToken(ctx context.Context, tokenID string, expiresAt time.Time) error {
+func (uc *authUsecase) BlacklistToken(ctx context.Context, tokenID string, expiresAt time.Time) error {
 	expiration := time.Until(expiresAt)
 	if expiration <= 0 {
 		return nil
@@ -168,11 +196,11 @@ func (uc *AuthUsecase) BlacklistToken(ctx context.Context, tokenID string, expir
 	return uc.authRepo.SetBlacklist(ctx, tokenID, expiration)
 }
 
-func (uc *AuthUsecase) IsTokenBlacklisted(ctx context.Context, tokenID string) (bool, error) {
+func (uc *authUsecase) IsTokenBlacklisted(ctx context.Context, tokenID string) (bool, error) {
 	return uc.authRepo.IsBlacklisted(ctx, tokenID)
 }
 
-func (uc *AuthUsecase) parseToken(tokenStr, secret string) (*EcommerceClaims, error) {
+func (uc *authUsecase) parseToken(tokenStr, secret string) (*EcommerceClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &EcommerceClaims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -204,7 +232,7 @@ func generateDefaultNickname(seed string) string {
 	return "u" + hex.EncodeToString(b)
 }
 
-func (uc *UserUsecase) Register(ctx context.Context, phone string, password string) (*User, error) {
+func (uc *userUsecase) Register(ctx context.Context, phone string, password string) (*User, error) {
 	if !IsValidCNMobile(phone) {
 		return nil, userv1.ErrorInvalidPhone("invalid phone number: %s", phone)
 	}
@@ -243,7 +271,7 @@ func (uc *UserUsecase) Register(ctx context.Context, phone string, password stri
 	return u, nil
 }
 
-func (uc *UserUsecase) Login(ctx context.Context, phone string, password string) (*User, error) {
+func (uc *userUsecase) Login(ctx context.Context, phone string, password string) (*User, error) {
 	if !IsValidCNMobile(phone) {
 		return nil, userv1.ErrorInvalidPhone("invalid phone number: %s", phone)
 	}
@@ -267,19 +295,19 @@ func (uc *UserUsecase) Login(ctx context.Context, phone string, password string)
 	return u, nil
 }
 
-func (uc *UserUsecase) GetUser(ctx context.Context, id int64) (*User, error) {
+func (uc *userUsecase) GetUser(ctx context.Context, id int64) (*User, error) {
 	return uc.userRepo.GetUserByID(ctx, id)
 }
 
-func (uc *UserUsecase) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
+func (uc *userUsecase) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
 	return uc.userRepo.UpdateUser(ctx, id, nickname, realName)
 }
 
-func (uc *UserUsecase) DeleteUser(ctx context.Context, id int64) error {
+func (uc *userUsecase) DeleteUser(ctx context.Context, id int64) error {
 	return uc.userRepo.DeleteUser(ctx, id)
 }
 
-func (uc *ShippingAddressUsecase) CreateShippingAddress(ctx context.Context, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string, isDefault bool) (*ShippingAddress, error) {
+func (uc *shippingAddressUsecase) CreateShippingAddress(ctx context.Context, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string, isDefault bool) (*ShippingAddress, error) {
 	secret := []byte(uc.phoneSecret)
 	phoneHash := phonecrypto.HashPhone(receiverPhone, secret)
 	phoneEncrypt, err := phonecrypto.EncryptPhone(receiverPhone, secret)
@@ -288,18 +316,37 @@ func (uc *ShippingAddressUsecase) CreateShippingAddress(ctx context.Context, use
 		return nil, fmt.Errorf("encrypt phone: %w", err)
 	}
 
-	return uc.addressRepo.CreateShippingAddress(ctx, userID, receiverName, phoneHash, phoneEncrypt, province, city, district, detailAddress, addressTag, isDefault)
+	sa, err := uc.addressRepo.CreateShippingAddress(ctx, userID, receiverName, phoneHash, phoneEncrypt, province, city, district, detailAddress, addressTag, isDefault)
+	if err != nil {
+		return nil, err
+	}
+	sa.ReceiverPhone = receiverPhone
+	return sa, nil
 }
 
-func (uc *ShippingAddressUsecase) GetShippingAddress(ctx context.Context, id int64, userID int64) (*ShippingAddress, error) {
-	return uc.addressRepo.GetShippingAddress(ctx, id, userID)
+func (uc *shippingAddressUsecase) GetShippingAddress(ctx context.Context, id int64, userID int64) (*ShippingAddress, error) {
+	sa, err := uc.addressRepo.GetShippingAddress(ctx, id, userID)
+	if err != nil {
+		return nil, err
+	}
+	if sa != nil {
+		uc.decryptPhone(sa)
+	}
+	return sa, nil
 }
 
-func (uc *ShippingAddressUsecase) ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error) {
-	return uc.addressRepo.ListShippingAddressesByUser(ctx, userID)
+func (uc *shippingAddressUsecase) ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error) {
+	sas, err := uc.addressRepo.ListShippingAddressesByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range sas {
+		uc.decryptPhone(&sas[i])
+	}
+	return sas, nil
 }
 
-func (uc *ShippingAddressUsecase) UpdateShippingAddress(ctx context.Context, id int64, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string) (*ShippingAddress, error) {
+func (uc *shippingAddressUsecase) UpdateShippingAddress(ctx context.Context, id int64, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string) (*ShippingAddress, error) {
 	secret := []byte(uc.phoneSecret)
 	phoneHash := phonecrypto.HashPhone(receiverPhone, secret)
 	phoneEncrypt, err := phonecrypto.EncryptPhone(receiverPhone, secret)
@@ -308,19 +355,35 @@ func (uc *ShippingAddressUsecase) UpdateShippingAddress(ctx context.Context, id 
 		return nil, fmt.Errorf("encrypt phone: %w", err)
 	}
 
-	return uc.addressRepo.UpdateShippingAddress(ctx, id, userID, receiverName, phoneHash, phoneEncrypt, province, city, district, detailAddress, addressTag)
+	sa, err := uc.addressRepo.UpdateShippingAddress(ctx, id, userID, receiverName, phoneHash, phoneEncrypt, province, city, district, detailAddress, addressTag)
+	if err != nil {
+		return nil, err
+	}
+	sa.ReceiverPhone = receiverPhone
+	return sa, nil
 }
 
-func (uc *ShippingAddressUsecase) SetDefaultShippingAddress(ctx context.Context, id int64, userID int64) error {
+func (uc *shippingAddressUsecase) SetDefaultShippingAddress(ctx context.Context, id int64, userID int64) error {
 	return uc.addressRepo.SetDefaultShippingAddress(ctx, id, userID)
 }
 
-func (uc *ShippingAddressUsecase) DeleteShippingAddress(ctx context.Context, id int64, userID int64) error {
+func (uc *shippingAddressUsecase) DeleteShippingAddress(ctx context.Context, id int64, userID int64) error {
 	return uc.addressRepo.DeleteShippingAddress(ctx, id, userID)
 }
 
+func (uc *shippingAddressUsecase) decryptPhone(sa *ShippingAddress) {
+	if sa == nil || sa.ReceiverPhoneEncrypt == "" {
+		return
+	}
+	phone, err := phonecrypto.DecryptPhone(sa.ReceiverPhoneEncrypt, []byte(uc.phoneSecret))
+	if err != nil {
+		uc.log.Errorf("decrypt phone failed: %v", err)
+		return
+	}
+	sa.ReceiverPhone = phone
+}
+
 func IsValidCNMobile(phone string) bool {
-	// 匹配规则：1开头，第二位3-9，后面9位数字
 	re := regexp.MustCompile(`^1[3-9]\d{9}$`)
 	return re.MatchString(phone)
 }
