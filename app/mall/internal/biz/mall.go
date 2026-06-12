@@ -43,16 +43,25 @@ type ProductRepo interface {
 	UpdateProductStatus(ctx context.Context, ID int64, status int32) error
 }
 
-type ProductUsecase struct {
+type ProductUsecase interface {
+	CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	GetProduct(ctx context.Context, id int64) (*Product, error)
+	ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error)
+	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, stock int32, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	UpdateProductStatus(ctx context.Context, id int64, status int32) error
+	DeleteProduct(ctx context.Context, id int64) error
+}
+
+type productUsecase struct {
 	repo ProductRepo
 	log  *log.Helper
 }
 
-func NewProductUsecase(repo ProductRepo, logger log.Logger) *ProductUsecase {
-	return &ProductUsecase{repo: repo, log: log.NewHelper(logger)}
+func NewProductUsecase(repo ProductRepo, logger log.Logger) ProductUsecase {
+	return &productUsecase{repo: repo, log: log.NewHelper(logger)}
 }
 
-func (uc *ProductUsecase) CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
 	price, err := decimal.NewFromString(priceStr)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
@@ -67,11 +76,11 @@ func (uc *ProductUsecase) CreateProduct(ctx context.Context, categoryID int64, n
 	return uc.repo.CreateProduct(ctx, categoryID, name, price, discount, stock, status, cover, mediaAssets, descrption)
 }
 
-func (uc *ProductUsecase) GetProduct(ctx context.Context, id int64) (*Product, error) {
+func (uc *productUsecase) GetProduct(ctx context.Context, id int64) (*Product, error) {
 	return uc.repo.GetProduct(ctx, id)
 }
 
-func (uc *ProductUsecase) ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error) {
+func (uc *productUsecase) ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error) {
 	offset := (page - 1) * pageSize
 	if categoryID > 0 {
 		ps, err := uc.repo.ListProductsByCategory(ctx, categoryID, pageSize, offset)
@@ -81,7 +90,7 @@ func (uc *ProductUsecase) ListProducts(ctx context.Context, categoryID int64, pa
 	return ps, pageSize, err
 }
 
-func (uc *ProductUsecase) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, stock int32, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, stock int32, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
 	price, err := decimal.NewFromString(priceStr)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
@@ -96,11 +105,11 @@ func (uc *ProductUsecase) UpdateProduct(ctx context.Context, id int64, categoryI
 	return uc.repo.UpdateProduct(ctx, id, categoryID, name, price, discount, stock, cover, mediaAssets, descrption)
 }
 
-func (uc *ProductUsecase) UpdateProductStatus(ctx context.Context, id int64, status int32) error {
+func (uc *productUsecase) UpdateProductStatus(ctx context.Context, id int64, status int32) error {
 	return uc.repo.UpdateProductStatus(ctx, id, status)
 }
 
-func (uc *ProductUsecase) DeleteProduct(ctx context.Context, id int64) error {
+func (uc *productUsecase) DeleteProduct(ctx context.Context, id int64) error {
 	return uc.repo.SoftDeleteProduct(ctx, id)
 }
 
@@ -129,35 +138,43 @@ type CategoryRepo interface {
 	UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*Category, error)
 }
 
-type CategoryUsecase struct {
+type CategoryUsecase interface {
+	CreateCategory(ctx context.Context, parentID int64, name string, sortOrder int32) (*Category, error)
+	GetCategory(ctx context.Context, id int64) (*Category, error)
+	ListCategories(ctx context.Context, parentID int64) ([]Category, error)
+	UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*Category, error)
+	DeleteCategory(ctx context.Context, id int64) error
+}
+
+type categoryUsecase struct {
 	repo CategoryRepo
 	log  *log.Helper
 }
 
-func NewCategoryUsecase(repo CategoryRepo, logger log.Logger) *CategoryUsecase {
-	return &CategoryUsecase{repo: repo, log: log.NewHelper(logger)}
+func NewCategoryUsecase(repo CategoryRepo, logger log.Logger) CategoryUsecase {
+	return &categoryUsecase{repo: repo, log: log.NewHelper(logger)}
 }
 
-func (uc *CategoryUsecase) CreateCategory(ctx context.Context, parentID int64, name string, sortOrder int32) (*Category, error) {
+func (uc *categoryUsecase) CreateCategory(ctx context.Context, parentID int64, name string, sortOrder int32) (*Category, error) {
 	return uc.repo.CreateCategory(ctx, parentID, name, sortOrder)
 }
 
-func (uc *CategoryUsecase) GetCategory(ctx context.Context, id int64) (*Category, error) {
+func (uc *categoryUsecase) GetCategory(ctx context.Context, id int64) (*Category, error) {
 	return uc.repo.GetCategory(ctx, id)
 }
 
-func (uc *CategoryUsecase) ListCategories(ctx context.Context, parentID int64) ([]Category, error) {
+func (uc *categoryUsecase) ListCategories(ctx context.Context, parentID int64) ([]Category, error) {
 	if parentID > 0 {
 		return uc.repo.ListSubCategories(ctx, parentID)
 	}
 	return uc.repo.ListTopCategories(ctx)
 }
 
-func (uc *CategoryUsecase) UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*Category, error) {
+func (uc *categoryUsecase) UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*Category, error) {
 	return uc.repo.UpdateCategory(ctx, id, name, sortOrder)
 }
 
-func (uc *CategoryUsecase) DeleteCategory(ctx context.Context, id int64) error {
+func (uc *categoryUsecase) DeleteCategory(ctx context.Context, id int64) error {
 	return uc.repo.DeleteCategory(ctx, id)
 }
 
@@ -184,38 +201,47 @@ type EventRepo interface {
 	UpdateEventStatus(ctx context.Context, id int64, status int32) error
 }
 
-type EventUsecase struct {
+type EventUsecase interface {
+	CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
+	GetEvent(ctx context.Context, id int64) (*Event, error)
+	ListEvents(ctx context.Context, status int32, pageSize int32, page int32) ([]Event, error)
+	UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
+	UpdateEventStatus(ctx context.Context, id int64, status int32) error
+	DeleteEvent(ctx context.Context, id int64) error
+}
+
+type eventUsecase struct {
 	repo EventRepo
 	log  *log.Helper
 }
 
-func NewEventUsecase(repo EventRepo, logger log.Logger) *EventUsecase {
-	return &EventUsecase{repo: repo, log: log.NewHelper(logger)}
+func NewEventUsecase(repo EventRepo, logger log.Logger) EventUsecase {
+	return &eventUsecase{repo: repo, log: log.NewHelper(logger)}
 }
 
-func (uc *EventUsecase) CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+func (uc *eventUsecase) CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
 	cover := mediaFromCoverURL(coverImage)
 	return uc.repo.CreateEvent(ctx, name, status, cover, mediaAssets, description, startAt, endAt)
 }
 
-func (uc *EventUsecase) GetEvent(ctx context.Context, id int64) (*Event, error) {
+func (uc *eventUsecase) GetEvent(ctx context.Context, id int64) (*Event, error) {
 	return uc.repo.GetEvent(ctx, id)
 }
 
-func (uc *EventUsecase) ListEvents(ctx context.Context, status int32, pageSize int32, page int32) ([]Event, error) {
+func (uc *eventUsecase) ListEvents(ctx context.Context, status int32, pageSize int32, page int32) ([]Event, error) {
 	offset := (page - 1) * pageSize
 	return uc.repo.ListEvents(ctx, status, pageSize, offset)
 }
 
-func (uc *EventUsecase) UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+func (uc *eventUsecase) UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
 	cover := mediaFromCoverURL(coverImage)
 	return uc.repo.UpdateEvent(ctx, id, name, cover, mediaAssets, description, startAt, endAt)
 }
 
-func (uc *EventUsecase) UpdateEventStatus(ctx context.Context, id int64, status int32) error {
+func (uc *eventUsecase) UpdateEventStatus(ctx context.Context, id int64, status int32) error {
 	return uc.repo.UpdateEventStatus(ctx, id, status)
 }
 
-func (uc *EventUsecase) DeleteEvent(ctx context.Context, id int64) error {
+func (uc *eventUsecase) DeleteEvent(ctx context.Context, id int64) error {
 	return uc.repo.DeleteEvent(ctx, id)
 }

@@ -6,8 +6,6 @@ import (
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
-	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
-	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -15,19 +13,17 @@ import (
 
 type UserService struct {
 	pb.UnimplementedUserServer
-	authUc         *biz.AuthUsecase
-	uc             *biz.UserUsecase
-	shippingAddrUc *biz.ShippingAddressUsecase
-	phoneSecret    string
+	authUc         biz.AuthUsecase
+	uc             biz.UserUsecase
+	shippingAddrUc biz.ShippingAddressUsecase
 	log            *log.Helper
 }
 
-func NewUserService(authUc *biz.AuthUsecase, userUc *biz.UserUsecase, shippingAddrUc *biz.ShippingAddressUsecase, ac *conf.Auth, logger log.Logger) *UserService {
+func NewUserService(authUc biz.AuthUsecase, userUc biz.UserUsecase, shippingAddrUc biz.ShippingAddressUsecase, logger log.Logger) *UserService {
 	return &UserService{
 		authUc:         authUc,
 		uc:             userUc,
 		shippingAddrUc: shippingAddrUc,
-		phoneSecret:    ac.PhoneSecret,
 		log:            log.NewHelper(logger),
 	}
 }
@@ -99,7 +95,7 @@ func (s *UserService) CreateShippingAddress(ctx context.Context, req *pb.CreateS
 	if err != nil {
 		return nil, err
 	}
-	return toProtoShippingAddress(sa, s.phoneSecret)
+	return toProtoShippingAddress(sa), nil
 }
 
 func (s *UserService) ListShippingAddresses(ctx context.Context, req *pb.ListShippingAddressesRequest) (*pb.ListShippingAddressesReply, error) {
@@ -109,11 +105,7 @@ func (s *UserService) ListShippingAddresses(ctx context.Context, req *pb.ListShi
 	}
 	var addrs []*pb.ShippingAddress
 	for _, sa := range sas {
-		addr, err := toProtoShippingAddress(&sa, s.phoneSecret)
-		if err != nil {
-			return nil, err
-		}
-		addrs = append(addrs, addr)
+		addrs = append(addrs, toProtoShippingAddress(&sa))
 	}
 	return &pb.ListShippingAddressesReply{Addresses: addrs}, nil
 }
@@ -123,7 +115,7 @@ func (s *UserService) UpdateShippingAddress(ctx context.Context, req *pb.UpdateS
 	if err != nil {
 		return nil, err
 	}
-	return toProtoShippingAddress(sa, s.phoneSecret)
+	return toProtoShippingAddress(sa), nil
 }
 
 func (s *UserService) SetDefaultShippingAddress(ctx context.Context, req *pb.SetDefaultShippingAddressRequest) (*pb.SetDefaultShippingAddressReply, error) {
@@ -142,27 +134,19 @@ func (s *UserService) DeleteShippingAddress(ctx context.Context, req *pb.DeleteS
 	return &pb.DeleteShippingAddressReply{}, nil
 }
 
-func toProtoShippingAddress(sa *biz.ShippingAddress, phoneSecret string) (*pb.ShippingAddress, error) {
-	var phone string
-	if sa.ReceiverPhoneEncrypt != "" {
-		var err error
-		phone, err = phonecrypto.DecryptPhone(sa.ReceiverPhoneEncrypt, []byte(phoneSecret))
-		if err != nil {
-			return nil, pb.ErrorUnauthorized("decrypt phone failed: %v", err)
-		}
-	}
+func toProtoShippingAddress(sa *biz.ShippingAddress) *pb.ShippingAddress {
 	return &pb.ShippingAddress{
 		Id:            sa.ID,
 		UserId:        sa.UserID,
 		ReceiverName:  sa.ReceiverName,
-		ReceiverPhone: phone,
+		ReceiverPhone: sa.ReceiverPhone,
 		Province:      sa.Province,
 		City:          sa.City,
 		District:      sa.District,
 		DetailAddress: sa.DetailAddress,
 		AddressTag:    sa.AddressTag,
 		IsDefault:     sa.IsDefault,
-	}, nil
+	}
 }
 
 func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) (*pb.RefreshReply, error) {

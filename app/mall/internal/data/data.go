@@ -26,16 +26,23 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewWechatPayProvider, NewPaymentMQRepo, NewPaymentSyncRepo,
+	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentSyncRepo, NewTransaction,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
 	wire.Bind(new(biz.ProductRepo), new(*ProductRepo)),
 	wire.Bind(new(biz.CategoryRepo), new(*CategoryRepo)),
-	wire.Bind(new(biz.WechatPayProvider), new(*WechatPayDataProvider)),
 	wire.Bind(new(biz.EventRepo), new(*EventRepo)),
+	wire.Bind(new(biz.OrderRepo), new(*OrderRepo)),
+	wire.Bind(new(biz.PaymentRepo), new(*PaymentRepo)),
 	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
 	wire.Bind(new(biz.PaymentSyncRepo), new(*PaymentSyncRepo)),
+	wire.Bind(new(biz.Transaction), new(*transaction)),
+)
+
+type (
+	ctxTxKey      struct{}
+	ctxRawPgTxKey struct{}
 )
 
 // Data .
@@ -149,4 +156,22 @@ func RunMigrations(c *conf.Data) error {
 
 	log.Info("database migrations applied")
 	return nil
+}
+
+func (d *Data) DB(ctx context.Context) db.Querier {
+	return querierFromContext(ctx, d.q)
+}
+
+func (d *Data) GetPgTx(ctx context.Context) pgx.Tx {
+	if tx, ok := ctx.Value(ctxRawPgTxKey{}).(pgx.Tx); ok {
+		return tx
+	}
+	return nil
+}
+
+func querierFromContext(ctx context.Context, fallback db.Querier) db.Querier {
+	if q, ok := ctx.Value(ctxTxKey{}).(db.Querier); ok {
+		return q
+	}
+	return fallback
 }

@@ -10,5 +10,8 @@ var ProviderSet = wire.NewSet(
 	NewProductUsecase,
 	NewCategoryUsecase,
 	NewEventUsecase,
+	NewOrderUsecase,
 	NewPaymentJobUsecase,
+	NewPaymentUsecase,
+	NewPaymentGateway,
 )
