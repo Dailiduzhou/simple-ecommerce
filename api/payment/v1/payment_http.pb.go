@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-http v2.9.2
 // - protoc             v7.35.0
-// source: api/payment/v1/payment.proto
+// source: payment/v1/payment.proto
 
 package v1
 

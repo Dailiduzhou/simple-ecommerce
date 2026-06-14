@@ -341,6 +341,13 @@ func (r *PaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayAr
 			fmt.Sprintf("pay-channel-%s", args.Channel),
 			fmt.Sprintf("payment-%d", args.PaymentID),
 		},
+		// TODO: River's UniqueOpts.ByArgs hashes the entire CheckPayArgs
+		// struct, so re-enqueues with different MaxPolls/PollIntervalSeconds
+		// are NOT deduped. A duplicate job still runs, but its writes are
+		// now caught by idx_payments_active_out_trade_no_channel and
+		// idx_payments_third_party_tx_id_channel (added in migration
+		// 000007). For strict dedup across polling changes, switch to a
+		// narrower river.Job[CheckPayJobKey] type (Phase C2 — deferred).
 		UniqueOpts: river.UniqueOpts{
 			ByArgs:  true,
 			ByQueue: true,
