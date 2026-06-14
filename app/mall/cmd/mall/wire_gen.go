@@ -24,20 +24,25 @@ import (
 // Injectors from wire.go:
 
 // wireApp init kratos application.
-func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logger log.Logger) (*kratos.App, func(), error) {
+func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snowflake *conf.Snowflake, payment *conf.Payment, logger log.Logger) (*kratos.App, func(), error) {
 	pool, cleanup, err := data.NewPgxPool(confData)
 	if err != nil {
 		return nil, nil, err
 	}
 	wechatPaymentAdapter := data.NewWechatPaymentAdapter(logger)
-	alipayPaymentAdapter := data.NewAlipayPaymentAdapter(logger)
+	client, err := data.NewAlipayClient(payment)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	alipayPaymentAdapter := data.NewAlipayPaymentAdapter(client, logger)
 	v := data.NewPaymentAdapters(wechatPaymentAdapter, alipayPaymentAdapter)
 	paymentGateway := biz.NewPaymentGateway(v)
 	txManager := data.NewTransaction(pool, logger)
 	paymentSyncRepo := data.NewPaymentSyncRepo(txManager)
 	checkPayWorker := job.NewCheckPayWorker(paymentGateway, paymentSyncRepo, logger)
 	workers := job.NewWorkers(checkPayWorker, logger)
-	client, err := data.NewRiverClient(pool, workers)
+	riverClient, err := data.NewRiverClient(pool, workers)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -47,7 +52,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logg
 		cleanup()
 		return nil, nil, err
 	}
-	dataData, cleanup2, err := data.NewData(confData, pool, client, redisClient)
+	dataData, cleanup2, err := data.NewData(confData, pool, riverClient, redisClient)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -71,12 +76,12 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logg
 	orderService := service.NewOrderService(orderUsecase)
 	paymentRepo := data.NewPaymentRepo(pool)
 	paymentUsecase := biz.NewPaymentUsecase(paymentGateway, paymentRepo, orderRepo, logger)
-	paymentMQRepo := data.NewPaymentMQRepo(client, logger)
+	paymentMQRepo := data.NewPaymentMQRepo(riverClient, logger)
 	paymentJobUsecase := biz.NewPaymentJobUsecase(paymentMQRepo, logger)
 	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase)
 	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
-	riverServer := job.NewRiverServer(client)
+	riverServer := job.NewRiverServer(riverClient)
 	app := newApp(logger, grpcServer, httpServer, riverServer)
 	return app, func() {
 		cleanup2()
