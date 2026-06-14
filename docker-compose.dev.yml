@@ -80,8 +80,12 @@ services:
         condition: service_started
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      ALIPAY_APP_CERT_PATH: /data/certs/appPublicCert.crt
+      ALIPAY_PUBLIC_KEY_PATH: /data/certs/alipayPublicCert.crt
+      ALIPAY_ROOT_KEY_PATH: /data/certs/alipayRootCert.crt
     volumes:
       - ./app/mall/configs:/data/conf:ro
+      - ./app/mall/configs/certs:/data/certs:ro
       - mall_logs:/app/logs
     ports:
       - "8000:8000"

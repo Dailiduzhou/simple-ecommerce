@@ -29,6 +29,6 @@ payment:
     app_id: 9021000164669272
     private_key: "${ALIPAY_PRIVATE_KEY}"
     is_production: false
-    app_cert_path: "./configs/certs/appPublicCert.crt"
-    alipay_public_key_path: "./configs/certs/alipayPublicCert.crt"
-    alipay_root_key_path: "./configs/certs/alipayRootCert.crt"
+    app_cert_path: "${ALIPAY_APP_CERT_PATH}"
+    alipay_public_key_path: "${ALIPAY_PUBLIC_KEY_PATH}"
+    alipay_root_key_path: "${ALIPAY_ROOT_KEY_PATH}"
