@@ -1,9 +1,11 @@
 package data
 
 import (
+	"regexp"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
@@ -96,4 +98,101 @@ func TestSnowflakeGenerator_Concurrent(t *testing.T) {
 		seen[id] = struct{}{}
 	}
 	assert.Equal(t, expectedTotal, len(seen))
+}
+
+func TestGenerateOrderNo32_FormatAndLength(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 3})
+	require.NoError(t, err)
+
+	no := g.GenerateOrderNo32("AB")
+	assert.Len(t, no, 32)
+	assert.Equal(t, "AB", no[:2])
+
+	wantStamp := time.Now().Format("20060102150405")
+	assert.Equal(t, wantStamp, no[2:16])
+	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{16}$`), no[16:])
+}
+
+func TestGenerateOrderNo32_NormalizesPrefix(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 3})
+	require.NoError(t, err)
+
+	tooLong := g.GenerateOrderNo32("ABCDE")
+	assert.Len(t, tooLong, 32)
+	assert.Equal(t, "AB", tooLong[:2])
+
+	tooShort := g.GenerateOrderNo32("A")
+	assert.Len(t, tooShort, 32)
+	assert.Equal(t, "A ", tooShort[:2])
+}
+
+func TestGenerateOrderNo32_Unique(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 4})
+	require.NoError(t, err)
+
+	const n = 200
+	seen := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		no := g.GenerateOrderNo32("OD")
+		assert.Len(t, no, 32)
+		_, dup := seen[no]
+		assert.Falsef(t, dup, "duplicate order no on iteration %d: %s", i, no)
+		seen[no] = struct{}{}
+	}
+}
+
+func TestGenerateOrderNo64_FormatAndLength(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 3})
+	require.NoError(t, err)
+
+	const userID = 12345678
+	no := g.GenerateOrderNo64("ABCD", userID)
+	assert.Len(t, no, 64)
+	assert.Equal(t, "ABCD", no[:4])
+
+	wantStamp := time.Now().Format("20060102150405")
+	assert.Equal(t, wantStamp, no[4:18])
+	assert.Equal(t, "12345678", no[18:26])
+	assert.Regexp(t, regexp.MustCompile(`^\d{19}$`), no[26:45])
+	assert.Regexp(t, regexp.MustCompile(`^[A-Z0-9]{19}$`), no[45:])
+}
+
+func TestGenerateOrderNo64_NormalizesPrefix(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 3})
+	require.NoError(t, err)
+
+	tooLong := g.GenerateOrderNo64("ABCDEFG", 1)
+	assert.Len(t, tooLong, 64)
+	assert.Equal(t, "ABCD", tooLong[:4])
+
+	tooShort := g.GenerateOrderNo64("AB", 1)
+	assert.Len(t, tooShort, 64)
+	assert.Equal(t, "AB  ", tooShort[:4])
+}
+
+func TestGenerateOrderNo64_PadsUserID(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 3})
+	require.NoError(t, err)
+
+	no := g.GenerateOrderNo64("PAY", 42)
+	assert.Len(t, no, 64)
+	assert.Equal(t, "00000042", no[18:26])
+}
+
+func TestGenerateOrderNo64_Unique(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 4})
+	require.NoError(t, err)
+
+	const (
+		n      = 200
+		userID = 7
+	)
+	seen := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		no := g.GenerateOrderNo64("PAY", userID)
+		assert.Len(t, no, 64)
+		_, dup := seen[no]
+		assert.Falsef(t, dup, "duplicate order no on iteration %d: %s", i, no)
+		seen[no] = struct{}{}
+	}
 }

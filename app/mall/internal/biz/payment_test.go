@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 
@@ -75,6 +76,20 @@ func (g *fakeIDGenerator) GenerateString() string {
 		return g.generate()
 	}
 	return g.prefix + itoa(g.counter.Add(1))
+}
+
+func (g *fakeIDGenerator) GenerateOrderNo32(prefix string) string {
+	if g.generate != nil {
+		return g.generate()
+	}
+	return fmt.Sprintf("%-2s%014d%016d", prefix, g.counter.Add(1), g.counter.Add(1))
+}
+
+func (g *fakeIDGenerator) GenerateOrderNo64(prefix string, userID int64) string {
+	if g.generate != nil {
+		return g.generate()
+	}
+	return fmt.Sprintf("%-4s%014d%08d%019d%019d", prefix, g.counter.Add(1), userID, g.counter.Add(1), g.counter.Add(1))
 }
 
 func itoa(n int64) string {
