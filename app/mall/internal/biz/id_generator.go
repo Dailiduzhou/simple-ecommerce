@@ -8,5 +8,6 @@ package biz
 // uuid, segment, etc.) is injected through wire in the data layer.
 type IDGenerator interface {
 	GenerateString() string
-	GenerateOrderNo(prefix string) string
+	GenerateOrderNo32(prefix string) string
+	GenerateOrderNo64(prefix string, userID int64) string
 }
