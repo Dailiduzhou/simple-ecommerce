@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
+	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
@@ -17,11 +17,8 @@ const EnvSnowflakeNodeID = "SNOWFLAKE_NODE_ID"
 
 var _ biz.IDGenerator = (*snowflakeGenerator)(nil)
 
-// snowflakeGenerator wraps bwmarrin/snowflake to produce string IDs.
-// It is safe for concurrent use across goroutines.
 type snowflakeGenerator struct {
 	node *snowflake.Node
-	mu   sync.Mutex
 }
 
 func NewSnowflakeIDGenerator(c *conf.Snowflake) (*snowflakeGenerator, error) {
@@ -37,9 +34,14 @@ func NewSnowflakeIDGenerator(c *conf.Snowflake) (*snowflakeGenerator, error) {
 }
 
 func (g *snowflakeGenerator) GenerateString() string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
 	return g.node.Generate().String()
+}
+
+func (g *snowflakeGenerator) GenerateOrderNo(prefix string) string {
+	timestamp := time.Now().Format("20060102150405")
+	snowID := g.node.Generate().String()
+
+	return fmt.Sprintf("%s%s%s", prefix, timestamp, snowID)
 }
 
 func resolveSnowflakeNodeID(c *conf.Snowflake) (int64, error) {
