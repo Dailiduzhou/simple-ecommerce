@@ -157,6 +157,8 @@ func RunMigrations(c *conf.Data) error {
 	return nil
 }
 
+func NewAlipayclinet(c *conf.Payment)
+
 func (d *Data) DB(ctx context.Context) db.Querier {
 	return querierFromContext(ctx, d.q)
 }

@@ -23,3 +23,12 @@ auth:
 
 trace:
   endpoint: jaeger:4317
+
+payment:
+  alipay:
+    app_id: 9021000164669272
+    private_key: "${ALIPAY_PRIVATE_KEY}"
+    is_production: false
+    app_cert_path: "./configs/certs/appPublicCert.crt"
+    alipay_public_key_path: "./configs/certs/alipayPublicCert.crt"
+    alipay_root_key_path: "./configs/certs/alipayRootCert.crt"
