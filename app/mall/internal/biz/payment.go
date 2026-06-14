@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
+	"github.com/jackc/pgx/v5"
 )
 
 type PayChannel string
@@ -189,6 +190,7 @@ type PaymentDO struct {
 	Amount         int32
 	Status         string
 	PayChannel     string
+	OutTradeNo     string
 	ThirdPartyTxID string
 	PaidAt         *time.Time
 	CreatedAt      time.Time
@@ -199,6 +201,7 @@ type PaymentRepo interface {
 	CreatePayment(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error)
 	GetPayment(ctx context.Context, id int64) (*PaymentDO, error)
 	GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error)
+	GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*PaymentDO, error)
 }
 
 type CreatePaymentArgs struct {
@@ -207,6 +210,7 @@ type CreatePaymentArgs struct {
 	MerchantID int64
 	Amount     int32
 	PayChannel string
+	OutTradeNo string // optional; server fills with a snowflake id if empty
 }
 
 type PaymentMQRepo interface {
@@ -286,14 +290,16 @@ type paymentUsecase struct {
 	gateway     PaymentGateway
 	paymentRepo PaymentRepo
 	orderRepo   OrderRepo
+	idGen       IDGenerator
 	log         *log.Helper
 }
 
-func NewPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, orderRepo OrderRepo, logger log.Logger) PaymentUsecase {
+func NewPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, orderRepo OrderRepo, idGen IDGenerator, logger log.Logger) PaymentUsecase {
 	return &paymentUsecase{
 		gateway:     gateway,
 		paymentRepo: paymentRepo,
 		orderRepo:   orderRepo,
+		idGen:       idGen,
 		log:         log.NewHelper(logger),
 	}
 }
@@ -307,14 +313,67 @@ func (uc *paymentUsecase) CreatePayment(ctx context.Context, orderID, userID, me
 	if channel == "" {
 		channel = string(Wechat)
 	}
+
+	// Idempotency: short-circuit on an existing active payment.
+	if existing, err := uc.paymentRepo.GetActivePaymentByOrderChannel(ctx, orderID, channel); err == nil && existing != nil {
+		uc.log.WithContext(ctx).Infof("reusing existing active payment_id=%d order_id=%d channel=%s out_trade_no=%s", existing.ID, orderID, channel, existing.OutTradeNo)
+		return existing, nil
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	outTradeNo, err := uc.resolveOutTradeNo(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
 	return uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
 		OrderID:    orderID,
 		UserID:     userID,
 		MerchantID: merchantID,
 		Amount:     order.TotalAmount,
 		PayChannel: channel,
+		OutTradeNo: outTradeNo,
 	})
 }
+
+func (uc *paymentUsecase) resolveOutTradeNo(_ context.Context, supplied string) (string, error) {
+	if supplied != "" {
+		if err := validateOutTradeNo(supplied); err != nil {
+			return "", err
+		}
+		return supplied, nil
+	}
+	return uc.idGen.GenerateString(), nil
+}
+
+// validateOutTradeNo enforces: required, ≤ 64 chars, charset [A-Za-z0-9_-].
+// Wechat allows 32 chars, Alipay 64; 64 is the upper bound across both.
+// 字符集限制防止注入特殊字符到第三方支付系统的 URL/表单字段中。
+func validateOutTradeNo(s string) error {
+	if s == "" {
+		return errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
+	}
+	if len(s) > 64 {
+		return errors.BadRequest("OUT_TRADE_NO_TOO_LONG", "out_trade_no must be ≤ 64 chars")
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'A' && r <= 'Z':
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '_' || r == '-':
+		default:
+			return errors.BadRequest("OUT_TRADE_NO_INVALID_CHARSET", "out_trade_no must match [A-Za-z0-9_-]")
+		}
+	}
+	return nil
+}
+
+// ErrPaymentConflict is returned when a CreatePayment insert collides on
+// idx_payments_active_out_trade_no_channel. Translated to ALREADY_EXISTS / 409.
+var ErrPaymentConflict = errors.Conflict("PAYMENT_OUT_TRADE_NO_CONFLICT",
+	"a payment with this out_trade_no already exists for this channel")
 
 func (uc *paymentUsecase) GetPayment(ctx context.Context, id int64) (*PaymentDO, error) {
 	return uc.paymentRepo.GetPayment(ctx, id)

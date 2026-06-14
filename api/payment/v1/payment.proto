@@ -89,6 +89,7 @@ message PaymentInfo {
   string third_party_tx_id = 8;
   google.protobuf.Timestamp paid_at    = 9;
   google.protobuf.Timestamp created_at = 10;
+  string out_trade_no     = 11;
 }
 
 message CreatePaymentRequest {
@@ -96,6 +97,7 @@ message CreatePaymentRequest {
   int64  user_id     = 2;
   int64  merchant_id = 3;
   string pay_channel = 4; // wechat/alipay
+  string out_trade_no = 5; // optional; server generates a snowflake id if empty
 }
 
 message GetPaymentRequest {

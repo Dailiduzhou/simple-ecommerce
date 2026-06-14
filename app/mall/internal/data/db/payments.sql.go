@@ -15,7 +15,7 @@ import (
 const createPayment = `-- name: CreatePayment :one
 INSERT INTO payments (order_id, user_id, merchant_id, amount, status, pay_channel)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no
 `
 
 type CreatePaymentParams struct {
@@ -49,12 +49,91 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		&i.PaidAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OutTradeNo,
+	)
+	return i, err
+}
+
+const createPaymentWithOutTradeNo = `-- name: CreatePaymentWithOutTradeNo :one
+INSERT INTO payments (
+  order_id, user_id, merchant_id, amount, status, pay_channel, out_trade_no
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7
+)
+RETURNING id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no
+`
+
+type CreatePaymentWithOutTradeNoParams struct {
+	OrderID    int64
+	UserID     int64
+	MerchantID int64
+	Amount     decimal.Decimal
+	Status     string
+	PayChannel string
+	OutTradeNo pgtype.Text
+}
+
+func (q *Queries) CreatePaymentWithOutTradeNo(ctx context.Context, arg CreatePaymentWithOutTradeNoParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, createPaymentWithOutTradeNo,
+		arg.OrderID,
+		arg.UserID,
+		arg.MerchantID,
+		arg.Amount,
+		arg.Status,
+		arg.PayChannel,
+		arg.OutTradeNo,
+	)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.OrderID,
+		&i.UserID,
+		&i.MerchantID,
+		&i.Amount,
+		&i.Status,
+		&i.PayChannel,
+		&i.ThirdPartyTxID,
+		&i.PaidAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OutTradeNo,
+	)
+	return i, err
+}
+
+const getActivePaymentByOrderChannel = `-- name: GetActivePaymentByOrderChannel :one
+SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no FROM payments
+WHERE order_id = $1 AND pay_channel = $2 AND status IN ('pending','success')
+LIMIT 1
+`
+
+type GetActivePaymentByOrderChannelParams struct {
+	OrderID    int64
+	PayChannel string
+}
+
+func (q *Queries) GetActivePaymentByOrderChannel(ctx context.Context, arg GetActivePaymentByOrderChannelParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, getActivePaymentByOrderChannel, arg.OrderID, arg.PayChannel)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.OrderID,
+		&i.UserID,
+		&i.MerchantID,
+		&i.Amount,
+		&i.Status,
+		&i.PayChannel,
+		&i.ThirdPartyTxID,
+		&i.PaidAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OutTradeNo,
 	)
 	return i, err
 }
 
 const getPayment = `-- name: GetPayment :one
-SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at FROM payments WHERE id = $1
+SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no FROM payments WHERE id = $1
 `
 
 func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
@@ -72,12 +151,13 @@ func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
 		&i.PaidAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OutTradeNo,
 	)
 	return i, err
 }
 
 const getPaymentByOrder = `-- name: GetPaymentByOrder :one
-SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at FROM payments WHERE order_id = $1
+SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no FROM payments WHERE order_id = $1
 `
 
 func (q *Queries) GetPaymentByOrder(ctx context.Context, orderID int64) (Payment, error) {
@@ -95,12 +175,13 @@ func (q *Queries) GetPaymentByOrder(ctx context.Context, orderID int64) (Payment
 		&i.PaidAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OutTradeNo,
 	)
 	return i, err
 }
 
 const getPaymentByThirdPartyTxID = `-- name: GetPaymentByThirdPartyTxID :one
-SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at FROM payments WHERE third_party_tx_id = $1
+SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no FROM payments WHERE third_party_tx_id = $1
 `
 
 func (q *Queries) GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID pgtype.Text) (Payment, error) {
@@ -118,6 +199,7 @@ func (q *Queries) GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID
 		&i.PaidAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OutTradeNo,
 	)
 	return i, err
 }
@@ -155,7 +237,7 @@ const updatePaymentSuccess = `-- name: UpdatePaymentSuccess :one
 UPDATE payments
 SET status = 'success', third_party_tx_id = $2, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no
 `
 
 type UpdatePaymentSuccessParams struct {
@@ -178,6 +260,7 @@ func (q *Queries) UpdatePaymentSuccess(ctx context.Context, arg UpdatePaymentSuc
 		&i.PaidAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OutTradeNo,
 	)
 	return i, err
 }

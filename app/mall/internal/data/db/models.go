@@ -52,6 +52,19 @@ type OrderItem struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type OrderRefund struct {
+	ID           int64
+	OrderID      int64
+	UserID       int64
+	OutRefundNo  string
+	TotalAmount  int32
+	RefundAmount int32
+	Reason       string
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
 type Payment struct {
 	ID             int64
 	OrderID        int64
@@ -64,6 +77,7 @@ type Payment struct {
 	PaidAt         pgtype.Timestamptz
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+	OutTradeNo     pgtype.Text
 }
 
 type Product struct {
