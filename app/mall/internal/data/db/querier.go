@@ -32,6 +32,9 @@ type Querier interface {
 	GetDefaultShippingAddress(ctx context.Context, userID int64) (ShippingAddress, error)
 	GetEvent(ctx context.Context, id int64) (Event, error)
 	GetOrder(ctx context.Context, id int64) (Order, error)
+	// 通过商户订单号(orders.out_trade_no)查询订单。
+	// 统一支付 API 的入口:order_no -> order。
+	GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text) (Order, error)
 	GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) (Order, error)
 	GetPayment(ctx context.Context, id int64) (Payment, error)
 	GetPaymentByOrder(ctx context.Context, orderID int64) (Payment, error)

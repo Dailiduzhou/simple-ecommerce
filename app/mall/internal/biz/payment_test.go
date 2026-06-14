@@ -42,6 +42,10 @@ func (r *fakeOrderRepo) GetOrder(ctx context.Context, id int64) (Order, error) {
 	return r.getOrder(ctx, id)
 }
 
+func (r *fakeOrderRepo) GetOrderByOrderNo(ctx context.Context, orderNo string) (Order, error) {
+	return Order{}, nil
+}
+
 func (r *fakeOrderRepo) CancelOrder(ctx context.Context, id int64) error { return nil }
 func (r *fakeOrderRepo) CompleteOrder(ctx context.Context, id int64) error {
 	return nil

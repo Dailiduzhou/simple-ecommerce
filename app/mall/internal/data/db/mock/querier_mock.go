@@ -345,6 +345,21 @@ func (mr *MockQuerierMockRecorder) GetOrder(ctx, id interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrder", reflect.TypeOf((*MockQuerier)(nil).GetOrder), ctx, id)
 }
 
+// GetOrderByOrderNo mocks base method.
+func (m *MockQuerier) GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text) (db.Order, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOrderByOrderNo", ctx, outTradeNo)
+	ret0, _ := ret[0].(db.Order)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderByOrderNo indicates an expected call of GetOrderByOrderNo.
+func (mr *MockQuerierMockRecorder) GetOrderByOrderNo(ctx, outTradeNo interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderByOrderNo", reflect.TypeOf((*MockQuerier)(nil).GetOrderByOrderNo), ctx, outTradeNo)
+}
+
 // GetOrderByUser mocks base method.
 func (m *MockQuerier) GetOrderByUser(ctx context.Context, arg db.GetOrderByUserParams) (db.Order, error) {
 	m.ctrl.T.Helper()

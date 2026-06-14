@@ -9,25 +9,53 @@ option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1;v1";
 option java_multiple_files = true;
 option java_package = "api.payment.v1";
 
+// 支付渠道枚举。
+// 服务端负责把枚举值映射到内部 biz.PayChannel(wechat/alipay)并从 extra_params
+// 中抽取渠道特有的字段(如 WECHAT_JSAPI 需要的 openid)。
+enum PayChannel {
+  PAY_CHANNEL_UNSPECIFIED  = 0;
+  PAY_CHANNEL_ALIPAY_WAP   = 1;  // 支付宝手机网站支付
+  PAY_CHANNEL_ALIPAY_APP   = 2;  // 支付宝 APP 支付
+  PAY_CHANNEL_WECHAT_JSAPI = 3;  // 微信 JSAPI(小程序/公众号)
+  PAY_CHANNEL_WECHAT_NATIVE = 4; // 微信 NATIVE(扫码)
+  PAY_CHANNEL_WECHAT_APP   = 5;  // 微信 APP 支付
+}
+
+// 支付服务。
+// 原 WechatPayService / AliPayService 已经被收编到本 service,前端只需
+// 通过 channel 字段路由到具体渠道,不再为不同渠道调用不同的 RPC。
 service Payment {
-  rpc CreatePayment(CreatePaymentRequest) returns (PaymentInfo) {
+  // 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
+  // 同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
+  // + AliPayService.Prepay 三个 RPC。
+  rpc CreatePayment(CreatePaymentReq) returns (CreatePaymentReply) {
     option (google.api.http) = {
       post: "/v1/payments"
       body: "*"
     };
   }
+
+  // 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+  rpc QueryPayment(QueryPaymentReq) returns (QueryPaymentReply) {
+    option (google.api.http) = {
+      get: "/v1/payments/lookup"
+    };
+  }
+
+  // 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+  rpc ClosePayment(ClosePaymentReq) returns (ClosePaymentReply) {
+    option (google.api.http) = {
+      post: "/v1/payments/lookup/close"
+      body: "*"
+    };
+  }
+
+  // —— 以下 RPC 不在本次渠道统一重构范围,保留不动 ——
   rpc GetPayment(GetPaymentRequest) returns (PaymentInfo) {
     option (google.api.http) = {get: "/v1/payments/{id}"};
   }
   rpc GetPaymentByOrder(GetPaymentByOrderRequest) returns (PaymentInfo) {
     option (google.api.http) = {get: "/v1/orders/{order_id}/payment"};
-  }
-  // 第三方支付回调
-  rpc NotifyPayment(NotifyPaymentRequest) returns (NotifyPaymentReply) {
-    option (google.api.http) = {
-      post: "/v1/payments/notify"
-      body: "*"
-    };
   }
   rpc RefundPayment(RefundPaymentRequest) returns (RefundPaymentReply) {
     option (google.api.http) = {
@@ -46,31 +74,52 @@ service Payment {
   }
 }
 
-// 微信支付服务
-service WechatPayService {
-  // JSAPI 统一下单 (小程序/公众号支付)
-  rpc PrepayJSAPI(PrepayJSAPIRequest) returns (PrepayJSAPIReply) {
-    option (google.api.http) = {
-      post: "/v1/pay/wechat/prepay/jsapi"
-      body: "*"
-    };
-  }
-
-  // 查询订单状态
-  rpc QueryOrder(QueryOrderRequest) returns (QueryOrderReply) {
-    option (google.api.http) = {get: "/v1/pay/wechat/order/{out_trade_no}"};
-  }
-
-  // 关闭订单
-  rpc CloseOrder(CloseOrderRequest) returns (CloseOrderReply) {
-    option (google.api.http) = {
-      post: "/v1/pay/wechat/order/{out_trade_no}/close"
-      body: "*"
-    };
-  }
+// 统一创建支付请求。
+// - order_no: 商户订单号(对应 orders.out_trade_no)。
+// - channel: 支付渠道枚举。
+// - client_ip: 客户端 IP,微信风控必传。
+// - extra_params: 渠道特有的扩展参数抹平字段:
+//     * WECHAT_JSAPI 必须传 "openid"。
+//     * ALIPAY_WAP 可传 "return_url"。
+// - description / total_amount: 可选;省略时服务端从订单商品和金额兜底。
+message CreatePaymentReq {
+  string order_no = 1;
+  PayChannel channel = 2;
+  string client_ip = 3;
+  map<string, string> extra_params = 4;
+  string description = 5;
+  int32 total_amount = 6;
 }
 
-service AliPayService {}
+// 统一创建支付响应。
+// - action_type: 告诉前端该怎么处理 payload。
+//     * "FORM_SUBMIT"  — 支付宝表单,前端把 payload 渲染到 <form> 提交。
+//     * "URL_REDIRECT" — 直接跳转链接,前端 location.href = payload。
+//     * "WECHAT_INVOKE" — 唤起微信 JSAPI,前端用 WeixinJSBridge / jweixin 触发。
+// - payload: 渠道真实的支付参数,序列化为 JSON 字符串,字段契约见 service 注释。
+message CreatePaymentReply {
+  string action_type = 1;
+  string payload = 2;
+}
+
+message QueryPaymentReq {
+  string out_trade_no = 1;
+  PayChannel channel = 2;
+}
+message QueryPaymentReply {
+  string out_trade_no = 1;
+  string transaction_id = 2;
+  TradeState trade_state = 3;
+  int32 total_amount = 4;
+}
+
+message ClosePaymentReq {
+  string out_trade_no = 1;
+  PayChannel channel = 2;
+}
+message ClosePaymentReply {
+  bool success = 1;
+}
 
 message PaymentInfo {
   int64 id = 1;
@@ -86,30 +135,12 @@ message PaymentInfo {
   string out_trade_no = 11;
 }
 
-message CreatePaymentRequest {
-  int64 order_id = 1;
-  int64 user_id = 2;
-  int64 merchant_id = 3;
-  string pay_channel = 4; // wechat/alipay
-  string out_trade_no = 5; // optional; server generates a snowflake id if empty
-}
-
 message GetPaymentRequest {
   int64 id = 1;
 }
 
 message GetPaymentByOrderRequest {
   int64 order_id = 1;
-}
-
-message NotifyPaymentRequest {
-  string third_party_tx_id = 1;
-  string pay_channel = 2;
-  string status = 3; // success/failed
-  int64 payment_id = 4;
-}
-message NotifyPaymentReply {
-  string result = 1; // "success" 告知第三方已处理
 }
 
 message RefundPaymentRequest {
@@ -153,7 +184,6 @@ message MQJobError {
   google.protobuf.Timestamp at = 3;
 }
 
-// 微信支付交易状态枚举
 enum TradeState {
   TRADE_STATE_UNSPECIFIED = 0;
   SUCCESS = 1; // 支付成功
@@ -163,48 +193,4 @@ enum TradeState {
   REVOKED = 5; // 已撤销
   USERPAYING = 6; // 用户支付中
   PAYERROR = 7; // 支付失败
-}
-
-// JSAPI 统一下单请求
-message PrepayJSAPIRequest {
-  string out_trade_no = 1; // 商户订单号
-  string description = 2; // 商品描述
-  int32 total_amount = 3; // 订单总金额，单位为分
-  string openid = 4; // 用户在商户 appid 下的唯一标识
-  string pay_channel = 5; // 支付渠道 (wechat/alipay)
-}
-
-// JSAPI 统一下单响应 (返回给前端唤起微信支付的核心参数)
-message PrepayJSAPIReply {
-  string app_id = 1; // 应用ID
-  string time_stamp = 2; // 时间戳
-  string nonce_str = 3; // 随机字符串
-  string prepay_package = 4 [json_name = "package"]; // 订单详情扩展字符串 (如 prepay_id=xxx)
-  string sign_type = 5; // 签名方式 (通常是 RSA)
-  string pay_sign = 6; // 签名
-}
-
-// 查询订单请求
-message QueryOrderRequest {
-  string out_trade_no = 1; // 商户订单号
-  string pay_channel = 2; // 支付渠道 (wechat/alipay)
-}
-
-// 查询订单响应
-message QueryOrderReply {
-  string out_trade_no = 1; // 商户订单号
-  string transaction_id = 2; // 微信支付系统生成的订单号
-  TradeState trade_state = 3; // 交易状态
-  int32 total_amount = 4; // 订单总金额，单位为分
-}
-
-// 关闭订单请求
-message CloseOrderRequest {
-  string out_trade_no = 1; // 商户订单号
-  string pay_channel = 2; // 支付渠道 (wechat/alipay)
-}
-
-// 关闭订单响应
-message CloseOrderReply {
-  bool success = 1; // 是否关闭成功
 }
