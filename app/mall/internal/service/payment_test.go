@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,43 +12,72 @@ import (
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
-	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
+	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// fakePaymentUsecase 是 biz.PaymentUsecase 的测试替身。
+// 只实现本次重构关心的方法,其它方法保留 nil,期望在测试中不会被调用。
 type fakePaymentUsecase struct {
 	create        func(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*biz.PaymentDO, error)
 	get           func(ctx context.Context, id int64) (*biz.PaymentDO, error)
 	getByOrder    func(ctx context.Context, orderID int64) (*biz.PaymentDO, error)
 	prepay        func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error)
+	prepayForOrder func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error)
 	queryOrder    func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
 	closeOrder    func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error)
 }
 
 func (u *fakePaymentUsecase) CreatePayment(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*biz.PaymentDO, error) {
+	if u.create == nil {
+		return nil, errors.New("create not implemented in fake")
+	}
 	return u.create(ctx, orderID, userID, merchantID, payChannel)
 }
 
 func (u *fakePaymentUsecase) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
+	if u.get == nil {
+		return nil, nil
+	}
 	return u.get(ctx, id)
 }
 
 func (u *fakePaymentUsecase) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
+	if u.getByOrder == nil {
+		return nil, nil
+	}
 	return u.getByOrder(ctx, orderID)
 }
 
 func (u *fakePaymentUsecase) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
+	if u.prepay == nil {
+		return nil, errors.New("prepay not implemented in fake")
+	}
 	return u.prepay(ctx, req)
 }
 
+func (u *fakePaymentUsecase) PrepayForOrder(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+	if u.prepayForOrder == nil {
+		return nil, errors.New("prepayForOrder not implemented in fake")
+	}
+	return u.prepayForOrder(ctx, args)
+}
+
 func (u *fakePaymentUsecase) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+	if u.queryOrder == nil {
+		return nil, errors.New("queryOrder not implemented in fake")
+	}
 	return u.queryOrder(ctx, req)
 }
 
 func (u *fakePaymentUsecase) CloseOrder(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+	if u.closeOrder == nil {
+		return nil, errors.New("closeOrder not implemented in fake")
+	}
 	return u.closeOrder(ctx, req)
 }
 
@@ -64,110 +94,236 @@ func (r *fakePaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJ
 	return r.get(ctx, jobID)
 }
 
-func TestPaymentService_PrepayDelegatesToGateway(t *testing.T) {
+// —— 统一支付入口 CreatePayment ——
+
+// TestPaymentService_CreatePayment_WechatJSAPI 验证微信 JSAPI 渠道:
+//  - 必传 openid,否则 400;
+//  - 返回 action_type=WECHAT_INVOKE;
+//  - payload 包含完整的 JSAPI 唤起参数。
+func TestPaymentService_CreatePayment_WechatJSAPI(t *testing.T) {
+	s := newPaymentServiceForUnified(&fakePaymentUsecase{
+		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+			assert.Equal(t, "merchant-order-1", args.OrderNo)
+			assert.Equal(t, string(biz.Wechat), args.Channel)
+			assert.Equal(t, "openid-123", args.ExtraParams["openid"])
+			return &biz.PrepayForOrderResult{
+				Payment: &biz.PaymentDO{ID: 1, OutTradeNo: "otn-1"},
+				Prepay: &biz.PaymentPrepayResult{
+					AppID:     "wx-app",
+					TimeStamp: "1700000000",
+					NonceStr:  "nonce",
+					Package:   "prepay_id=prepay-1",
+					SignType:  "MD5",
+					PaySign:   "sign-abc",
+				},
+			}, nil
+		},
+	})
+
+	reply, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
+		OrderNo:     "merchant-order-1",
+		Channel:     pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI,
+		ClientIp:    "1.2.3.4",
+		ExtraParams: map[string]string{"openid": "openid-123"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ActionTypeWechatInvoke, reply.ActionType)
+
+	var payload map[string]string
+	require.NoError(t, json.Unmarshal([]byte(reply.Payload), &payload))
+	assert.Equal(t, "wx-app", payload["appId"])
+	assert.Equal(t, "prepay_id=prepay-1", payload["package"])
+	assert.Equal(t, "MD5", payload["signType"])
+	assert.Equal(t, "sign-abc", payload["paySign"])
+}
+
+// TestPaymentService_CreatePayment_WechatJSAPIRequiresOpenid 校验 openid 必传。
+func TestPaymentService_CreatePayment_WechatJSAPIRequiresOpenid(t *testing.T) {
 	s := NewPaymentService(&fakePaymentUsecase{
-		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
-			assert.Equal(t, "order-1", req.OutTradeNo)
-			assert.Equal(t, int32(9900), req.TotalAmount)
-			assert.Equal(t, "wechat", req.Channel)
-			return &biz.PaymentPrepayResult{AppID: "appid", Package: "prepay_id=wx123"}, nil
-		},
-		queryOrder: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
-			assert.Equal(t, "order-1", req.OutTradeNo)
-			assert.Equal(t, "wechat", req.Channel)
-			return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateSuccess, TotalAmount: 9900}, nil
-		},
-		closeOrder: func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
-			assert.Equal(t, "order-1", req.OutTradeNo)
-			assert.Equal(t, "wechat", req.Channel)
-			return &biz.PaymentCloseResult{Success: true}, nil
+		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+			t.Fatalf("PrepayForOrder should not be called when openid is missing")
+			return nil, nil
 		},
 	}, nil)
 
-	prepay, err := s.PrepayJSAPI(context.Background(), &pb.PrepayJSAPIRequest{
-		OutTradeNo:  "order-1",
-		Description: "test order",
-		TotalAmount: 9900,
-		Openid:      "openid-1",
-		PayChannel:  string(biz.Wechat),
+	got, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
+		OrderNo: "merchant-order-1",
+		Channel: pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI,
 	})
-	require.NoError(t, err)
-	assert.Equal(t, "appid", prepay.AppId)
-	assert.Equal(t, "prepay_id=wx123", prepay.PrepayPackage)
-
-	order, err := s.QueryOrder(context.Background(), &pb.QueryOrderRequest{
-		OutTradeNo: "order-1",
-		PayChannel: string(biz.Wechat),
-	})
-	require.NoError(t, err)
-	assert.Equal(t, pb.TradeState_SUCCESS, order.TradeState)
-	assert.Equal(t, int32(9900), order.TotalAmount)
-
-	closed, err := s.CloseOrder(context.Background(), &pb.CloseOrderRequest{
-		OutTradeNo: "order-1",
-		PayChannel: string(biz.Wechat),
-	})
-	require.NoError(t, err)
-	assert.True(t, closed.Success)
+	require.Error(t, err)
+	assert.Nil(t, got)
+	se := kratoserrors.FromError(err)
+	assert.Equal(t, int32(http.StatusBadRequest), se.Code)
+	assert.Equal(t, "OPENID_REQUIRED", se.Reason)
 }
 
-func TestPaymentService_PrepayPassesChannelUnmodified(t *testing.T) {
+// TestPaymentService_CreatePayment_WechatNative 验证 NATIVE 扫码:走 URL_REDIRECT。
+func TestPaymentService_CreatePayment_WechatNative(t *testing.T) {
+	s := newPaymentServiceForUnified(&fakePaymentUsecase{
+		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+			return &biz.PrepayForOrderResult{
+				Payment: &biz.PaymentDO{OutTradeNo: "otn-2"},
+				Prepay:  &biz.PaymentPrepayResult{CodeURL: "weixin://wxpay/bizpayurl?pr=xxx"},
+			}, nil
+		},
+	})
+
+	reply, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
+		OrderNo: "merchant-order-2",
+		Channel: pb.PayChannel_PAY_CHANNEL_WECHAT_NATIVE,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ActionTypeURLRedirect, reply.ActionType)
+
+	var payload map[string]string
+	require.NoError(t, json.Unmarshal([]byte(reply.Payload), &payload))
+	assert.Contains(t, payload["url"], "weixin://wxpay/bizpayurl")
+}
+
+// TestPaymentService_CreatePayment_AlipayWap 验证支付宝 WAP:走 URL_REDIRECT
+// (当前 adapter 仅实现 precreate,真实 WAP 应走 FORM_SUBMIT,这里以实现现状为准)。
+func TestPaymentService_CreatePayment_AlipayWap(t *testing.T) {
+	s := newPaymentServiceForUnified(&fakePaymentUsecase{
+		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+			assert.Equal(t, string(biz.Alipay), args.Channel)
+			return &biz.PrepayForOrderResult{
+				Payment: &biz.PaymentDO{OutTradeNo: "otn-3"},
+				Prepay:  &biz.PaymentPrepayResult{CodeURL: "https://qr.alipay.com/xxx"},
+			}, nil
+		},
+	})
+
+	reply, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
+		OrderNo: "merchant-order-3",
+		Channel: pb.PayChannel_PAY_CHANNEL_ALIPAY_WAP,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ActionTypeURLRedirect, reply.ActionType)
+}
+
+// TestPaymentService_CreatePayment_OrderNotFound 验证 order_no 不存在时返回 404。
+func TestPaymentService_CreatePayment_OrderNotFound(t *testing.T) {
 	s := NewPaymentService(&fakePaymentUsecase{
-		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
-			assert.Equal(t, "", req.Channel)
-			return &biz.PaymentPrepayResult{}, nil
+		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+			return nil, pgx.ErrNoRows
 		},
 	}, nil)
 
-	_, err := s.PrepayJSAPI(context.Background(), &pb.PrepayJSAPIRequest{
-		OutTradeNo: "order-default",
+	got, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
+		OrderNo: "missing-order",
+		Channel: pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI,
+		ExtraParams: map[string]string{"openid": "openid-1"},
 	})
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Nil(t, got)
+	se := kratoserrors.FromError(err)
+	assert.Equal(t, int32(http.StatusNotFound), se.Code)
+	assert.Equal(t, "ORDER_NOT_FOUND", se.Reason)
 }
 
-func TestPaymentService_PrepayUsesAlipayChannel(t *testing.T) {
+// TestPaymentService_CreatePayment_PropagatesAdapterError 验证三方错误原样上抛。
+func TestPaymentService_CreatePayment_PropagatesAdapterError(t *testing.T) {
+	wantErr := errors.New("gateway timeout")
 	s := NewPaymentService(&fakePaymentUsecase{
-		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
-			assert.Equal(t, string(biz.Alipay), req.Channel)
-			return &biz.PaymentPrepayResult{}, nil
-		},
-	}, nil)
-
-	_, err := s.PrepayJSAPI(context.Background(), &pb.PrepayJSAPIRequest{
-		OutTradeNo: "order-alipay",
-		PayChannel: string(biz.Alipay),
-	})
-	require.NoError(t, err)
-}
-
-func TestPaymentService_PrepayPropagatesGatewayError(t *testing.T) {
-	wantErr := errors.New("gateway failed")
-	s := NewPaymentService(&fakePaymentUsecase{
-		prepay: func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
+		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
 			return nil, wantErr
 		},
 	}, nil)
 
-	got, err := s.PrepayJSAPI(context.Background(), &pb.PrepayJSAPIRequest{OutTradeNo: "order-2"})
+	got, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
+		OrderNo: "merchant-order-4",
+		Channel: pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI,
+		ExtraParams: map[string]string{"openid": "openid-1"},
+	})
 	assert.ErrorIs(t, err, wantErr)
 	assert.Nil(t, got)
 }
 
-func TestPaymentService_GatewayMissing(t *testing.T) {
+// TestPaymentService_CreatePayment_RejectsUnspecifiedChannel 验证 0 值 channel 被拒。
+func TestPaymentService_CreatePayment_RejectsUnspecifiedChannel(t *testing.T) {
 	s := NewPaymentService(&fakePaymentUsecase{
-		queryOrder: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
-			return nil, kratoserrors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
+		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+			t.Fatalf("PrepayForOrder should not be called for unspecified channel")
+			return nil, nil
 		},
 	}, nil)
 
-	got, err := s.QueryOrder(context.Background(), &pb.QueryOrderRequest{OutTradeNo: "order-3"})
+	got, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
+		OrderNo: "merchant-order-5",
+		Channel: pb.PayChannel_PAY_CHANNEL_UNSPECIFIED,
+	})
 	require.Error(t, err)
 	assert.Nil(t, got)
-
 	se := kratoserrors.FromError(err)
-	assert.Equal(t, int32(http.StatusServiceUnavailable), se.Code)
-	assert.Equal(t, "PAYMENT_GATEWAY_NOT_CONFIGURED", se.Reason)
+	assert.Equal(t, int32(http.StatusBadRequest), se.Code)
+	assert.Equal(t, "PAY_CHANNEL_INVALID", se.Reason)
 }
+
+// —— 统一查询 QueryPayment ——
+
+func TestPaymentService_QueryPayment_DelegatesToGateway(t *testing.T) {
+	s := NewPaymentService(&fakePaymentUsecase{
+		queryOrder: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+			assert.Equal(t, "otn-1", req.OutTradeNo)
+			assert.Equal(t, string(biz.Wechat), req.Channel)
+			return &biz.PaymentQueryResult{
+				OutTradeNo:    req.OutTradeNo,
+				TransactionID: "wx-tx-1",
+				TradeState:    biz.TradeStateSuccess,
+				TotalAmount:   9900,
+			}, nil
+		},
+	}, nil)
+
+	got, err := s.QueryPayment(context.Background(), &pb.QueryPaymentReq{
+		OutTradeNo: "otn-1",
+		Channel:    pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "otn-1", got.OutTradeNo)
+	assert.Equal(t, "wx-tx-1", got.TransactionId)
+	assert.Equal(t, pb.TradeState_SUCCESS, got.TradeState)
+	assert.Equal(t, int32(9900), got.TotalAmount)
+}
+
+func TestPaymentService_QueryPayment_RejectsInvalidChannel(t *testing.T) {
+	s := NewPaymentService(&fakePaymentUsecase{
+		queryOrder: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+			t.Fatalf("QueryOrder should not be called for invalid channel")
+			return nil, nil
+		},
+	}, nil)
+
+	got, err := s.QueryPayment(context.Background(), &pb.QueryPaymentReq{
+		OutTradeNo: "otn-1",
+		Channel:    pb.PayChannel_PAY_CHANNEL_UNSPECIFIED,
+	})
+	require.Error(t, err)
+	assert.Nil(t, got)
+	se := kratoserrors.FromError(err)
+	assert.Equal(t, "PAY_CHANNEL_INVALID", se.Reason)
+}
+
+// —— 统一关闭 ClosePayment ——
+
+func TestPaymentService_ClosePayment_DelegatesToGateway(t *testing.T) {
+	s := NewPaymentService(&fakePaymentUsecase{
+		closeOrder: func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+			assert.Equal(t, "otn-1", req.OutTradeNo)
+			assert.Equal(t, string(biz.Alipay), req.Channel)
+			return &biz.PaymentCloseResult{Success: true}, nil
+		},
+	}, nil)
+
+	got, err := s.ClosePayment(context.Background(), &pb.ClosePaymentReq{
+		OutTradeNo: "otn-1",
+		Channel:    pb.PayChannel_PAY_CHANNEL_ALIPAY_APP,
+	})
+	require.NoError(t, err)
+	assert.True(t, got.Success)
+}
+
+// —— 微信支付异步通知(走 HTTP 路由,不动) ——
 
 func TestPaymentService_HandleWechatPayNotify(t *testing.T) {
 	s := NewPaymentService(nil, nil)
@@ -182,6 +338,8 @@ func TestPaymentService_HandleWechatPayNotify(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.JSONEq(t, `{"code":"SUCCESS","message":"success"}`, rec.Body.String())
 }
+
+// —— MQ 任务入队(保持原状) ——
 
 func TestPaymentService_CreateWechatPayCheckJob(t *testing.T) {
 	var gotArgs biz.CheckPayArgs
@@ -308,4 +466,10 @@ func TestPaymentService_PaymentMQMissing(t *testing.T) {
 	se := kratoserrors.FromError(err)
 	assert.Equal(t, int32(http.StatusServiceUnavailable), se.Code)
 	assert.Equal(t, "PAYMENT_MQ_NOT_CONFIGURED", se.Reason)
+}
+
+// newPaymentServiceForUnified 用 usecase 包装一个 PaymentService,负责保证
+// payChannel 之外的所有字段都按 biz 层签名转好。封装减少测试模板代码。
+func newPaymentServiceForUnified(u *fakePaymentUsecase) *PaymentService {
+	return NewPaymentService(u, nil)
 }

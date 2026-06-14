@@ -16,6 +16,9 @@ type Order struct {
 	IsCompleted bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	// OutTradeNo 是商户订单号。统一支付 API 把它作为 order_no
+	// 暴露给前端,用于按商户号反查订单。
+	OutTradeNo string
 }
 
 type OrderRepo interface {
@@ -23,6 +26,9 @@ type OrderRepo interface {
 	CompleteOrder(ctx context.Context, id int64) error
 	CreateOrder(ctx context.Context, userID int64, addressID int64, amount int32) (Order, error)
 	GetOrder(ctx context.Context, id int64) (Order, error)
+	// GetOrderByOrderNo 通过商户订单号(orders.out_trade_no)查询订单。
+	// 找不到时返回 pgx.ErrNoRows。
+	GetOrderByOrderNo(ctx context.Context, orderNo string) (Order, error)
 	GetOrderByUser(ctx context.Context, id int64, userID int64) (Order, error)
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
 	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)

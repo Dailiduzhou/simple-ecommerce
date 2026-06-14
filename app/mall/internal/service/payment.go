@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"strconv"
 	"time"
@@ -10,12 +12,25 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/go-kratos/kratos/v2/errors"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
+	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// 前端动作类型常量。返回给前端的 CreatePaymentReply.action_type 取这些值,
+// 前端 switch 决定如何消费 payload。文档见 api/payment/v1/payment.proto。
+const (
+	// ActionTypeFormSubmit: 前端把 payload 渲染成 <form> 自动提交(支付宝 WAP)。
+	ActionTypeFormSubmit = "FORM_SUBMIT"
+	// ActionTypeURLRedirect: 前端直接 location.href = payload.code_url(扫码 / 跳转链接)。
+	ActionTypeURLRedirect = "URL_REDIRECT"
+	// ActionTypeWechatInvoke: 前端用 WeixinJSBridge / jweixin 唤起支付(JSAPI / APP)。
+	ActionTypeWechatInvoke = "WECHAT_INVOKE"
+)
+
+// PaymentService 负责把 proto 的统一支付入口翻译成 biz 层调用,并把
+// 三方返回的 PaymentPrepayResult 编码成前端能直接消费的动作指令。
 type PaymentService struct {
 	pb.UnimplementedPaymentServer
-	pb.UnimplementedWechatPayServiceServer
 	paymentUc  biz.PaymentUsecase
 	paymentJobs biz.PaymentJobUsecase
 }
@@ -27,14 +42,100 @@ func NewPaymentService(paymentUc biz.PaymentUsecase, paymentJobs biz.PaymentJobU
 	}
 }
 
-func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymentRequest) (*pb.PaymentInfo, error) {
-	payment, err := s.paymentUc.CreatePayment(ctx, req.OrderId, req.UserId, req.MerchantId, req.PayChannel)
+// CreatePayment 是统一支付入口。流程:
+//  1. proto.PayChannel 枚举 -> biz channel 字符串(wechat / alipay);
+//  2. 调 usecase.PrepayForOrder 完成 order_no -> payment -> prepay;
+//  3. 根据原始 proto 枚举编码 action_type + payload JSON。
+func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymentReq) (*pb.CreatePaymentReply, error) {
+	if req == nil {
+		return nil, errors.BadRequest("PAYMENT_REQ_REQUIRED", "request is required")
+	}
+	if req.OrderNo == "" {
+		return nil, errors.BadRequest("ORDER_NO_REQUIRED", "order_no is required")
+	}
+	bizChannel, err := protoToBizChannel(req.Channel)
 	if err != nil {
 		return nil, err
 	}
-	return toProtoPaymentInfo(payment), nil
+	if req.Channel == pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI {
+		// JSAPI 渠道必须带 openid(微信侧强校验)。
+		if req.ExtraParams == nil || req.ExtraParams["openid"] == "" {
+			return nil, errors.BadRequest("OPENID_REQUIRED", "openid is required for WECHAT_JSAPI (set extra_params[\"openid\"])")
+		}
+	}
+
+	result, err := s.paymentUc.PrepayForOrder(ctx, biz.PrepayForOrderArgs{
+		OrderNo:     req.OrderNo,
+		Channel:     bizChannel,
+		ClientIP:    req.ClientIp,
+		ExtraParams: req.ExtraParams,
+		Description: req.Description,
+		TotalAmount: req.TotalAmount,
+	})
+	if err != nil {
+		// 订单不存在时 pgx.ErrNoRows 上抛,转换成 404。
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.NotFound("ORDER_NOT_FOUND", "order not found by order_no")
+		}
+		return nil, err
+	}
+
+	actionType, payload, err := encodePrepayPayload(req.Channel, result.Prepay)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.CreatePaymentReply{
+		ActionType: actionType,
+		Payload:    payload,
+	}, nil
 }
 
+// QueryPayment 统一查询入口。
+func (s *PaymentService) QueryPayment(ctx context.Context, req *pb.QueryPaymentReq) (*pb.QueryPaymentReply, error) {
+	if req == nil {
+		return nil, errors.BadRequest("PAYMENT_REQ_REQUIRED", "request is required")
+	}
+	bizChannel, err := protoToBizChannel(req.Channel)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.paymentUc.QueryOrder(ctx, biz.PaymentQueryRequest{
+		Channel:    bizChannel,
+		OutTradeNo: req.OutTradeNo,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.QueryPaymentReply{
+		OutTradeNo:    result.OutTradeNo,
+		TransactionId: result.TransactionID,
+		TradeState:    toProtoTradeState(result.TradeState),
+		TotalAmount:   result.TotalAmount,
+	}, nil
+}
+
+// ClosePayment 统一关闭入口。
+func (s *PaymentService) ClosePayment(ctx context.Context, req *pb.ClosePaymentReq) (*pb.ClosePaymentReply, error) {
+	if req == nil {
+		return nil, errors.BadRequest("PAYMENT_REQ_REQUIRED", "request is required")
+	}
+	bizChannel, err := protoToBizChannel(req.Channel)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.paymentUc.CloseOrder(ctx, biz.PaymentCloseRequest{
+		Channel:    bizChannel,
+		OutTradeNo: req.OutTradeNo,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.ClosePaymentReply{Success: result.Success}, nil
+}
+
+// —— 以下 RPC 不在本次渠道统一重构范围,保留旧实现 ——
+
+// GetPayment 按 int64 id 查询支付流水。
 func (s *PaymentService) GetPayment(ctx context.Context, req *pb.GetPaymentRequest) (*pb.PaymentInfo, error) {
 	payment, err := s.paymentUc.GetPayment(ctx, req.Id)
 	if err != nil {
@@ -43,6 +144,7 @@ func (s *PaymentService) GetPayment(ctx context.Context, req *pb.GetPaymentReque
 	return toProtoPaymentInfo(payment), nil
 }
 
+// GetPaymentByOrder 按订单 int64 id 查询支付流水。
 func (s *PaymentService) GetPaymentByOrder(ctx context.Context, req *pb.GetPaymentByOrderRequest) (*pb.PaymentInfo, error) {
 	payment, err := s.paymentUc.GetPaymentByOrder(ctx, req.OrderId)
 	if err != nil {
@@ -51,14 +153,12 @@ func (s *PaymentService) GetPaymentByOrder(ctx context.Context, req *pb.GetPayme
 	return toProtoPaymentInfo(payment), nil
 }
 
-func (s *PaymentService) NotifyPayment(ctx context.Context, req *pb.NotifyPaymentRequest) (*pb.NotifyPaymentReply, error) {
-	return &pb.NotifyPaymentReply{Result: "success"}, nil
-}
-
+// RefundPayment 退款入口(保持原状,本次不动)。
 func (s *PaymentService) RefundPayment(ctx context.Context, req *pb.RefundPaymentRequest) (*pb.RefundPaymentReply, error) {
 	return &pb.RefundPaymentReply{}, nil
 }
 
+// CreateWechatPayCheckJob 入队一个轮询支付状态的 MQ 任务。
 func (s *PaymentService) CreateWechatPayCheckJob(ctx context.Context, req *pb.CreateWechatPayCheckJobRequest) (*pb.MQJobInfo, error) {
 	if s.paymentJobs == nil {
 		return nil, paymentMQMissing()
@@ -80,6 +180,7 @@ func (s *PaymentService) CreateWechatPayCheckJob(ctx context.Context, req *pb.Cr
 	return toProtoMQJob(job), nil
 }
 
+// GetMQJob 查询 MQ 任务状态。
 func (s *PaymentService) GetMQJob(ctx context.Context, req *pb.GetMQJobRequest) (*pb.MQJobInfo, error) {
 	if s.paymentJobs == nil {
 		return nil, paymentMQMissing()
@@ -91,54 +192,7 @@ func (s *PaymentService) GetMQJob(ctx context.Context, req *pb.GetMQJobRequest) 
 	return toProtoMQJob(job), nil
 }
 
-func (s *PaymentService) PrepayJSAPI(ctx context.Context, req *pb.PrepayJSAPIRequest) (*pb.PrepayJSAPIReply, error) {
-	result, err := s.paymentUc.Prepay(ctx, biz.PaymentPrepayRequest{
-		Channel:     req.PayChannel,
-		OutTradeNo:  req.OutTradeNo,
-		Description: req.Description,
-		TotalAmount: req.TotalAmount,
-		OpenID:      req.Openid,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &pb.PrepayJSAPIReply{
-		AppId:         result.AppID,
-		TimeStamp:     result.TimeStamp,
-		NonceStr:      result.NonceStr,
-		PrepayPackage: result.Package,
-		SignType:      result.SignType,
-		PaySign:       result.PaySign,
-	}, nil
-}
-
-func (s *PaymentService) QueryOrder(ctx context.Context, req *pb.QueryOrderRequest) (*pb.QueryOrderReply, error) {
-	result, err := s.paymentUc.QueryOrder(ctx, biz.PaymentQueryRequest{
-		Channel:    req.PayChannel,
-		OutTradeNo: req.OutTradeNo,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &pb.QueryOrderReply{
-		OutTradeNo:    result.OutTradeNo,
-		TransactionId: result.TransactionID,
-		TradeState:    toProtoTradeState(result.TradeState),
-		TotalAmount:   result.TotalAmount,
-	}, nil
-}
-
-func (s *PaymentService) CloseOrder(ctx context.Context, req *pb.CloseOrderRequest) (*pb.CloseOrderReply, error) {
-	result, err := s.paymentUc.CloseOrder(ctx, biz.PaymentCloseRequest{
-		Channel:    req.PayChannel,
-		OutTradeNo: req.OutTradeNo,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &pb.CloseOrderReply{Success: result.Success}, nil
-}
-
+// HandleWechatPayNotify 处理微信支付异步通知的 HTTP 回调(不走 gRPC)。
 func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
 	if _, err := io.ReadAll(ctx.Request().Body); err != nil {
 		return errors.BadRequest("WECHAT_PAY_NOTIFY_BODY", err.Error())
@@ -152,6 +206,76 @@ func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
 type wechatPayNotifyAck struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// protoToBizChannel 把 proto.PayChannel 枚举映射成 biz 层 channel 字符串。
+// proto 枚举保留渠道细分(JSAPI/NATIVE/WAP/APP),biz 层只关心适配器分桶。
+// 未知 / 0 值(unspecified)拒绝。
+func protoToBizChannel(c pb.PayChannel) (string, error) {
+	switch c {
+	case pb.PayChannel_PAY_CHANNEL_ALIPAY_WAP, pb.PayChannel_PAY_CHANNEL_ALIPAY_APP:
+		return string(biz.Alipay), nil
+	case pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI, pb.PayChannel_PAY_CHANNEL_WECHAT_NATIVE, pb.PayChannel_PAY_CHANNEL_WECHAT_APP:
+		return string(biz.Wechat), nil
+	default:
+		return "", errors.BadRequest("PAY_CHANNEL_INVALID", fmt.Sprintf("pay channel %d is not supported", int32(c)))
+	}
+}
+
+// encodePrepayPayload 根据 proto 渠道子类型把三方返回的 PaymentPrepayResult
+// 编码成前端可用的动作指令 + JSON 字符串。
+//
+// 渠道映射:
+//   - ALIPAY_WAP   -> FORM_SUBMIT, payload = { action_url, method, form_data }
+//   - ALIPAY_APP   -> URL_REDIRECT, payload = { url }
+//   - WECHAT_JSAPI -> WECHAT_INVOKE, payload = { appId, timeStamp, nonceStr, package, signType, paySign }
+//   - WECHAT_NATIVE-> URL_REDIRECT, payload = { url: code_url }
+//   - WECHAT_APP   -> WECHAT_INVOKE, payload = 同 JSAPI
+func encodePrepayPayload(channel pb.PayChannel, prepay *biz.PaymentPrepayResult) (string, string, error) {
+	if prepay == nil {
+		return "", "", errors.InternalServer("PREPAY_RESULT_EMPTY", "prepay result is empty")
+	}
+	switch channel {
+	case pb.PayChannel_PAY_CHANNEL_ALIPAY_WAP:
+		// 当前 AlipayPaymentAdapter 只实现了 precreate(扫码),WAP 走表单的
+		// 路径在 adapter 里尚未实现,这里用 CodeURL 退化为 URL_REDIRECT。
+		// 接入真正的 WAP 流程时,需要在 adapter 里返回 BizContent 走表单。
+		return ActionTypeURLRedirect, mustJSON(map[string]string{"url": prepay.CodeURL}), nil
+	case pb.PayChannel_PAY_CHANNEL_ALIPAY_APP:
+		return ActionTypeURLRedirect, mustJSON(map[string]string{"url": prepay.CodeURL}), nil
+	case pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI:
+		return ActionTypeWechatInvoke, mustJSON(map[string]string{
+			"appId":     prepay.AppID,
+			"timeStamp": prepay.TimeStamp,
+			"nonceStr":  prepay.NonceStr,
+			"package":   prepay.Package,
+			"signType":  prepay.SignType,
+			"paySign":   prepay.PaySign,
+		}), nil
+	case pb.PayChannel_PAY_CHANNEL_WECHAT_NATIVE:
+		return ActionTypeURLRedirect, mustJSON(map[string]string{"url": prepay.CodeURL}), nil
+	case pb.PayChannel_PAY_CHANNEL_WECHAT_APP:
+		return ActionTypeWechatInvoke, mustJSON(map[string]string{
+			"appId":     prepay.AppID,
+			"timeStamp": prepay.TimeStamp,
+			"nonceStr":  prepay.NonceStr,
+			"package":   prepay.Package,
+			"signType":  prepay.SignType,
+			"paySign":   prepay.PaySign,
+		}), nil
+	default:
+		return "", "", errors.BadRequest("PAY_CHANNEL_INVALID", fmt.Sprintf("pay channel %d is not supported", int32(channel)))
+	}
+}
+
+// mustJSON 把任意结构序列化为 JSON 字符串,序列化失败返回 "{}"。
+// 当前调用点都是 map[string]string,失败概率为 0。
+func mustJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 func paymentMQMissing() error {

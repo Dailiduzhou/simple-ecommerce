@@ -282,8 +282,35 @@ type PaymentUsecase interface {
 	GetPayment(ctx context.Context, id int64) (*PaymentDO, error)
 	GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error)
 	Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
+	// PrepayForOrder 是统一支付 API 的入口:
+	// 1) 通过 OrderNo 反查订单;
+	// 2) 创建/复用支付流水;
+	// 3) 调用三方 prepay;
+	// 4) 返回 Payment + Prepay,service 层负责编码 action_type + payload。
+	PrepayForOrder(ctx context.Context, args PrepayForOrderArgs) (*PrepayForOrderResult, error)
 	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
 	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
+}
+
+// PrepayForOrderArgs 统一支付入口入参。
+// Channel 必须是 NormalizePayChannel 后的值(wechat / alipay),
+// 渠道细分子类型(JSAPI / NATIVE / WAP / APP)由 service 层在编码 payload 时
+// 区分,不在 biz 层体现。
+type PrepayForOrderArgs struct {
+	OrderNo     string
+	Channel     string
+	ClientIP    string
+	ExtraParams map[string]string
+	Description string
+	TotalAmount int32
+}
+
+// PrepayForOrderResult 统一支付入口出参。
+// Payment 是创建/复用的支付流水,Prepay 是三方 prepay 返回的原始结果。
+// service 层根据 channel 编码成前端可用的 action_type + payload JSON。
+type PrepayForOrderResult struct {
+	Payment *PaymentDO
+	Prepay  *PaymentPrepayResult
 }
 
 type paymentUsecase struct {
@@ -377,6 +404,44 @@ var ErrPaymentConflict = errors.Conflict("PAYMENT_OUT_TRADE_NO_CONFLICT",
 
 func (uc *paymentUsecase) GetPayment(ctx context.Context, id int64) (*PaymentDO, error) {
 	return uc.paymentRepo.GetPayment(ctx, id)
+}
+
+// PrepayForOrder 实现统一支付入口:order_no -> payment -> prepay。
+// 复用 CreatePayment 的幂等逻辑(同 active payment+channel 复用),
+// 内部再调 gateway.Prepay。service 层在拿到结果后编码 action_type / payload。
+func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrderArgs) (*PrepayForOrderResult, error) {
+	// 1) 通过商户订单号反查订单。
+	order, err := uc.orderRepo.GetOrderByOrderNo(ctx, args.OrderNo)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2) 创建或复用支付流水。CreatePayment 内部会再调一次 GetOrder
+	// (用 int64 PK),这里多一次往返是可接受的——复用幂等 + 复用业务校验。
+	// 商户号不在订单上(由调用方提供),统一支付入口没有该上下文,
+	// 传 0;payments.merchant_id 列允许为 0。
+	payment, err := uc.CreatePayment(ctx, order.ID, order.UserID, 0, args.Channel)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3) 调三方 prepay。从 extra_params 抽取渠道特有字段(openid 等)。
+	openID := ""
+	if args.ExtraParams != nil {
+		openID = args.ExtraParams["openid"]
+	}
+	prepay, err := uc.Prepay(ctx, PaymentPrepayRequest{
+		Channel:     args.Channel,
+		OutTradeNo:  payment.OutTradeNo,
+		Description: args.Description,
+		TotalAmount: args.TotalAmount,
+		OpenID:      openID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &PrepayForOrderResult{Payment: payment, Prepay: prepay}, nil
 }
 
 func (uc *paymentUsecase) GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error) {

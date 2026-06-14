@@ -41,6 +41,7 @@ type Order struct {
 	IsCompleted bool
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+	OutTradeNo  pgtype.Text
 }
 
 type OrderItem struct {

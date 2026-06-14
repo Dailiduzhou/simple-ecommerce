@@ -5,6 +5,7 @@ import (
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -41,6 +42,16 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, userID int64, addressID int
 
 func (r *OrderRepo) GetOrder(ctx context.Context, id int64) (biz.Order, error) {
 	order, err := querierFromContext(ctx, r.q).GetOrder(ctx, id)
+	if err != nil {
+		return biz.Order{}, err
+	}
+	return toBizOrder(order), nil
+}
+
+// GetOrderByOrderNo 通过 orders.out_trade_no 查询订单。
+// 统一支付 API 的入口:order_no -> order。
+func (r *OrderRepo) GetOrderByOrderNo(ctx context.Context, orderNo string) (biz.Order, error) {
+	order, err := querierFromContext(ctx, r.q).GetOrderByOrderNo(ctx, pgtype.Text{String: orderNo, Valid: true})
 	if err != nil {
 		return biz.Order{}, err
 	}
@@ -102,6 +113,11 @@ func (r *OrderRepo) UpdateOrderStatus(ctx context.Context, id int64, status stri
 }
 
 func toBizOrder(o db.Order) biz.Order {
+	// OutTradeNo 列允许为 NULL;只在 Valid 时回填到 biz 层,避免空字符串污染业务判断。
+	var outTradeNo string
+	if o.OutTradeNo.Valid {
+		outTradeNo = o.OutTradeNo.String
+	}
 	return biz.Order{
 		ID:          o.ID,
 		UserID:      o.UserID,
@@ -111,5 +127,6 @@ func toBizOrder(o db.Order) biz.Order {
 		IsCompleted: o.IsCompleted,
 		CreatedAt:   o.CreatedAt.Time,
 		UpdatedAt:   o.UpdatedAt.Time,
+		OutTradeNo:  outTradeNo,
 	}
 }
