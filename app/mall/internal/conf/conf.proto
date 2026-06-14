@@ -9,6 +9,12 @@ message Bootstrap {
   Server server = 1;
   Data data = 2;
   Auth auth = 3;
+  Snowflake snowflake = 4;
+  Payment payment = 5;
+}
+
+message Snowflake {
+  int32 node_id = 1;
 }
 
 message Auth {
