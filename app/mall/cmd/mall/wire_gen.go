@@ -75,7 +75,13 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	orderUsecase := biz.NewOrderUsecase(orderRepo, logger)
 	orderService := service.NewOrderService(orderUsecase)
 	paymentRepo := data.NewPaymentRepo(pool)
-	paymentUsecase := biz.NewPaymentUsecase(paymentGateway, paymentRepo, orderRepo, logger)
+	snowflakeGenerator, err := data.NewSnowflakeIDGenerator(snowflake)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	paymentUsecase := biz.NewPaymentUsecase(paymentGateway, paymentRepo, orderRepo, snowflakeGenerator, logger)
 	paymentMQRepo := data.NewPaymentMQRepo(riverClient, logger)
 	paymentJobUsecase := biz.NewPaymentJobUsecase(paymentMQRepo, logger)
 	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase)

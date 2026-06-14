@@ -16,6 +16,7 @@ import (
 	gopaywechat "github.com/go-pay/gopay/wechat"
 	"github.com/go-pay/util"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -246,15 +247,22 @@ func NewPaymentRepo(pool *pgxpool.Pool) *PaymentRepo {
 
 func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
 	amount := decimal.NewFromInt(int64(args.Amount))
-	payment, err := querierFromContext(ctx, r.q).CreatePayment(ctx, db.CreatePaymentParams{
+	payment, err := querierFromContext(ctx, r.q).CreatePaymentWithOutTradeNo(ctx, db.CreatePaymentWithOutTradeNoParams{
 		OrderID:    args.OrderID,
 		UserID:     args.UserID,
 		MerchantID: args.MerchantID,
 		Amount:     amount,
 		Status:     "pending",
 		PayChannel: args.PayChannel,
+		OutTradeNo: pgtype.Text{String: args.OutTradeNo, Valid: args.OutTradeNo != ""},
 	})
 	if err != nil {
+		// 23505 on idx_payments_active_out_trade_no_channel → concurrent
+		// insert raced and won; surface as a domain conflict.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, biz.ErrPaymentConflict
+		}
 		return nil, err
 	}
 	return toBizPaymentDO(payment), nil
@@ -276,6 +284,17 @@ func (r *PaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*bi
 	return toBizPaymentDO(payment), nil
 }
 
+func (r *PaymentRepo) GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*biz.PaymentDO, error) {
+	payment, err := querierFromContext(ctx, r.q).GetActivePaymentByOrderChannel(ctx, db.GetActivePaymentByOrderChannelParams{
+		OrderID:    orderID,
+		PayChannel: channel,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toBizPaymentDO(payment), nil
+}
+
 func toBizPaymentDO(p db.Payment) *biz.PaymentDO {
 	d := &biz.PaymentDO{
 		ID:             p.ID,
@@ -285,6 +304,7 @@ func toBizPaymentDO(p db.Payment) *biz.PaymentDO {
 		Amount:         int32(p.Amount.IntPart()),
 		Status:         p.Status,
 		PayChannel:     p.PayChannel,
+		OutTradeNo:     p.OutTradeNo.String,
 		ThirdPartyTxID: p.ThirdPartyTxID.String,
 		CreatedAt:      p.CreatedAt.Time,
 		UpdatedAt:      p.UpdatedAt.Time,
