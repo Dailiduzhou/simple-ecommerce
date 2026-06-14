@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.0
-// source: api/payment/v1/payment.proto
+// source: payment/v1/payment.proto
 
 package v1
 
@@ -347,7 +347,7 @@ var Payment_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "api/payment/v1/payment.proto",
+	Metadata: "payment/v1/payment.proto",
 }
 
 const (
@@ -535,5 +535,5 @@ var WechatPayService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "api/payment/v1/payment.proto",
+	Metadata: "payment/v1/payment.proto",
 }

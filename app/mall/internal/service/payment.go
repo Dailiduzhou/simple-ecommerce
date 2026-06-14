@@ -171,6 +171,7 @@ func toProtoPaymentInfo(p *biz.PaymentDO) *pb.PaymentInfo {
 		Status:         p.Status,
 		PayChannel:     p.PayChannel,
 		ThirdPartyTxId: p.ThirdPartyTxID,
+		OutTradeNo:     p.OutTradeNo,
 		CreatedAt:      timestamppb.New(p.CreatedAt),
 	}
 	if p.PaidAt != nil {
