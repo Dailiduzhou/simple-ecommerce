@@ -142,8 +142,8 @@ type AlipayPaymentAdapter struct {
 	log    *log.Helper
 }
 
-func NewAlipayPaymentAdapter(logger log.Logger) *AlipayPaymentAdapter {
-	return &AlipayPaymentAdapter{log: log.NewHelper(logger)}
+func NewAlipayPaymentAdapter(client *gopayalipay.Client, logger log.Logger) *AlipayPaymentAdapter {
+	return &AlipayPaymentAdapter{client: client, log: log.NewHelper(logger)}
 }
 
 func (a *AlipayPaymentAdapter) Channel() string {

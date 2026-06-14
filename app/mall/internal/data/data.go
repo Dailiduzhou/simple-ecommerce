@@ -9,6 +9,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	gopayalipay "github.com/go-pay/gopay/alipay"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -26,7 +27,7 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentSyncRepo, NewTransaction,
+	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentSyncRepo, NewTransaction, NewAlipayClient,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
@@ -157,7 +158,23 @@ func RunMigrations(c *conf.Data) error {
 	return nil
 }
 
-func NewAlipayclinet(c *conf.Payment)
+func NewAlipayClient(c *conf.Payment) (*gopayalipay.Client, error) {
+	aliConf := c.GetAlipay()
+
+	client, err := gopayalipay.NewClient(aliConf.AppId, aliConf.PrivateKey, aliConf.IsProduction)
+	if err != nil {
+		return nil, err
+	}
+
+	client.SetCharset("utf-8").SetSignType(gopayalipay.RSA2)
+	err = client.SetCertSnByPath(aliConf.AppCertPath, aliConf.AlipayRootCertPath, aliConf.AlipayPublicCertPath)
+	if err != nil {
+		log.Errorf("alipay certs loading failed: %v", err)
+		return nil, err
+	}
+
+	return client, nil
+}
 
 func (d *Data) DB(ctx context.Context) db.Querier {
 	return querierFromContext(ctx, d.q)
