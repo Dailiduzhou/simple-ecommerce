@@ -37,7 +37,6 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.PaymentRepo), new(*PaymentRepo)),
 	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
 	wire.Bind(new(biz.PaymentSyncRepo), new(*PaymentSyncRepo)),
-	wire.Bind(new(biz.Transaction), new(*transaction)),
 )
 
 type (

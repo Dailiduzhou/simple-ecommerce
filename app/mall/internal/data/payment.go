@@ -352,90 +352,94 @@ func (r *PaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJob, 
 }
 
 type PaymentSyncRepo struct {
-	q  db.Querier
-	tx biz.Transaction
+	tx biz.TxManager
 }
 
-func NewPaymentSyncRepo(pool *pgxpool.Pool, tx biz.Transaction) *PaymentSyncRepo {
-	return &PaymentSyncRepo{q: db.New(pool), tx: tx}
+func NewPaymentSyncRepo(tx biz.TxManager) *PaymentSyncRepo {
+	return &PaymentSyncRepo{tx: tx}
 }
 
 func (r *PaymentSyncRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 	return r.tx.InTx(ctx, func(ctx context.Context) error {
-		q := querierFromContext(ctx, r.q)
-		orderID := args.OrderID
+		q := querierFromContext(ctx, nil)
 
 		switch result.TradeState {
 		case biz.TradeStateSuccess:
-			payment, err := q.UpdatePaymentSuccess(ctx, db.UpdatePaymentSuccessParams{
-				ID: args.PaymentID,
-				ThirdPartyTxID: pgtype.Text{
-					String: result.TransactionID,
-					Valid:  result.TransactionID != "",
-				},
-			})
+			orderID, err := r.applySuccess(ctx, q, args, result.TransactionID)
 			if err != nil {
 				return err
 			}
-			if orderID <= 0 {
-				orderID = payment.OrderID
-			}
-			if orderID > 0 {
-				if err := q.CompleteOrder(ctx, orderID); err != nil {
-					return err
-				}
-			}
+			return finalizeOrder(ctx, q, orderID, true)
 		case biz.TradeStateRefund:
-			if err := q.UpdatePaymentRefunded(ctx, args.PaymentID); err != nil {
-				return err
-			}
+			return r.applyRefund(ctx, q, args)
 		case biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError:
-			if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
+			orderID, err := r.applyFailed(ctx, q, args)
+			if err != nil {
 				return err
 			}
-			if orderID <= 0 {
-				payment, err := q.GetPayment(ctx, args.PaymentID)
-				if err != nil {
-					return err
-				}
-				orderID = payment.OrderID
-			}
-			if orderID > 0 {
-				if err := q.CancelOrder(ctx, orderID); err != nil {
-					return err
-				}
-			}
+			return finalizeOrder(ctx, q, orderID, false)
 		default:
 			return fmt.Errorf("wechat pay state %s is not terminal", result.TradeState.String())
 		}
-
-		return nil
 	})
 }
 
 func (r *PaymentSyncRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
 	return r.tx.InTx(ctx, func(ctx context.Context) error {
-		q := querierFromContext(ctx, r.q)
-		if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
+		q := querierFromContext(ctx, nil)
+		orderID, err := r.applyFailed(ctx, q, args)
+		if err != nil {
 			return err
 		}
-
-		orderID := args.OrderID
-		if orderID <= 0 {
-			payment, err := q.GetPayment(ctx, args.PaymentID)
-			if err != nil {
-				return err
-			}
-			orderID = payment.OrderID
-		}
-		if orderID > 0 {
-			if err := q.CancelOrder(ctx, orderID); err != nil {
-				return err
-			}
-		}
-
-		return nil
+		return finalizeOrder(ctx, q, orderID, false)
 	})
+}
+
+func (r *PaymentSyncRepo) applySuccess(ctx context.Context, q db.Querier, args biz.CheckPayArgs, txID string) (int64, error) {
+	payment, err := q.UpdatePaymentSuccess(ctx, db.UpdatePaymentSuccessParams{
+		ID: args.PaymentID,
+		ThirdPartyTxID: pgtype.Text{
+			String: txID,
+			Valid:  txID != "",
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+	orderID := args.OrderID
+	if orderID <= 0 {
+		orderID = payment.OrderID
+	}
+	return orderID, nil
+}
+
+func (r *PaymentSyncRepo) applyRefund(ctx context.Context, q db.Querier, args biz.CheckPayArgs) error {
+	return q.UpdatePaymentRefunded(ctx, args.PaymentID)
+}
+
+func (r *PaymentSyncRepo) applyFailed(ctx context.Context, q db.Querier, args biz.CheckPayArgs) (int64, error) {
+	if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
+		return 0, err
+	}
+	orderID := args.OrderID
+	if orderID <= 0 {
+		payment, err := q.GetPayment(ctx, args.PaymentID)
+		if err != nil {
+			return 0, err
+		}
+		orderID = payment.OrderID
+	}
+	return orderID, nil
+}
+
+func finalizeOrder(ctx context.Context, q db.Querier, orderID int64, success bool) error {
+	if orderID <= 0 {
+		return nil
+	}
+	if success {
+		return q.CompleteOrder(ctx, orderID)
+	}
+	return q.CancelOrder(ctx, orderID)
 }
 
 func toBizMQJob(row *rivertype.JobRow) *biz.MQJob {
