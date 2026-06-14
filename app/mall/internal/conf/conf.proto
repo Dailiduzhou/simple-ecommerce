@@ -48,3 +48,16 @@ message Data {
   Database database = 1;
   Redis redis = 2;
 }
+
+message Payment {
+  Alipay alipay = 1;
+}
+
+message Alipay {
+  string app_id = 1;
+  string private_key = 2;
+  bool is_production = 3;
+  string app_cert_path = 4;
+  string alipay_public_cert_path = 5;
+  string alipay_root_cert_path = 6;
+}

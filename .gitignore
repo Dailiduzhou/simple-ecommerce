@@ -1,2 +1,4 @@
 .env
 .codegraph
+.claude
+.agents
