@@ -31,13 +31,13 @@ const (
 // 三方返回的 PaymentPrepayResult 编码成前端能直接消费的动作指令。
 type PaymentService struct {
 	pb.UnimplementedPaymentServer
-	paymentUc  biz.PaymentUsecase
+	paymentUc   biz.PaymentUsecase
 	paymentJobs biz.PaymentJobUsecase
 }
 
 func NewPaymentService(paymentUc biz.PaymentUsecase, paymentJobs biz.PaymentJobUsecase) *PaymentService {
 	return &PaymentService{
-		paymentUc:  paymentUc,
+		paymentUc:   paymentUc,
 		paymentJobs: paymentJobs,
 	}
 }
@@ -310,14 +310,14 @@ func toProtoMQJob(job *biz.MQJob) *pb.MQJobInfo {
 	}
 	result := &pb.MQJobInfo{
 		JobId:       job.ID,
-		Kind:         job.Kind,
-		Queue:        job.Queue,
-		State:        job.State,
-		Attempt:      int32(job.Attempt),
-		MaxAttempts:  int32(job.MaxAttempts),
-		ArgsJson:     job.ArgsJSON,
-		Tags:         job.Tags,
-		Errors:       make([]*pb.MQJobError, len(job.Errors)),
+		Kind:        job.Kind,
+		Queue:       job.Queue,
+		State:       job.State,
+		Attempt:     int32(job.Attempt),
+		MaxAttempts: int32(job.MaxAttempts),
+		ArgsJson:    job.ArgsJSON,
+		Tags:        job.Tags,
+		Errors:      make([]*pb.MQJobError, len(job.Errors)),
 	}
 	if !job.CreatedAt.IsZero() {
 		result.CreatedAt = timestamppb.New(job.CreatedAt)
