@@ -2,6 +2,6 @@ package biz
 
 import "context"
 
-type Transaction interface {
+type TxManager interface {
 	InTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
