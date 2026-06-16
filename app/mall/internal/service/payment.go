@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strconv"
 	"time"
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/go-kratos/kratos/v2/errors"
+	"github.com/go-kratos/kratos/v2/log"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
+	"github.com/go-pay/gopay/wechat"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -33,18 +35,22 @@ type PaymentService struct {
 	pb.UnimplementedPaymentServer
 	paymentUc   biz.PaymentUsecase
 	paymentJobs biz.PaymentJobUsecase
+	paymentConf *conf.Payment
+	log         *log.Helper
 }
 
-func NewPaymentService(paymentUc biz.PaymentUsecase, paymentJobs biz.PaymentJobUsecase) *PaymentService {
+func NewPaymentService(paymentUc biz.PaymentUsecase, paymentJobs biz.PaymentJobUsecase, paymentConf *conf.Payment, logger log.Logger) *PaymentService {
 	return &PaymentService{
 		paymentUc:   paymentUc,
 		paymentJobs: paymentJobs,
+		paymentConf: paymentConf,
+		log:         log.NewHelper(logger),
 	}
 }
 
 // CreatePayment 是统一支付入口。流程:
 //  1. proto.PayChannel 枚举 -> biz channel 字符串(wechat / alipay);
-//  2. 调 usecase.PrepayForOrder 完成 order_no -> payment -> prepay;
+//  2. 调 usecase 完成 order_no -> payment -> prepay,微信支付在同一事务中入队轮询任务;
 //  3. 根据原始 proto 枚举编码 action_type + payload JSON。
 func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymentReq) (*pb.CreatePaymentReply, error) {
 	if req == nil {
@@ -64,30 +70,73 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymen
 		}
 	}
 
-	result, err := s.paymentUc.PrepayForOrder(ctx, biz.PrepayForOrderArgs{
+	prepayArgs := biz.PrepayForOrderArgs{
 		OrderNo:     req.OrderNo,
 		Channel:     bizChannel,
 		ClientIP:    req.ClientIp,
 		ExtraParams: req.ExtraParams,
 		Description: req.Description,
 		TotalAmount: req.TotalAmount,
-	})
-	if err != nil {
-		// 订单不存在时 pgx.ErrNoRows 上抛,转换成 404。
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errors.NotFound("ORDER_NOT_FOUND", "order not found by order_no")
+	}
+
+	var result *biz.PrepayForOrderResult
+	if bizChannel == string(biz.Wechat) {
+		// 微信支付需要事务内入队轮询任务,保证 payment 写入与 MQ 原子性。
+		checkJob := biz.CheckPayArgs{
+			Channel:             string(biz.Wechat),
+			Source:              "prepay_auto",
+			MaxPolls:            s.checkPayMaxPolls(),
+			PollIntervalSeconds: s.checkPayPollIntervalSeconds(),
 		}
-		return nil, err
+		r, _, err := s.paymentUc.PrepayForOrderWithCheckJob(ctx, prepayArgs, checkJob, s.checkPayInitialDelay())
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, errors.NotFound("ORDER_NOT_FOUND", "order not found by order_no")
+			}
+			return nil, err
+		}
+		result = r
+	} else {
+		r, err := s.paymentUc.PrepayForOrder(ctx, prepayArgs)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, errors.NotFound("ORDER_NOT_FOUND", "order not found by order_no")
+			}
+			return nil, err
+		}
+		result = r
 	}
 
 	actionType, payload, err := encodePrepayPayload(req.Channel, result.Prepay)
 	if err != nil {
 		return nil, err
 	}
+
 	return &pb.CreatePaymentReply{
 		ActionType: actionType,
 		Payload:    payload,
 	}, nil
+}
+
+func (s *PaymentService) checkPayInitialDelay() time.Duration {
+	if s.paymentConf != nil && s.paymentConf.CheckPayJob != nil && s.paymentConf.CheckPayJob.InitialDelay != nil {
+		return s.paymentConf.CheckPayJob.InitialDelay.AsDuration()
+	}
+	return 5 * time.Second
+}
+
+func (s *PaymentService) checkPayMaxPolls() int {
+	if s.paymentConf != nil && s.paymentConf.CheckPayJob != nil && s.paymentConf.CheckPayJob.MaxPolls > 0 {
+		return int(s.paymentConf.CheckPayJob.MaxPolls)
+	}
+	return 30
+}
+
+func (s *PaymentService) checkPayPollIntervalSeconds() int {
+	if s.paymentConf != nil && s.paymentConf.CheckPayJob != nil && s.paymentConf.CheckPayJob.PollInterval != nil {
+		return int(s.paymentConf.CheckPayJob.PollInterval.AsDuration().Seconds())
+	}
+	return 10
 }
 
 // QueryPayment 统一查询入口。
@@ -193,19 +242,51 @@ func (s *PaymentService) GetMQJob(ctx context.Context, req *pb.GetMQJobRequest) 
 }
 
 // HandleWechatPayNotify 处理微信支付异步通知的 HTTP 回调(不走 gRPC)。
+// 流程:解析 XML -> 验签 -> 业务成功时入队一个延迟为 0 的 check job 主动查询 -> 返回 SUCCESS。
 func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
-	if _, err := io.ReadAll(ctx.Request().Body); err != nil {
-		return errors.BadRequest("WECHAT_PAY_NOTIFY_BODY", err.Error())
+	req := ctx.Request()
+	notifyReq, err := wechat.ParseNotify(req)
+	if err != nil {
+		return errors.BadRequest("WECHAT_PAY_NOTIFY_PARSE", err.Error())
 	}
-	return ctx.JSON(200, wechatPayNotifyAck{
-		Code:    "SUCCESS",
-		Message: "success",
-	})
-}
 
-type wechatPayNotifyAck struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	apiKey := ""
+	if s.paymentConf != nil && s.paymentConf.Wechat != nil {
+		apiKey = s.paymentConf.Wechat.ApiKey
+	}
+	if apiKey != "" {
+		signType := notifyReq.SignType
+		if signType == "" {
+			signType = wechat.SignType_MD5
+		}
+		ok, err := wechat.VerifySign(apiKey, signType, notifyReq)
+		if err != nil {
+			return errors.BadRequest("WECHAT_PAY_NOTIFY_VERIFY", err.Error())
+		}
+		if !ok {
+			return errors.BadRequest("WECHAT_PAY_NOTIFY_SIGN", "wechat notify sign verification failed")
+		}
+	}
+
+	if notifyReq.ReturnCode == "SUCCESS" && notifyReq.ResultCode == "SUCCESS" && notifyReq.OutTradeNo != "" {
+		checkJob := biz.CheckPayArgs{
+			Channel:             string(biz.Wechat),
+			Source:              "wechat_notify",
+			MaxPolls:            s.checkPayMaxPolls(),
+			PollIntervalSeconds: s.checkPayPollIntervalSeconds(),
+		}
+		if _, err := s.paymentUc.EnqueueWechatCheckJobByOutTradeNo(ctx, notifyReq.OutTradeNo, checkJob); err != nil {
+			// 入队失败不返回错误给微信,避免微信重试导致更多失败入队,
+			// 但需要留下日志便于排查。
+			s.log.WithContext(ctx).Warnf("failed to enqueue check job from wechat notify out_trade_no=%s: %v", notifyReq.OutTradeNo, err)
+		}
+	}
+
+	// 微信支付通知要求返回 XML,不能返回 JSON。
+	ack := wechat.NotifyResponse{ReturnCode: "SUCCESS", ReturnMsg: "OK"}
+	ctx.Response().Header().Set("Content-Type", "application/xml; charset=utf-8")
+	_, err = ctx.Response().Write([]byte(ack.ToXmlString()))
+	return err
 }
 
 // protoToBizChannel 把 proto.PayChannel 枚举映射成 biz 层 channel 字符串。
