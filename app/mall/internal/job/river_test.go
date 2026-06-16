@@ -44,7 +44,7 @@ func (r *fakePaymentSyncRepo) MarkPayExpired(ctx context.Context, args biz.Check
 }
 
 func TestCheckPayWorker_ApplyTerminalState(t *testing.T) {
-	args := biz.CheckPayArgs{PaymentID: 12, OutTradeNo: "order-12", Channel: "wechat", MaxPolls: 5, PollIntervalSeconds: 30}
+	args := biz.CheckPayArgs{PaymentID: 12, OutTradeNo: "order-12", Channel: "wechat", MaxPolls: 5, PollIntervalSeconds: 30, Source: "api"}
 	worker := NewCheckPayWorker(
 		&fakeWorkerPaymentGateway{
 			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
@@ -108,7 +108,7 @@ func TestCheckPayWorker_RetriesPendingState(t *testing.T) {
 }
 
 func TestCheckPayWorker_MarksExpiredOnLastPendingAttempt(t *testing.T) {
-	args := biz.CheckPayArgs{PaymentID: 12, OrderID: 34, OutTradeNo: "order-12", Channel: "wechat", MaxPolls: 3, PollIntervalSeconds: 30}
+	args := biz.CheckPayArgs{PaymentID: 12, OrderID: 34, OutTradeNo: "order-12", Channel: "wechat", MaxPolls: 3, PollIntervalSeconds: 30, Source: "api"}
 	worker := NewCheckPayWorker(
 		&fakeWorkerPaymentGateway{
 			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {

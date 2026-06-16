@@ -2,11 +2,13 @@ package biz
 
 import (
 	"context"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
@@ -14,8 +16,9 @@ import (
 )
 
 type fakePaymentRepo struct {
-	getActive func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error)
-	create    func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error)
+	getActive              func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error)
+	create                 func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error)
+	getPaymentByOutTradeNo func(ctx context.Context, outTradeNo string) (*PaymentDO, error)
 }
 
 func (r *fakePaymentRepo) CreatePayment(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
@@ -32,6 +35,13 @@ func (r *fakePaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) 
 
 func (r *fakePaymentRepo) GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
 	return r.getActive(ctx, orderID, channel)
+}
+
+func (r *fakePaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*PaymentDO, error) {
+	if r.getPaymentByOutTradeNo != nil {
+		return r.getPaymentByOutTradeNo(ctx, outTradeNo)
+	}
+	return nil, nil
 }
 
 type fakeOrderRepo struct {
@@ -109,7 +119,7 @@ func itoa(n int64) string {
 }
 
 func newPaymentUsecase(repo *fakePaymentRepo, orderRepo *fakeOrderRepo, gen IDGenerator) PaymentUsecase {
-	return NewPaymentUsecase(nil, repo, orderRepo, gen, log.DefaultLogger)
+	return NewPaymentUsecase(nil, repo, orderRepo, nil, nil, gen, log.DefaultLogger)
 }
 
 func TestCreatePayment_GeneratesOutTradeNo(t *testing.T) {
@@ -187,7 +197,7 @@ func TestCreatePayment_AllowsRetryAfterFailed(t *testing.T) {
 }
 
 func TestCreatePayment_PropagatesRepoError(t *testing.T) {
-	wantErr := errors.New("db down")
+	wantErr := stderrors.New("db down")
 	orderRepo := &fakeOrderRepo{
 		getOrder: func(ctx context.Context, id int64) (Order, error) {
 			return Order{ID: 10, TotalAmount: 9900}, nil
@@ -252,4 +262,176 @@ func TestResolveOutTradeNo_GeneratesWhenEmpty(t *testing.T) {
 	got, err := uc.resolveOutTradeNo(context.Background(), "")
 	require.NoError(t, err)
 	assert.Equal(t, "snow-1", got)
+}
+
+type fakeTxManager struct {
+	inTx func(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+func (m *fakeTxManager) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	if m.inTx != nil {
+		return m.inTx(ctx, fn)
+	}
+	return fn(ctx)
+}
+
+type fakePaymentJobUsecase struct {
+	enqueueInTx func(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error)
+}
+
+func (u *fakePaymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
+	return nil, nil
+}
+
+func (u *fakePaymentJobUsecase) EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
+	if u.enqueueInTx != nil {
+		return u.enqueueInTx(ctx, args, delay)
+	}
+	return nil, nil
+}
+
+func (u *fakePaymentJobUsecase) GetMQJob(ctx context.Context, jobID int64) (*MQJob, error) {
+	return nil, nil
+}
+
+type fakePaymentGateway struct {
+	prepay func(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
+}
+
+func (g *fakePaymentGateway) Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
+	if g.prepay != nil {
+		return g.prepay(ctx, req)
+	}
+	return &PaymentPrepayResult{}, nil
+}
+
+func (g *fakePaymentGateway) QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error) {
+	return nil, nil
+}
+
+func (g *fakePaymentGateway) CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error) {
+	return nil, nil
+}
+
+func TestPaymentUsecase_PrepayForOrderWithCheckJob_WechatEnqueuesJob(t *testing.T) {
+	var gotCheckJob CheckPayArgs
+	var gotDelay time.Duration
+
+	uc := &paymentUsecase{
+		gateway: &fakePaymentGateway{prepay: func(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
+			assert.NotEmpty(t, req.OutTradeNo)
+			return &PaymentPrepayResult{OutTradeNo: req.OutTradeNo}, nil
+		}},
+		paymentRepo: &fakePaymentRepo{
+			getActive: func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
+				return nil, pgx.ErrNoRows
+			},
+			create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
+				return &PaymentDO{ID: 101, OrderID: 1001, OutTradeNo: args.OutTradeNo, PayChannel: args.PayChannel, Status: "pending"}, nil
+			},
+			getPaymentByOutTradeNo: func(ctx context.Context, outTradeNo string) (*PaymentDO, error) {
+				return nil, nil
+			},
+		},
+		orderRepo: &fakeOrderRepo{getOrder: func(ctx context.Context, id int64) (Order, error) {
+			return Order{ID: 1001, UserID: 7, TotalAmount: 9900}, nil
+		}},
+		paymentJobs: &fakePaymentJobUsecase{enqueueInTx: func(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
+			gotCheckJob = args
+			gotDelay = delay
+			return &MQJob{ID: 202, Kind: CheckPayJobKind, Queue: "payments"}, nil
+		}},
+		tx:    &fakeTxManager{},
+		idGen: &fakeIDGenerator{prefix: "snow-"},
+		log:   log.NewHelper(log.DefaultLogger),
+	}
+
+	res, job, err := uc.PrepayForOrderWithCheckJob(context.Background(), PrepayForOrderArgs{
+		OrderNo: "merchant-order-1",
+		Channel: string(Wechat),
+	}, CheckPayArgs{Source: "prepay_auto", MaxPolls: 30, PollIntervalSeconds: 10}, 2*time.Second)
+
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.NotNil(t, job)
+	assert.Equal(t, int64(101), gotCheckJob.PaymentID)
+	assert.Equal(t, int64(1001), gotCheckJob.OrderID)
+	assert.Equal(t, "snow-1", gotCheckJob.OutTradeNo)
+	assert.Equal(t, string(Wechat), gotCheckJob.Channel)
+	assert.Equal(t, "prepay_auto", gotCheckJob.Source)
+	assert.Equal(t, 2*time.Second, gotDelay)
+}
+
+func TestPaymentUsecase_PrepayForOrderWithCheckJob_AlipaySkipsJob(t *testing.T) {
+	uc := &paymentUsecase{
+		gateway: &fakePaymentGateway{prepay: func(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
+			return &PaymentPrepayResult{OutTradeNo: req.OutTradeNo}, nil
+		}},
+		paymentRepo: &fakePaymentRepo{
+			getActive: func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
+				return nil, pgx.ErrNoRows
+			},
+			create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
+				return &PaymentDO{ID: 101, OrderID: 1001, OutTradeNo: args.OutTradeNo, PayChannel: args.PayChannel, Status: "pending"}, nil
+			},
+			getPaymentByOutTradeNo: func(ctx context.Context, outTradeNo string) (*PaymentDO, error) {
+				return nil, nil
+			},
+		},
+		orderRepo: &fakeOrderRepo{getOrder: func(ctx context.Context, id int64) (Order, error) {
+			return Order{ID: 1001, UserID: 7, TotalAmount: 9900}, nil
+		}},
+		paymentJobs: &fakePaymentJobUsecase{enqueueInTx: func(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
+			t.Fatalf("should not enqueue job for alipay")
+			return nil, nil
+		}},
+		tx:    &fakeTxManager{},
+		idGen: &fakeIDGenerator{prefix: "snow-"},
+		log:   log.NewHelper(log.DefaultLogger),
+	}
+
+	res, job, err := uc.PrepayForOrderWithCheckJob(context.Background(), PrepayForOrderArgs{
+		OrderNo: "merchant-order-1",
+		Channel: string(Alipay),
+	}, CheckPayArgs{Source: "prepay_auto"}, 0)
+
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Nil(t, job)
+}
+
+func TestPaymentUsecase_EnqueueWechatCheckJobByOutTradeNo(t *testing.T) {
+	var gotCheckJob CheckPayArgs
+	uc := &paymentUsecase{
+		paymentRepo: &fakePaymentRepo{
+			getPaymentByOutTradeNo: func(ctx context.Context, outTradeNo string) (*PaymentDO, error) {
+				assert.Equal(t, "otn-notify", outTradeNo)
+				return &PaymentDO{ID: 303, OrderID: 3003, OutTradeNo: outTradeNo, PayChannel: string(Wechat), Status: "pending"}, nil
+			},
+		},
+		paymentJobs: &fakePaymentJobUsecase{enqueueInTx: func(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
+			gotCheckJob = args
+			assert.Equal(t, time.Duration(0), delay)
+			return &MQJob{ID: 404, Kind: CheckPayJobKind, Queue: "payments"}, nil
+		}},
+		tx:  &fakeTxManager{},
+		log: log.NewHelper(log.DefaultLogger),
+	}
+
+	job, err := uc.EnqueueWechatCheckJobByOutTradeNo(context.Background(), "otn-notify", CheckPayArgs{Source: "wechat_notify", MaxPolls: 30, PollIntervalSeconds: 10})
+
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	assert.Equal(t, int64(303), gotCheckJob.PaymentID)
+	assert.Equal(t, int64(3003), gotCheckJob.OrderID)
+	assert.Equal(t, "otn-notify", gotCheckJob.OutTradeNo)
+	assert.Equal(t, string(Wechat), gotCheckJob.Channel)
+	assert.Equal(t, "wechat_notify", gotCheckJob.Source)
+}
+
+func TestPaymentUsecase_EnqueueWechatCheckJobByOutTradeNo_RejectsEmptyOutTradeNo(t *testing.T) {
+	uc := &paymentUsecase{tx: &fakeTxManager{}}
+	_, err := uc.EnqueueWechatCheckJobByOutTradeNo(context.Background(), "", CheckPayArgs{})
+	require.Error(t, err)
+	assert.Equal(t, "OUT_TRADE_NO_REQUIRED", err.(*errors.Error).Reason)
 }
