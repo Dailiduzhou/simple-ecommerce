@@ -23,13 +23,15 @@ import (
 // fakePaymentUsecase 是 biz.PaymentUsecase 的测试替身。
 // 只实现本次重构关心的方法,其它方法保留 nil,期望在测试中不会被调用。
 type fakePaymentUsecase struct {
-	create        func(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*biz.PaymentDO, error)
-	get           func(ctx context.Context, id int64) (*biz.PaymentDO, error)
-	getByOrder    func(ctx context.Context, orderID int64) (*biz.PaymentDO, error)
-	prepay        func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error)
-	prepayForOrder func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error)
-	queryOrder    func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
-	closeOrder    func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error)
+	create                    func(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*biz.PaymentDO, error)
+	get                       func(ctx context.Context, id int64) (*biz.PaymentDO, error)
+	getByOrder                func(ctx context.Context, orderID int64) (*biz.PaymentDO, error)
+	prepay                    func(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error)
+	prepayForOrder            func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error)
+	prepayForOrderWithCheckJob func(ctx context.Context, args biz.PrepayForOrderArgs, checkJob biz.CheckPayArgs, delay time.Duration) (*biz.PrepayForOrderResult, *biz.MQJob, error)
+	enqueueWechatCheckJobByOutTradeNo func(ctx context.Context, outTradeNo string, checkJob biz.CheckPayArgs) (*biz.MQJob, error)
+	queryOrder                func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
+	closeOrder                func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error)
 }
 
 func (u *fakePaymentUsecase) CreatePayment(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*biz.PaymentDO, error) {
@@ -67,6 +69,20 @@ func (u *fakePaymentUsecase) PrepayForOrder(ctx context.Context, args biz.Prepay
 	return u.prepayForOrder(ctx, args)
 }
 
+func (u *fakePaymentUsecase) PrepayForOrderWithCheckJob(ctx context.Context, args biz.PrepayForOrderArgs, checkJob biz.CheckPayArgs, delay time.Duration) (*biz.PrepayForOrderResult, *biz.MQJob, error) {
+	if u.prepayForOrderWithCheckJob == nil {
+		return nil, nil, errors.New("prepayForOrderWithCheckJob not implemented in fake")
+	}
+	return u.prepayForOrderWithCheckJob(ctx, args, checkJob, delay)
+}
+
+func (u *fakePaymentUsecase) EnqueueWechatCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, checkJob biz.CheckPayArgs) (*biz.MQJob, error) {
+	if u.enqueueWechatCheckJobByOutTradeNo == nil {
+		return nil, errors.New("enqueueWechatCheckJobByOutTradeNo not implemented in fake")
+	}
+	return u.enqueueWechatCheckJobByOutTradeNo(ctx, outTradeNo, checkJob)
+}
+
 func (u *fakePaymentUsecase) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
 	if u.queryOrder == nil {
 		return nil, errors.New("queryOrder not implemented in fake")
@@ -82,11 +98,19 @@ func (u *fakePaymentUsecase) CloseOrder(ctx context.Context, req biz.PaymentClos
 }
 
 type fakePaymentMQRepo struct {
-	enqueue func(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error)
-	get     func(ctx context.Context, jobID int64) (*biz.MQJob, error)
+	enqueue      func(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error)
+	enqueueInTx  func(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error)
+	get          func(ctx context.Context, jobID int64) (*biz.MQJob, error)
 }
 
 func (r *fakePaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
+	return r.enqueue(ctx, args, scheduledAt)
+}
+
+func (r *fakePaymentMQRepo) EnqueueCheckPayTx(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
+	if r.enqueueInTx != nil {
+		return r.enqueueInTx(ctx, args, scheduledAt)
+	}
 	return r.enqueue(ctx, args, scheduledAt)
 }
 
@@ -102,10 +126,13 @@ func (r *fakePaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJ
 //  - payload 包含完整的 JSAPI 唤起参数。
 func TestPaymentService_CreatePayment_WechatJSAPI(t *testing.T) {
 	s := newPaymentServiceForUnified(&fakePaymentUsecase{
-		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+		prepayForOrderWithCheckJob: func(ctx context.Context, args biz.PrepayForOrderArgs, checkJob biz.CheckPayArgs, delay time.Duration) (*biz.PrepayForOrderResult, *biz.MQJob, error) {
 			assert.Equal(t, "merchant-order-1", args.OrderNo)
 			assert.Equal(t, string(biz.Wechat), args.Channel)
 			assert.Equal(t, "openid-123", args.ExtraParams["openid"])
+			assert.Equal(t, "prepay_auto", checkJob.Source)
+			assert.Equal(t, "wechat", checkJob.Channel)
+			assert.Equal(t, 5*time.Second, delay)
 			return &biz.PrepayForOrderResult{
 				Payment: &biz.PaymentDO{ID: 1, OutTradeNo: "otn-1"},
 				Prepay: &biz.PaymentPrepayResult{
@@ -116,7 +143,7 @@ func TestPaymentService_CreatePayment_WechatJSAPI(t *testing.T) {
 					SignType:  "MD5",
 					PaySign:   "sign-abc",
 				},
-			}, nil
+			}, nil, nil
 		},
 	})
 
@@ -144,7 +171,7 @@ func TestPaymentService_CreatePayment_WechatJSAPIRequiresOpenid(t *testing.T) {
 			t.Fatalf("PrepayForOrder should not be called when openid is missing")
 			return nil, nil
 		},
-	}, nil)
+	}, nil, nil, log.DefaultLogger)
 
 	got, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
 		OrderNo: "merchant-order-1",
@@ -160,11 +187,11 @@ func TestPaymentService_CreatePayment_WechatJSAPIRequiresOpenid(t *testing.T) {
 // TestPaymentService_CreatePayment_WechatNative 验证 NATIVE 扫码:走 URL_REDIRECT。
 func TestPaymentService_CreatePayment_WechatNative(t *testing.T) {
 	s := newPaymentServiceForUnified(&fakePaymentUsecase{
-		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+		prepayForOrderWithCheckJob: func(ctx context.Context, args biz.PrepayForOrderArgs, checkJob biz.CheckPayArgs, delay time.Duration) (*biz.PrepayForOrderResult, *biz.MQJob, error) {
 			return &biz.PrepayForOrderResult{
 				Payment: &biz.PaymentDO{OutTradeNo: "otn-2"},
 				Prepay:  &biz.PaymentPrepayResult{CodeURL: "weixin://wxpay/bizpayurl?pr=xxx"},
-			}, nil
+			}, nil, nil
 		},
 	})
 
@@ -178,6 +205,38 @@ func TestPaymentService_CreatePayment_WechatNative(t *testing.T) {
 	var payload map[string]string
 	require.NoError(t, json.Unmarshal([]byte(reply.Payload), &payload))
 	assert.Contains(t, payload["url"], "weixin://wxpay/bizpayurl")
+}
+
+// TestPaymentService_CreatePayment_AutoEnqueuesWechatCheckJob 验证微信支付 prepay 成功后
+// 会通过 PrepayForOrderWithCheckJob 自动入队一个轮询任务,且默认配置被正确传入。
+func TestPaymentService_CreatePayment_AutoEnqueuesWechatCheckJob(t *testing.T) {
+	var gotCheckJob biz.CheckPayArgs
+	var gotDelay time.Duration
+	s := NewPaymentService(&fakePaymentUsecase{
+		prepayForOrderWithCheckJob: func(ctx context.Context, args biz.PrepayForOrderArgs, checkJob biz.CheckPayArgs, delay time.Duration) (*biz.PrepayForOrderResult, *biz.MQJob, error) {
+			gotCheckJob = checkJob
+			gotDelay = delay
+			return &biz.PrepayForOrderResult{
+				Payment: &biz.PaymentDO{ID: 101, OrderID: 1001, OutTradeNo: "otn-auto"},
+				Prepay:  &biz.PaymentPrepayResult{},
+			}, &biz.MQJob{ID: 202, Kind: biz.CheckPayJobKind, Queue: "payments"}, nil
+		},
+	}, nil, nil, log.DefaultLogger)
+
+	_, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
+		OrderNo: "merchant-order-auto",
+		Channel: pb.PayChannel_PAY_CHANNEL_WECHAT_JSAPI,
+		ExtraParams: map[string]string{
+			"openid": "openid-auto",
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "wechat", gotCheckJob.Channel)
+	assert.Equal(t, "prepay_auto", gotCheckJob.Source)
+	assert.Equal(t, 30, gotCheckJob.MaxPolls)
+	assert.Equal(t, 10, gotCheckJob.PollIntervalSeconds)
+	assert.Equal(t, 5*time.Second, gotDelay)
 }
 
 // TestPaymentService_CreatePayment_AlipayWap 验证支付宝 WAP:走 URL_REDIRECT
@@ -204,10 +263,10 @@ func TestPaymentService_CreatePayment_AlipayWap(t *testing.T) {
 // TestPaymentService_CreatePayment_OrderNotFound 验证 order_no 不存在时返回 404。
 func TestPaymentService_CreatePayment_OrderNotFound(t *testing.T) {
 	s := NewPaymentService(&fakePaymentUsecase{
-		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
-			return nil, pgx.ErrNoRows
+		prepayForOrderWithCheckJob: func(ctx context.Context, args biz.PrepayForOrderArgs, checkJob biz.CheckPayArgs, delay time.Duration) (*biz.PrepayForOrderResult, *biz.MQJob, error) {
+			return nil, nil, pgx.ErrNoRows
 		},
-	}, nil)
+	}, nil, nil, log.DefaultLogger)
 
 	got, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
 		OrderNo: "missing-order",
@@ -225,10 +284,10 @@ func TestPaymentService_CreatePayment_OrderNotFound(t *testing.T) {
 func TestPaymentService_CreatePayment_PropagatesAdapterError(t *testing.T) {
 	wantErr := errors.New("gateway timeout")
 	s := NewPaymentService(&fakePaymentUsecase{
-		prepayForOrder: func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
-			return nil, wantErr
+		prepayForOrderWithCheckJob: func(ctx context.Context, args biz.PrepayForOrderArgs, checkJob biz.CheckPayArgs, delay time.Duration) (*biz.PrepayForOrderResult, *biz.MQJob, error) {
+			return nil, nil, wantErr
 		},
-	}, nil)
+	}, nil, nil, log.DefaultLogger)
 
 	got, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
 		OrderNo: "merchant-order-4",
@@ -246,7 +305,7 @@ func TestPaymentService_CreatePayment_RejectsUnspecifiedChannel(t *testing.T) {
 			t.Fatalf("PrepayForOrder should not be called for unspecified channel")
 			return nil, nil
 		},
-	}, nil)
+	}, nil, nil, log.DefaultLogger)
 
 	got, err := s.CreatePayment(context.Background(), &pb.CreatePaymentReq{
 		OrderNo: "merchant-order-5",
@@ -273,7 +332,7 @@ func TestPaymentService_QueryPayment_DelegatesToGateway(t *testing.T) {
 				TotalAmount:   9900,
 			}, nil
 		},
-	}, nil)
+	}, nil, nil, log.DefaultLogger)
 
 	got, err := s.QueryPayment(context.Background(), &pb.QueryPaymentReq{
 		OutTradeNo: "otn-1",
@@ -292,7 +351,7 @@ func TestPaymentService_QueryPayment_RejectsInvalidChannel(t *testing.T) {
 			t.Fatalf("QueryOrder should not be called for invalid channel")
 			return nil, nil
 		},
-	}, nil)
+	}, nil, nil, log.DefaultLogger)
 
 	got, err := s.QueryPayment(context.Background(), &pb.QueryPaymentReq{
 		OutTradeNo: "otn-1",
@@ -313,7 +372,7 @@ func TestPaymentService_ClosePayment_DelegatesToGateway(t *testing.T) {
 			assert.Equal(t, string(biz.Alipay), req.Channel)
 			return &biz.PaymentCloseResult{Success: true}, nil
 		},
-	}, nil)
+	}, nil, nil, log.DefaultLogger)
 
 	got, err := s.ClosePayment(context.Background(), &pb.ClosePaymentReq{
 		OutTradeNo: "otn-1",
@@ -326,17 +385,35 @@ func TestPaymentService_ClosePayment_DelegatesToGateway(t *testing.T) {
 // —— 微信支付异步通知(走 HTTP 路由,不动) ——
 
 func TestPaymentService_HandleWechatPayNotify(t *testing.T) {
-	s := NewPaymentService(nil, nil)
+	var gotOutTradeNo string
+	s := NewPaymentService(&fakePaymentUsecase{
+		enqueueWechatCheckJobByOutTradeNo: func(ctx context.Context, outTradeNo string, checkJob biz.CheckPayArgs) (*biz.MQJob, error) {
+			gotOutTradeNo = outTradeNo
+			assert.Equal(t, "wechat_notify", checkJob.Source)
+			assert.Equal(t, "wechat", checkJob.Channel)
+			return &biz.MQJob{ID: 303, Kind: biz.CheckPayJobKind, Queue: "payments"}, nil
+		},
+	}, nil, nil, log.DefaultLogger)
 	srv := khttp.NewServer()
 	srv.Route("/").POST("/v1/pay/wechat/notify", s.HandleWechatPayNotify)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/pay/wechat/notify", strings.NewReader(`{"id":"notify-1"}`))
+	// 发送符合微信支付异步通知格式的 XML(无配置 api_key 时跳过验签)。
+	body := `<xml>
+<return_code><![CDATA[SUCCESS]]></return_code>
+<result_code><![CDATA[SUCCESS]]></result_code>
+<out_trade_no><![CDATA[order-notify-1]]></out_trade_no>
+<transaction_id><![CDATA[wx-tx-1]]></transaction_id>
+</xml>`
+	req := httptest.NewRequest(http.MethodPost, "/v1/pay/wechat/notify", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/xml")
 	rec := httptest.NewRecorder()
 
 	srv.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.JSONEq(t, `{"code":"SUCCESS","message":"success"}`, rec.Body.String())
+	assert.Equal(t, "order-notify-1", gotOutTradeNo)
+	assert.Equal(t, "application/xml; charset=utf-8", rec.Header().Get("Content-Type"))
+	assert.Contains(t, rec.Body.String(), "<return_code><![CDATA[SUCCESS]]></return_code>")
 }
 
 // —— MQ 任务入队(保持原状) ——
@@ -362,7 +439,7 @@ func TestPaymentService_CreateWechatPayCheckJob(t *testing.T) {
 			}, nil
 		},
 	}
-	s := NewPaymentService(nil, biz.NewPaymentJobUsecase(repo, log.DefaultLogger))
+	s := NewPaymentService(nil, biz.NewPaymentJobUsecase(repo, log.DefaultLogger), nil, log.DefaultLogger)
 
 	before := time.Now().Add(2 * time.Second)
 	got, err := s.CreateWechatPayCheckJob(context.Background(), &pb.CreateWechatPayCheckJobRequest{
@@ -384,6 +461,7 @@ func TestPaymentService_CreateWechatPayCheckJob(t *testing.T) {
 		MaxPolls:            8,
 		PollIntervalSeconds: 45,
 		Source:              "prepay",
+		Channel:             "wechat",
 	}, gotArgs)
 	assert.False(t, gotScheduledAt.IsZero())
 	assert.True(t, !gotScheduledAt.Before(before) && !gotScheduledAt.After(after), gotScheduledAt)
@@ -402,7 +480,7 @@ func TestPaymentService_CreateWechatPayCheckJobRejectsNegativeDelay(t *testing.T
 			t.Fatalf("EnqueueCheckPay should not be called")
 			return nil, nil
 		},
-	}, log.DefaultLogger))
+	}, log.DefaultLogger), nil, log.DefaultLogger)
 
 	got, err := s.CreateWechatPayCheckJob(context.Background(), &pb.CreateWechatPayCheckJobRequest{
 		PaymentId:    12,
@@ -441,7 +519,7 @@ func TestPaymentService_GetMQJob(t *testing.T) {
 			}, nil
 		},
 	}
-	s := NewPaymentService(nil, biz.NewPaymentJobUsecase(repo, log.DefaultLogger))
+	s := NewPaymentService(nil, biz.NewPaymentJobUsecase(repo, log.DefaultLogger), nil, log.DefaultLogger)
 
 	got, err := s.GetMQJob(context.Background(), &pb.GetMQJobRequest{JobId: 101})
 	require.NoError(t, err)
@@ -457,7 +535,7 @@ func TestPaymentService_GetMQJob(t *testing.T) {
 }
 
 func TestPaymentService_PaymentMQMissing(t *testing.T) {
-	s := NewPaymentService(nil, nil)
+	s := NewPaymentService(nil, nil, nil, log.DefaultLogger)
 
 	got, err := s.GetMQJob(context.Background(), &pb.GetMQJobRequest{JobId: 101})
 	require.Error(t, err)
@@ -471,5 +549,5 @@ func TestPaymentService_PaymentMQMissing(t *testing.T) {
 // newPaymentServiceForUnified 用 usecase 包装一个 PaymentService,负责保证
 // payChannel 之外的所有字段都按 biz 层签名转好。封装减少测试模板代码。
 func newPaymentServiceForUnified(u *fakePaymentUsecase) *PaymentService {
-	return NewPaymentService(u, nil)
+	return NewPaymentService(u, nil, nil, log.DefaultLogger)
 }
