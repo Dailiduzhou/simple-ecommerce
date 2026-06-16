@@ -83,7 +83,6 @@ type PaymentPrepayRequest struct {
 	Description string
 	TotalAmount int32
 	OpenID      string
-	NotifyURL   string
 }
 
 type PaymentPrepayResult struct {
@@ -338,7 +337,7 @@ func (uc *paymentUsecase) CreatePayment(ctx context.Context, orderID, userID, me
 	}
 	channel := NormalizePayChannel(payChannel)
 	if channel == "" {
-		channel = string(Wechat)
+		channel = string(Alipay)
 	}
 
 	// Idempotency: short-circuit on an existing active payment.
