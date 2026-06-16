@@ -71,7 +71,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	shippingAddressRepo := data.NewShippingAddressRepo(dataData, logger)
 	shippingAddressUsecase := biz.NewShippingAddressUsecase(shippingAddressRepo, auth, logger)
 	userService := service.NewUserService(authUsecase, userUsecase, shippingAddressUsecase, logger)
-	orderRepo := data.NewOrderRepo(pool)
+	orderRepo := data.NewOrderRepo(dataData, logger)
 	orderUsecase := biz.NewOrderUsecase(orderRepo, logger)
 	orderService := service.NewOrderService(orderUsecase)
 	paymentRepo := data.NewPaymentRepo(pool)
