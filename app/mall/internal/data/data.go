@@ -10,6 +10,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	gopayalipay "github.com/go-pay/gopay/alipay"
+	alipayv3 "github.com/go-pay/gopay/alipay/v3"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -159,15 +160,15 @@ func RunMigrations(c *conf.Data) error {
 	return nil
 }
 
-func NewAlipayClient(c *conf.Payment) (*gopayalipay.Client, error) {
+func NewAlipayClient(c *conf.Payment) (*alipayv3.ClientV3, error) {
 	aliConf := c.GetAlipay()
 
-	client, err := gopayalipay.NewClient(aliConf.AppId, aliConf.PrivateKey, aliConf.IsProduction)
+	client, err := alipayv3.NewClientV3(aliConf.AppId, aliConf.PrivateKey, aliConf.IsProduction)
 	if err != nil {
 		return nil, err
 	}
 
-	client.SetCharset("utf-8").SetSignType(gopayalipay.RSA2)
+	client.SetSignType(gopayalipay.RSA2)
 	err = client.SetCertSnByPath(aliConf.AppCertPath, aliConf.AlipayRootCertPath, aliConf.AlipayPublicCertPath)
 	if err != nil {
 		log.Errorf("alipay certs loading failed: %v", err)

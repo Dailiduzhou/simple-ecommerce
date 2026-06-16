@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -24,6 +25,27 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// EnvAlipayNotifyURL is the env var consulted for the payment-channel
+// async-notify URL (the `notify_url` sent to alipay and wechat).
+//
+// 对应 .env.example 中的 ALIPAY_NOTIFY_URL 形如
+//
+//	http://domain.example/v1/pay/alipay/notify
+//
+// 服务端需要把 v1/pay/wechat/notify 同样挂在同一域名下(alipay/wechat 共用
+// 同一通知域名,通过路径区分渠道),所以两个适配器都从同一个 env 变量读取。
+//
+// notify_url 是服务端配置,不能接受来自请求方(前端/RPC)的覆盖 — 第三方支付
+// 平台会按此 URL 回跳,如果被任意指定,攻击者可以把它指向自己控制的地址
+// 接收支付结果,导致订单状态被外部篡改。
+const EnvAlipayNotifyURL = "ALIPAY_NOTIFY_URL"
+
+// notifyURLFromEnv 读取 EnvAlipayNotifyURL;为空时返回空串,由适配器决定
+// 是否透传给三方(空值意味着不发送 notify_url 字段)。
+func notifyURLFromEnv() string {
+	return os.Getenv(EnvAlipayNotifyURL)
+}
+
 var (
 	_ biz.PaymentAdapter  = (*WechatPaymentAdapter)(nil)
 	_ biz.PaymentAdapter  = (*AlipayPaymentAdapter)(nil)
@@ -33,12 +55,16 @@ var (
 )
 
 type WechatPaymentAdapter struct {
-	client *gopaywechat.Client
-	log    *log.Helper
+	client    *gopaywechat.Client
+	notifyURL string
+	log       *log.Helper
 }
 
 func NewWechatPaymentAdapter(logger log.Logger) *WechatPaymentAdapter {
-	return &WechatPaymentAdapter{log: log.NewHelper(logger)}
+	return &WechatPaymentAdapter{
+		notifyURL: notifyURLFromEnv(),
+		log:       log.NewHelper(logger),
+	}
 }
 
 func (a *WechatPaymentAdapter) Channel() string {
@@ -59,10 +85,10 @@ func (a *WechatPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 		Set("out_trade_no", req.OutTradeNo).
 		Set("total_fee", req.TotalAmount).
 		Set("spbill_create_ip", "127.0.0.1").
-		Set("notify_url", req.NotifyURL).
 		Set("trade_type", gopaywechat.TradeType_JsApi).
 		Set("sign_type", signType).
-		Set("openid", req.OpenID)
+		Set("openid", req.OpenID).
+		Set("notify_url", a.notifyURL)
 
 	wxRsp, err := a.client.UnifiedOrder(ctx, body)
 	if err != nil {
@@ -139,12 +165,17 @@ func (a *WechatPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 }
 
 type AlipayPaymentAdapter struct {
-	client *gopayalipay.Client
-	log    *log.Helper
+	client    *gopayalipay.Client
+	notifyURL string
+	log       *log.Helper
 }
 
 func NewAlipayPaymentAdapter(client *gopayalipay.Client, logger log.Logger) *AlipayPaymentAdapter {
-	return &AlipayPaymentAdapter{client: client, log: log.NewHelper(logger)}
+	return &AlipayPaymentAdapter{
+		client:    client,
+		notifyURL: notifyURLFromEnv(),
+		log:       log.NewHelper(logger),
+	}
 }
 
 func (a *AlipayPaymentAdapter) Channel() string {
@@ -161,8 +192,8 @@ func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 	body.Set("subject", req.Description).
 		Set("out_trade_no", req.OutTradeNo).
 		Set("total_amount", fenToYuan(req.TotalAmount))
-	if req.NotifyURL != "" {
-		body.Set("notify_url", req.NotifyURL)
+	if a.notifyURL != "" {
+		body.Set("notify_url", a.notifyURL)
 	}
 
 	aliRsp, err := a.client.TradePrecreate(ctx, body)
