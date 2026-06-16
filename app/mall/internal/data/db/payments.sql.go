@@ -180,6 +180,30 @@ func (q *Queries) GetPaymentByOrder(ctx context.Context, orderID int64) (Payment
 	return i, err
 }
 
+const getPaymentByOutTradeNo = `-- name: GetPaymentByOutTradeNo :one
+SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no FROM payments WHERE out_trade_no = $1 LIMIT 1
+`
+
+func (q *Queries) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo pgtype.Text) (Payment, error) {
+	row := q.db.QueryRow(ctx, getPaymentByOutTradeNo, outTradeNo)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.OrderID,
+		&i.UserID,
+		&i.MerchantID,
+		&i.Amount,
+		&i.Status,
+		&i.PayChannel,
+		&i.ThirdPartyTxID,
+		&i.PaidAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OutTradeNo,
+	)
+	return i, err
+}
+
 const getPaymentByThirdPartyTxID = `-- name: GetPaymentByThirdPartyTxID :one
 SELECT id, order_id, user_id, merchant_id, amount, status, pay_channel, third_party_tx_id, paid_at, created_at, updated_at, out_trade_no FROM payments WHERE third_party_tx_id = $1
 `

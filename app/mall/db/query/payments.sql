@@ -39,3 +39,6 @@ RETURNING *;
 SELECT * FROM payments
 WHERE order_id = $1 AND pay_channel = $2 AND status IN ('pending','success')
 LIMIT 1;
+
+-- name: GetPaymentByOutTradeNo :one
+SELECT * FROM payments WHERE out_trade_no = $1 LIMIT 1;

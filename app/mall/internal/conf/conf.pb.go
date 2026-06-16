@@ -325,6 +325,8 @@ func (x *Data) GetRedis() *Data_Redis {
 type Payment struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Alipay        *Alipay                `protobuf:"bytes,1,opt,name=alipay,proto3" json:"alipay,omitempty"`
+	Wechat        *Wechat                `protobuf:"bytes,2,opt,name=wechat,proto3" json:"wechat,omitempty"`
+	CheckPayJob   *CheckPayJob           `protobuf:"bytes,3,opt,name=check_pay_job,json=checkPayJob,proto3" json:"check_pay_job,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -362,6 +364,20 @@ func (*Payment) Descriptor() ([]byte, []int) {
 func (x *Payment) GetAlipay() *Alipay {
 	if x != nil {
 		return x.Alipay
+	}
+	return nil
+}
+
+func (x *Payment) GetWechat() *Wechat {
+	if x != nil {
+		return x.Wechat
+	}
+	return nil
+}
+
+func (x *Payment) GetCheckPayJob() *CheckPayJob {
+	if x != nil {
+		return x.CheckPayJob
 	}
 	return nil
 }
@@ -450,6 +466,137 @@ func (x *Alipay) GetAlipayRootCertPath() string {
 	return ""
 }
 
+type Wechat struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	MchId         string                 `protobuf:"bytes,2,opt,name=mch_id,json=mchId,proto3" json:"mch_id,omitempty"`
+	ApiKey        string                 `protobuf:"bytes,3,opt,name=api_key,json=apiKey,proto3" json:"api_key,omitempty"`
+	IsProduction  bool                   `protobuf:"varint,4,opt,name=is_production,json=isProduction,proto3" json:"is_production,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Wechat) Reset() {
+	*x = Wechat{}
+	mi := &file_conf_conf_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Wechat) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Wechat) ProtoMessage() {}
+
+func (x *Wechat) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_conf_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Wechat.ProtoReflect.Descriptor instead.
+func (*Wechat) Descriptor() ([]byte, []int) {
+	return file_conf_conf_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Wechat) GetAppId() string {
+	if x != nil {
+		return x.AppId
+	}
+	return ""
+}
+
+func (x *Wechat) GetMchId() string {
+	if x != nil {
+		return x.MchId
+	}
+	return ""
+}
+
+func (x *Wechat) GetApiKey() string {
+	if x != nil {
+		return x.ApiKey
+	}
+	return ""
+}
+
+func (x *Wechat) GetIsProduction() bool {
+	if x != nil {
+		return x.IsProduction
+	}
+	return false
+}
+
+type CheckPayJob struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 首次延迟多久开始轮询。
+	InitialDelay *durationpb.Duration `protobuf:"bytes,1,opt,name=initial_delay,json=initialDelay,proto3" json:"initial_delay,omitempty"`
+	// 最大轮询次数。
+	MaxPolls int32 `protobuf:"varint,2,opt,name=max_polls,json=maxPolls,proto3" json:"max_polls,omitempty"`
+	// 每次轮询间隔。
+	PollInterval  *durationpb.Duration `protobuf:"bytes,3,opt,name=poll_interval,json=pollInterval,proto3" json:"poll_interval,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckPayJob) Reset() {
+	*x = CheckPayJob{}
+	mi := &file_conf_conf_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckPayJob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckPayJob) ProtoMessage() {}
+
+func (x *CheckPayJob) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_conf_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckPayJob.ProtoReflect.Descriptor instead.
+func (*CheckPayJob) Descriptor() ([]byte, []int) {
+	return file_conf_conf_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CheckPayJob) GetInitialDelay() *durationpb.Duration {
+	if x != nil {
+		return x.InitialDelay
+	}
+	return nil
+}
+
+func (x *CheckPayJob) GetMaxPolls() int32 {
+	if x != nil {
+		return x.MaxPolls
+	}
+	return 0
+}
+
+func (x *CheckPayJob) GetPollInterval() *durationpb.Duration {
+	if x != nil {
+		return x.PollInterval
+	}
+	return nil
+}
+
 type Server_HTTP struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Network       string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
@@ -461,7 +608,7 @@ type Server_HTTP struct {
 
 func (x *Server_HTTP) Reset() {
 	*x = Server_HTTP{}
-	mi := &file_conf_conf_proto_msgTypes[7]
+	mi := &file_conf_conf_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +620,7 @@ func (x *Server_HTTP) String() string {
 func (*Server_HTTP) ProtoMessage() {}
 
 func (x *Server_HTTP) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[7]
+	mi := &file_conf_conf_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +668,7 @@ type Server_GRPC struct {
 
 func (x *Server_GRPC) Reset() {
 	*x = Server_GRPC{}
-	mi := &file_conf_conf_proto_msgTypes[8]
+	mi := &file_conf_conf_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +680,7 @@ func (x *Server_GRPC) String() string {
 func (*Server_GRPC) ProtoMessage() {}
 
 func (x *Server_GRPC) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[8]
+	mi := &file_conf_conf_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -580,7 +727,7 @@ type Data_Database struct {
 
 func (x *Data_Database) Reset() {
 	*x = Data_Database{}
-	mi := &file_conf_conf_proto_msgTypes[9]
+	mi := &file_conf_conf_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -592,7 +739,7 @@ func (x *Data_Database) String() string {
 func (*Data_Database) ProtoMessage() {}
 
 func (x *Data_Database) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[9]
+	mi := &file_conf_conf_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -634,7 +781,7 @@ type Data_Redis struct {
 
 func (x *Data_Redis) Reset() {
 	*x = Data_Redis{}
-	mi := &file_conf_conf_proto_msgTypes[10]
+	mi := &file_conf_conf_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -646,7 +793,7 @@ func (x *Data_Redis) String() string {
 func (*Data_Redis) ProtoMessage() {}
 
 func (x *Data_Redis) ProtoReflect() protoreflect.Message {
-	mi := &file_conf_conf_proto_msgTypes[10]
+	mi := &file_conf_conf_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -731,9 +878,11 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x12<\n" +
 	"\fread_timeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\vreadTimeout\x12>\n" +
-	"\rwrite_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\fwriteTimeout\"5\n" +
+	"\rwrite_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\fwriteTimeout\"\x9e\x01\n" +
 	"\aPayment\x12*\n" +
-	"\x06alipay\x18\x01 \x01(\v2\x12.kratos.api.AlipayR\x06alipay\"\xf3\x01\n" +
+	"\x06alipay\x18\x01 \x01(\v2\x12.kratos.api.AlipayR\x06alipay\x12*\n" +
+	"\x06wechat\x18\x02 \x01(\v2\x12.kratos.api.WechatR\x06wechat\x12;\n" +
+	"\rcheck_pay_job\x18\x03 \x01(\v2\x17.kratos.api.CheckPayJobR\vcheckPayJob\"\xf3\x01\n" +
 	"\x06Alipay\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1f\n" +
 	"\vprivate_key\x18\x02 \x01(\tR\n" +
@@ -741,7 +890,16 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\ris_production\x18\x03 \x01(\bR\fisProduction\x12\"\n" +
 	"\rapp_cert_path\x18\x04 \x01(\tR\vappCertPath\x125\n" +
 	"\x17alipay_public_cert_path\x18\x05 \x01(\tR\x14alipayPublicCertPath\x121\n" +
-	"\x15alipay_root_cert_path\x18\x06 \x01(\tR\x12alipayRootCertPathBEZCgithub.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf;confb\x06proto3"
+	"\x15alipay_root_cert_path\x18\x06 \x01(\tR\x12alipayRootCertPath\"t\n" +
+	"\x06Wechat\x12\x15\n" +
+	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x15\n" +
+	"\x06mch_id\x18\x02 \x01(\tR\x05mchId\x12\x17\n" +
+	"\aapi_key\x18\x03 \x01(\tR\x06apiKey\x12#\n" +
+	"\ris_production\x18\x04 \x01(\bR\fisProduction\"\xaa\x01\n" +
+	"\vCheckPayJob\x12>\n" +
+	"\rinitial_delay\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\finitialDelay\x12\x1b\n" +
+	"\tmax_polls\x18\x02 \x01(\x05R\bmaxPolls\x12>\n" +
+	"\rpoll_interval\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\fpollIntervalBEZCgithub.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf;confb\x06proto3"
 
 var (
 	file_conf_conf_proto_rawDescOnce sync.Once
@@ -755,7 +913,7 @@ func file_conf_conf_proto_rawDescGZIP() []byte {
 	return file_conf_conf_proto_rawDescData
 }
 
-var file_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_conf_conf_proto_goTypes = []any{
 	(*Bootstrap)(nil),           // 0: kratos.api.Bootstrap
 	(*Snowflake)(nil),           // 1: kratos.api.Snowflake
@@ -764,11 +922,13 @@ var file_conf_conf_proto_goTypes = []any{
 	(*Data)(nil),                // 4: kratos.api.Data
 	(*Payment)(nil),             // 5: kratos.api.Payment
 	(*Alipay)(nil),              // 6: kratos.api.Alipay
-	(*Server_HTTP)(nil),         // 7: kratos.api.Server.HTTP
-	(*Server_GRPC)(nil),         // 8: kratos.api.Server.GRPC
-	(*Data_Database)(nil),       // 9: kratos.api.Data.Database
-	(*Data_Redis)(nil),          // 10: kratos.api.Data.Redis
-	(*durationpb.Duration)(nil), // 11: google.protobuf.Duration
+	(*Wechat)(nil),              // 7: kratos.api.Wechat
+	(*CheckPayJob)(nil),         // 8: kratos.api.CheckPayJob
+	(*Server_HTTP)(nil),         // 9: kratos.api.Server.HTTP
+	(*Server_GRPC)(nil),         // 10: kratos.api.Server.GRPC
+	(*Data_Database)(nil),       // 11: kratos.api.Data.Database
+	(*Data_Redis)(nil),          // 12: kratos.api.Data.Redis
+	(*durationpb.Duration)(nil), // 13: google.protobuf.Duration
 }
 var file_conf_conf_proto_depIdxs = []int32{
 	3,  // 0: kratos.api.Bootstrap.server:type_name -> kratos.api.Server
@@ -776,22 +936,26 @@ var file_conf_conf_proto_depIdxs = []int32{
 	2,  // 2: kratos.api.Bootstrap.auth:type_name -> kratos.api.Auth
 	1,  // 3: kratos.api.Bootstrap.snowflake:type_name -> kratos.api.Snowflake
 	5,  // 4: kratos.api.Bootstrap.payment:type_name -> kratos.api.Payment
-	11, // 5: kratos.api.Auth.access_token_timeout:type_name -> google.protobuf.Duration
-	11, // 6: kratos.api.Auth.refresh_token_timeout:type_name -> google.protobuf.Duration
-	7,  // 7: kratos.api.Server.http:type_name -> kratos.api.Server.HTTP
-	8,  // 8: kratos.api.Server.grpc:type_name -> kratos.api.Server.GRPC
-	9,  // 9: kratos.api.Data.database:type_name -> kratos.api.Data.Database
-	10, // 10: kratos.api.Data.redis:type_name -> kratos.api.Data.Redis
+	13, // 5: kratos.api.Auth.access_token_timeout:type_name -> google.protobuf.Duration
+	13, // 6: kratos.api.Auth.refresh_token_timeout:type_name -> google.protobuf.Duration
+	9,  // 7: kratos.api.Server.http:type_name -> kratos.api.Server.HTTP
+	10, // 8: kratos.api.Server.grpc:type_name -> kratos.api.Server.GRPC
+	11, // 9: kratos.api.Data.database:type_name -> kratos.api.Data.Database
+	12, // 10: kratos.api.Data.redis:type_name -> kratos.api.Data.Redis
 	6,  // 11: kratos.api.Payment.alipay:type_name -> kratos.api.Alipay
-	11, // 12: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
-	11, // 13: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	11, // 14: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
-	11, // 15: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	7,  // 12: kratos.api.Payment.wechat:type_name -> kratos.api.Wechat
+	8,  // 13: kratos.api.Payment.check_pay_job:type_name -> kratos.api.CheckPayJob
+	13, // 14: kratos.api.CheckPayJob.initial_delay:type_name -> google.protobuf.Duration
+	13, // 15: kratos.api.CheckPayJob.poll_interval:type_name -> google.protobuf.Duration
+	13, // 16: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
+	13, // 17: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	13, // 18: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
+	13, // 19: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_conf_conf_proto_init() }
@@ -805,7 +969,7 @@ func file_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_conf_conf_proto_rawDesc), len(file_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
