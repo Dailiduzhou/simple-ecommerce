@@ -128,6 +128,11 @@ type PaymentCloseResult struct {
 	OutTradeNo    string
 	TransactionID string
 	Success       bool
+
+	// RawCode / RawSubCode 透传支付宝业务响应码,供上层做精细化分类
+	// (审计/告警/对账)。为空表示该次请求未到达业务层(transport/HTTP 错误)。
+	RawCode    string
+	RawSubCode string
 }
 
 type PaymentAdapter interface {

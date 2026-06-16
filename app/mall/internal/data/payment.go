@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -165,16 +166,29 @@ func (a *WechatPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 }
 
 type AlipayPaymentAdapter struct {
-	client    *alipayv3.ClientV3
-	notifyURL string
-	log       *log.Helper
+	client         *alipayv3.ClientV3
+	closeRequester alipayCloseRequester
+	notifyURL      string
+	log            *log.Helper
 }
 
 func NewAlipayPaymentAdapter(client *alipayv3.ClientV3, logger log.Logger) *AlipayPaymentAdapter {
 	return &AlipayPaymentAdapter{
-		client:    client,
-		notifyURL: notifyURLFromEnv(),
-		log:       log.NewHelper(logger),
+		client:         client,
+		closeRequester: &defaultAlipayCloseRequester{client: client},
+		notifyURL:      notifyURLFromEnv(),
+		log:            log.NewHelper(logger),
+	}
+}
+
+// newAlipayPaymentAdapterForTest 仅供测试用,允许注入自定义 closeRequester。
+// 命名以下划线开头以暗示包外不直接使用;实际测试放在同 package 可直接调。
+func newAlipayPaymentAdapterForTest(client *alipayv3.ClientV3, cr alipayCloseRequester, logger log.Logger) *AlipayPaymentAdapter {
+	return &AlipayPaymentAdapter{
+		client:         client,
+		closeRequester: cr,
+		notifyURL:      notifyURLFromEnv(),
+		log:            log.NewHelper(logger),
 	}
 }
 
@@ -263,17 +277,62 @@ func (a *AlipayPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 		body.Set("trade_no", req.TransactionID)
 	}
 
-	aliRsp, err := a.client.TradeClose(ctx, body)
+	var rsp alipayCloseRsp
+	res, err := a.closeRequester.DoAliPayAPISelfV3(ctx, alipayv3.MethodPost, alipayTradeClosePath, body, &rsp)
 	if err != nil {
+		a.log.WithContext(ctx).Errorf("alipay trade close transport error out_trade_no=%s err=%v",
+			req.OutTradeNo, err)
 		return nil, err
 	}
+	if res.StatusCode != http.StatusOK {
+		a.log.WithContext(ctx).Errorf("alipay trade close http %d out_trade_no=%s code=%s msg=%s",
+			res.StatusCode, req.OutTradeNo, rsp.Code, rsp.ErrResponse.Message)
+		return &biz.PaymentCloseResult{
+			Channel:    string(biz.Alipay),
+			OutTradeNo: req.OutTradeNo,
+			RawCode:    rsp.Code,
+		}, fmt.Errorf("alipay trade close http %d: %s", res.StatusCode, rsp.ErrResponse.Message)
+	}
 
+	if rsp.Code == alipaySuccessCode {
+		return &biz.PaymentCloseResult{
+			Channel:       string(biz.Alipay),
+			OutTradeNo:    rsp.OutTradeNo,
+			TransactionID: rsp.TradeNo,
+			Success:       true,
+			RawCode:       rsp.Code,
+		}, nil
+	}
+
+	if _, ok := alipaySubCodeAlreadyClosed[rsp.SubCode]; ok {
+		a.log.WithContext(ctx).Infof("alipay trade close idempotent success sub_code=%s out_trade_no=%s",
+			rsp.SubCode, req.OutTradeNo)
+		return &biz.PaymentCloseResult{
+			Channel:       string(biz.Alipay),
+			OutTradeNo:    orEmpty(rsp.OutTradeNo, req.OutTradeNo),
+			TransactionID: orEmpty(rsp.TradeNo, req.TransactionID),
+			Success:       true,
+			RawCode:       rsp.Code,
+			RawSubCode:    rsp.SubCode,
+		}, nil
+	}
+
+	a.log.WithContext(ctx).Errorf("alipay trade close rejected out_trade_no=%s code=%s sub_code=%s msg=%s",
+		req.OutTradeNo, rsp.Code, rsp.SubCode, rsp.SubMsg)
 	return &biz.PaymentCloseResult{
-		Channel:       string(biz.Alipay),
-		OutTradeNo:    aliRsp.OutTradeNo,
-		TransactionID: aliRsp.TradeNo,
-		Success:       aliRsp != nil,
-	}, nil
+		Channel:    string(biz.Alipay),
+		OutTradeNo: req.OutTradeNo,
+		Success:    false,
+		RawCode:    rsp.Code,
+		RawSubCode: rsp.SubCode,
+	}, fmt.Errorf("alipay trade close rejected: sub_code=%s", rsp.SubCode)
+}
+
+func orEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 type PaymentRepo struct {
