@@ -206,6 +206,7 @@ type PaymentRepo interface {
 	GetPayment(ctx context.Context, id int64) (*PaymentDO, error)
 	GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error)
 	GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*PaymentDO, error)
+	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*PaymentDO, error)
 }
 
 type CreatePaymentArgs struct {
@@ -219,6 +220,7 @@ type CreatePaymentArgs struct {
 
 type PaymentMQRepo interface {
 	EnqueueCheckPay(ctx context.Context, args CheckPayArgs, scheduledAt time.Time) (*MQJob, error)
+	EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, scheduledAt time.Time) (*MQJob, error)
 	GetMQJob(ctx context.Context, jobID int64) (*MQJob, error)
 }
 
@@ -229,6 +231,7 @@ type PaymentSyncRepo interface {
 
 type PaymentJobUsecase interface {
 	EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error)
+	EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error)
 	GetMQJob(ctx context.Context, jobID int64) (*MQJob, error)
 }
 
@@ -242,7 +245,7 @@ func NewPaymentJobUsecase(repo PaymentMQRepo, logger log.Logger) PaymentJobUseca
 }
 
 func (uc *paymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
-	args = normalizeCheckPayArgs(args)
+	args = NormalizeCheckPayArgs(args)
 	if args.PaymentID <= 0 {
 		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
 	}
@@ -261,6 +264,26 @@ func (uc *paymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayA
 	return job, nil
 }
 
+func (uc *paymentJobUsecase) EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
+	args = NormalizeCheckPayArgs(args)
+	if args.PaymentID <= 0 {
+		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
+	}
+	if args.OutTradeNo == "" {
+		return nil, errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
+	}
+	var scheduledAt time.Time
+	if delay > 0 {
+		scheduledAt = time.Now().Add(delay)
+	}
+	job, err := uc.repo.EnqueueCheckPayTx(ctx, args, scheduledAt)
+	if err != nil {
+		return nil, err
+	}
+	uc.log.WithContext(ctx).Infof("enqueued pay check tx job_id=%d out_trade_no=%s channel=%s", job.ID, args.OutTradeNo, args.Channel)
+	return job, nil
+}
+
 func (uc *paymentJobUsecase) GetMQJob(ctx context.Context, jobID int64) (*MQJob, error) {
 	if jobID <= 0 {
 		return nil, errors.BadRequest("MQ_JOB_ID_REQUIRED", "job_id is required")
@@ -268,7 +291,9 @@ func (uc *paymentJobUsecase) GetMQJob(ctx context.Context, jobID int64) (*MQJob,
 	return uc.repo.GetMQJob(ctx, jobID)
 }
 
-func normalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
+// NormalizeCheckPayArgs applies defaults for a check-pay job. It is also used
+// by the worker so that enqueue-time and run-time defaults stay consistent.
+func NormalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
 	if args.MaxPolls <= 0 {
 		args.MaxPolls = 5
 	}
@@ -277,6 +302,9 @@ func normalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
 	}
 	if args.Source == "" {
 		args.Source = "api"
+	}
+	if args.Channel == "" {
+		args.Channel = string(Wechat)
 	}
 	return args
 }
@@ -292,6 +320,14 @@ type PaymentUsecase interface {
 	// 3) 调用三方 prepay;
 	// 4) 返回 Payment + Prepay,service 层负责编码 action_type + payload。
 	PrepayForOrder(ctx context.Context, args PrepayForOrderArgs) (*PrepayForOrderResult, error)
+	// PrepayForOrderWithCheckJob 与 PrepayForOrder 相同,但在同一事务中额外
+	// 入队一个微信支付轮询任务,保证支付流水写入与 MQ 入队原子性。
+	// checkJob 中 PaymentID/OrderID/OutTradeNo 会被忽略,由 biz 层根据 prepay 结果填充。
+	PrepayForOrderWithCheckJob(ctx context.Context, args PrepayForOrderArgs, checkJob CheckPayArgs, delay time.Duration) (*PrepayForOrderResult, *MQJob, error)
+	// EnqueueWechatCheckJobByOutTradeNo 按商户订单号查询 payment 并在一个事务中
+	// 入队微信支付轮询任务,用于微信异步通知后主动查询支付结果。
+	// checkJob 中 PaymentID/OrderID/OutTradeNo 会被忽略,由 biz 层根据查询结果填充。
+	EnqueueWechatCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, checkJob CheckPayArgs) (*MQJob, error)
 	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
 	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
 }
@@ -321,15 +357,19 @@ type paymentUsecase struct {
 	gateway     PaymentGateway
 	paymentRepo PaymentRepo
 	orderRepo   OrderRepo
+	paymentJobs PaymentJobUsecase
+	tx          TxManager
 	idGen       IDGenerator
 	log         *log.Helper
 }
 
-func NewPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, orderRepo OrderRepo, idGen IDGenerator, logger log.Logger) PaymentUsecase {
+func NewPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, orderRepo OrderRepo, paymentJobs PaymentJobUsecase, tx TxManager, idGen IDGenerator, logger log.Logger) PaymentUsecase {
 	return &paymentUsecase{
 		gateway:     gateway,
 		paymentRepo: paymentRepo,
 		orderRepo:   orderRepo,
+		paymentJobs: paymentJobs,
+		tx:          tx,
 		idGen:       idGen,
 		log:         log.NewHelper(logger),
 	}
@@ -446,6 +486,59 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 	}
 
 	return &PrepayForOrderResult{Payment: payment, Prepay: prepay}, nil
+}
+
+func (uc *paymentUsecase) PrepayForOrderWithCheckJob(ctx context.Context, args PrepayForOrderArgs, checkJob CheckPayArgs, delay time.Duration) (*PrepayForOrderResult, *MQJob, error) {
+	var result *PrepayForOrderResult
+	var job *MQJob
+	err := uc.tx.InTx(ctx, func(ctx context.Context) error {
+		r, err := uc.PrepayForOrder(ctx, args)
+		if err != nil {
+			return err
+		}
+		result = r
+		if args.Channel != string(Wechat) || uc.paymentJobs == nil {
+			return nil
+		}
+		checkJob.PaymentID = r.Payment.ID
+		checkJob.OrderID = r.Payment.OrderID
+		checkJob.OutTradeNo = r.Payment.OutTradeNo
+		checkJob.Channel = string(Wechat)
+		j, err := uc.paymentJobs.EnqueueCheckPayTx(ctx, checkJob, delay)
+		if err != nil {
+			return err
+		}
+		job = j
+		return nil
+	})
+	return result, job, err
+}
+
+func (uc *paymentUsecase) EnqueueWechatCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, checkJob CheckPayArgs) (*MQJob, error) {
+	if outTradeNo == "" {
+		return nil, errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
+	}
+	if uc.paymentJobs == nil {
+		return nil, errors.ServiceUnavailable("PAYMENT_MQ_NOT_CONFIGURED", "payment mq is not configured")
+	}
+	var job *MQJob
+	err := uc.tx.InTx(ctx, func(ctx context.Context) error {
+		payment, err := uc.paymentRepo.GetPaymentByOutTradeNo(ctx, outTradeNo)
+		if err != nil {
+			return err
+		}
+		checkJob.PaymentID = payment.ID
+		checkJob.OrderID = payment.OrderID
+		checkJob.OutTradeNo = payment.OutTradeNo
+		checkJob.Channel = string(Wechat)
+		j, err := uc.paymentJobs.EnqueueCheckPayTx(ctx, checkJob, 0)
+		if err != nil {
+			return err
+		}
+		job = j
+		return nil
+	})
+	return job, err
 }
 
 func (uc *paymentUsecase) GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error) {
