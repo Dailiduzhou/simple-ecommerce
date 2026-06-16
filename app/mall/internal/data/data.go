@@ -195,6 +195,12 @@ func (d *Data) DB(ctx context.Context) db.Querier {
 }
 
 func (d *Data) GetPgTx(ctx context.Context) pgx.Tx {
+	return pgTxFromContext(ctx)
+}
+
+// pgTxFromContext extracts the raw pgx.Tx from the context. It is used by
+// data-layer repos that need to participate in an ongoing transaction.
+func pgTxFromContext(ctx context.Context) pgx.Tx {
 	if tx, ok := ctx.Value(ctxRawPgTxKey{}).(pgx.Tx); ok {
 		return tx
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
@@ -61,8 +62,13 @@ type WechatPaymentAdapter struct {
 	log       *log.Helper
 }
 
-func NewWechatPaymentAdapter(logger log.Logger) *WechatPaymentAdapter {
+func NewWechatPaymentAdapter(c *conf.Payment, logger log.Logger) *WechatPaymentAdapter {
+	var client *gopaywechat.Client
+	if c != nil && c.Wechat != nil && c.Wechat.ApiKey != "" {
+		client = gopaywechat.NewClient(c.Wechat.AppId, c.Wechat.MchId, c.Wechat.ApiKey, c.Wechat.IsProduction)
+	}
 	return &WechatPaymentAdapter{
+		client:    client,
 		notifyURL: notifyURLFromEnv(),
 		log:       log.NewHelper(logger),
 	}
@@ -394,6 +400,14 @@ func (r *PaymentRepo) GetActivePaymentByOrderChannel(ctx context.Context, orderI
 	return toBizPaymentDO(payment), nil
 }
 
+func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*biz.PaymentDO, error) {
+	payment, err := querierFromContext(ctx, r.q).GetPaymentByOutTradeNo(ctx, pgtype.Text{String: outTradeNo, Valid: outTradeNo != ""})
+	if err != nil {
+		return nil, err
+	}
+	return toBizPaymentDO(payment), nil
+}
+
 func toBizPaymentDO(p db.Payment) *biz.PaymentDO {
 	d := &biz.PaymentDO{
 		ID:             p.ID,
@@ -442,29 +456,7 @@ func NewPaymentMQRepo(client *river.Client[pgx.Tx], logger log.Logger) *PaymentM
 }
 
 func (r *PaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
-	opts := &river.InsertOpts{
-		MaxAttempts: args.MaxPolls,
-		Queue:       "payments",
-		Tags: []string{
-			fmt.Sprintf("pay-channel-%s", args.Channel),
-			fmt.Sprintf("payment-%d", args.PaymentID),
-		},
-		// TODO: River's UniqueOpts.ByArgs hashes the entire CheckPayArgs
-		// struct, so re-enqueues with different MaxPolls/PollIntervalSeconds
-		// are NOT deduped. A duplicate job still runs, but its writes are
-		// now caught by idx_payments_active_out_trade_no_channel and
-		// idx_payments_third_party_tx_id_channel (added in migration
-		// 000007). For strict dedup across polling changes, switch to a
-		// narrower river.Job[CheckPayJobKey] type (Phase C2 — deferred).
-		UniqueOpts: river.UniqueOpts{
-			ByArgs:  true,
-			ByQueue: true,
-		},
-	}
-	if !scheduledAt.IsZero() {
-		opts.ScheduledAt = scheduledAt
-	}
-
+	opts := r.checkPayInsertOpts(args, scheduledAt)
 	result, err := r.client.Insert(ctx, args, opts)
 	if err != nil {
 		return nil, err
@@ -473,6 +465,47 @@ func (r *PaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayAr
 		r.log.WithContext(ctx).Infof("skipped duplicate river job kind=%s job_id=%d", args.Kind(), result.Job.ID)
 	}
 	return toBizMQJob(result.Job), nil
+}
+
+func (r *PaymentMQRepo) EnqueueCheckPayTx(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
+	tx := pgTxFromContext(ctx)
+	if tx == nil {
+		return nil, fmt.Errorf("EnqueueCheckPayTx requires a transaction in context")
+	}
+	opts := r.checkPayInsertOpts(args, scheduledAt)
+	result, err := r.client.InsertTx(ctx, tx, args, opts)
+	if err != nil {
+		return nil, err
+	}
+	if result.UniqueSkippedAsDuplicate {
+		r.log.WithContext(ctx).Infof("skipped duplicate river tx job kind=%s job_id=%d", args.Kind(), result.Job.ID)
+	}
+	return toBizMQJob(result.Job), nil
+}
+
+func (r *PaymentMQRepo) checkPayInsertOpts(args biz.CheckPayArgs, scheduledAt time.Time) *river.InsertOpts {
+	opts := &river.InsertOpts{
+		MaxAttempts: args.MaxPolls,
+		Queue:       "payments",
+		Tags: []string{
+			fmt.Sprintf("pay-channel-%s", args.Channel),
+			fmt.Sprintf("payment-%d", args.PaymentID),
+		},
+		// Uniqueness is enforced by kind + queue + OutTradeNo only, because
+		// CheckPayArgs.OutTradeNo carries the `river:"unique"` struct tag.
+		// Re-enqueues with different MaxPolls/PollIntervalSeconds for the
+		// same OutTradeNo are therefore deduplicated. Duplicate writes are
+		// also guarded by idx_payments_active_out_trade_no_channel and
+		// idx_payments_third_party_tx_id_channel (migration 000007).
+		UniqueOpts: river.UniqueOpts{
+			ByArgs:  true,
+			ByQueue: true,
+		},
+	}
+	if !scheduledAt.IsZero() {
+		opts.ScheduledAt = scheduledAt
+	}
+	return opts
 }
 
 func (r *PaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJob, error) {
