@@ -237,9 +237,6 @@ func encodePrepayPayload(channel pb.PayChannel, prepay *biz.PaymentPrepayResult)
 	}
 	switch channel {
 	case pb.PayChannel_PAY_CHANNEL_ALIPAY_WAP:
-		// 当前 AlipayPaymentAdapter 只实现了 precreate(扫码),WAP 走表单的
-		// 路径在 adapter 里尚未实现,这里用 CodeURL 退化为 URL_REDIRECT。
-		// 接入真正的 WAP 流程时,需要在 adapter 里返回 BizContent 走表单。
 		return ActionTypeURLRedirect, mustJSON(map[string]string{"url": prepay.CodeURL}), nil
 	case pb.PayChannel_PAY_CHANNEL_ALIPAY_APP:
 		return ActionTypeURLRedirect, mustJSON(map[string]string{"url": prepay.CodeURL}), nil
