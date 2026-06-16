@@ -38,6 +38,7 @@ type Querier interface {
 	GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) (Order, error)
 	GetPayment(ctx context.Context, id int64) (Payment, error)
 	GetPaymentByOrder(ctx context.Context, orderID int64) (Payment, error)
+	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo pgtype.Text) (Payment, error)
 	GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID pgtype.Text) (Payment, error)
 	GetProduct(ctx context.Context, id int64) (Product, error)
 	GetShippingAddress(ctx context.Context, arg GetShippingAddressParams) (ShippingAddress, error)
