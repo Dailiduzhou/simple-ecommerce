@@ -4,12 +4,12 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"os"
 
 	dbmigrations "github.com/Dailiduzhou/simple-ecommerce/app/mall/db"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
-	gopayalipay "github.com/go-pay/gopay/alipay"
 	alipayv3 "github.com/go-pay/gopay/alipay/v3"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -168,11 +168,23 @@ func NewAlipayClient(c *conf.Payment) (*alipayv3.ClientV3, error) {
 		return nil, err
 	}
 
-	client.SetSignType(gopayalipay.RSA2)
-	err = client.SetCertSnByPath(aliConf.AppCertPath, aliConf.AlipayRootCertPath, aliConf.AlipayPublicCertPath)
+	// 读出三张证书的 PEM 字节流交给 v3 客户端 SetCert。v3 客户端没有
+	// SetCertSnByPath 之类按路径设置的 API,统一在启动期读一次比每次签名
+	// 时再读要快,也避免证书丢失/权限问题延迟到首次请求才暴露。
+	appCert, err := os.ReadFile(aliConf.AppCertPath)
 	if err != nil {
-		log.Errorf("alipay certs loading failed: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("read alipay app cert %q: %w", aliConf.AppCertPath, err)
+	}
+	rootCert, err := os.ReadFile(aliConf.AlipayRootCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("read alipay root cert %q: %w", aliConf.AlipayRootCertPath, err)
+	}
+	publicCert, err := os.ReadFile(aliConf.AlipayPublicCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("read alipay public cert %q: %w", aliConf.AlipayPublicCertPath, err)
+	}
+	if err := client.SetCert(appCert, rootCert, publicCert); err != nil {
+		return nil, fmt.Errorf("set alipay certs: %w", err)
 	}
 
 	return client, nil

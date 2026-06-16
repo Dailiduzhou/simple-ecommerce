@@ -13,7 +13,7 @@ import (
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-pay/gopay"
-	gopayalipay "github.com/go-pay/gopay/alipay"
+	alipayv3 "github.com/go-pay/gopay/alipay/v3"
 	gopaywechat "github.com/go-pay/gopay/wechat"
 	"github.com/go-pay/util"
 	"github.com/jackc/pgx/v5"
@@ -165,12 +165,12 @@ func (a *WechatPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 }
 
 type AlipayPaymentAdapter struct {
-	client    *gopayalipay.Client
+	client    *alipayv3.ClientV3
 	notifyURL string
 	log       *log.Helper
 }
 
-func NewAlipayPaymentAdapter(client *gopayalipay.Client, logger log.Logger) *AlipayPaymentAdapter {
+func NewAlipayPaymentAdapter(client *alipayv3.ClientV3, logger log.Logger) *AlipayPaymentAdapter {
 	return &AlipayPaymentAdapter{
 		client:    client,
 		notifyURL: notifyURLFromEnv(),
@@ -196,7 +196,10 @@ func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 		body.Set("notify_url", a.notifyURL)
 	}
 
-	aliRsp, err := a.client.TradePrecreate(ctx, body)
+	// 统一走手机网站支付(WAP),返回跳转 URL;service 层在 WAP/APP 两个
+	// 子渠道上都是用 URL_REDIRECT + code_url 消费,这里把 URL 放进 CodeURL
+	// 字段统一返回。TradeWapPay 内部会自动加 product_code=FAST_INSTANT_TRADE_PAY。
+	payURL, err := a.client.TradeWapPay(ctx, body)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +207,7 @@ func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 	return &biz.PaymentPrepayResult{
 		Channel:    string(biz.Alipay),
 		OutTradeNo: req.OutTradeNo,
-		CodeURL:    aliRsp.Response.QrCode,
+		PayURL:     payURL,
 	}, nil
 }
 
@@ -212,6 +215,9 @@ func (a *AlipayPaymentAdapter) QueryOrder(ctx context.Context, req biz.PaymentQu
 	if a.client == nil {
 		a.log.WithContext(ctx).Warnf("alipay payment adapter is not configured, out_trade_no=%s", req.OutTradeNo)
 		return nil, alipayNotConfigured()
+	}
+	if req.OutTradeNo == "" && req.TransactionID == "" {
+		return nil, alipayOrderIDRequired()
 	}
 
 	body := make(gopay.BodyMap)
@@ -227,15 +233,15 @@ func (a *AlipayPaymentAdapter) QueryOrder(ctx context.Context, req biz.PaymentQu
 		return nil, err
 	}
 
-	totalAmount, _ := yuanToFen(aliRsp.Response.TotalAmount)
-	state, stateDesc := mapAlipayTradeState(aliRsp.Response.TradeStatus)
+	totalAmount, _ := yuanToFen(aliRsp.TotalAmount)
+	state, stateDesc := mapAlipayTradeState(aliRsp.TradeStatus)
 	return &biz.PaymentQueryResult{
 		Channel:        string(biz.Alipay),
-		OutTradeNo:     aliRsp.Response.OutTradeNo,
-		TransactionID:  aliRsp.Response.TradeNo,
+		OutTradeNo:     aliRsp.OutTradeNo,
+		TransactionID:  aliRsp.TradeNo,
 		TradeState:     state,
 		TradeStateDesc: stateDesc,
-		RawTradeState:  aliRsp.Response.TradeStatus,
+		RawTradeState:  aliRsp.TradeStatus,
 		TotalAmount:    totalAmount,
 	}, nil
 }
@@ -244,6 +250,9 @@ func (a *AlipayPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 	if a.client == nil {
 		a.log.WithContext(ctx).Warnf("alipay payment adapter is not configured, out_trade_no=%s", req.OutTradeNo)
 		return nil, alipayNotConfigured()
+	}
+	if req.OutTradeNo == "" && req.TransactionID == "" {
+		return nil, alipayOrderIDRequired()
 	}
 
 	body := make(gopay.BodyMap)
@@ -261,9 +270,9 @@ func (a *AlipayPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 
 	return &biz.PaymentCloseResult{
 		Channel:       string(biz.Alipay),
-		OutTradeNo:    aliRsp.Response.OutTradeNo,
-		TransactionID: aliRsp.Response.TradeNo,
-		Success:       aliRsp.Response != nil,
+		OutTradeNo:    aliRsp.OutTradeNo,
+		TransactionID: aliRsp.TradeNo,
+		Success:       aliRsp != nil,
 	}, nil
 }
 
@@ -353,6 +362,15 @@ func wechatPayNotConfigured() error {
 
 func alipayNotConfigured() error {
 	return errors.ServiceUnavailable("ALIPAY_NOT_CONFIGURED", "alipay adapter is not configured")
+}
+
+// alipayOrderIDRequired 用于 Query/Close 这类需要定位一笔已有交易的请求。
+// 支付宝 openapi 在这两类接口上只接受 out_trade_no(商户订单号)和 trade_no
+// (支付宝交易号)二选一,都不传会被底层库直接拒掉;这里前置成本项目的 kratos
+// 错误,既给出稳定 reason 码,也避免把 v3 库的英文 raw error 漏到上游。
+func alipayOrderIDRequired() error {
+	return errors.BadRequest("ALIPAY_ORDER_ID_REQUIRED",
+		"alipay query/close requires out_trade_no or trade_no (merchant order number or alipay transaction number)")
 }
 
 type PaymentMQRepo struct {
@@ -541,14 +559,27 @@ func yuanToFen(amount string) (int32, error) {
 	return int32(value * 100), nil
 }
 
+// mapAlipayTradeState 把支付宝查单响应的 trade_status 字符串映射到内部
+// biz.TradeState。支付宝 openapi 文档定义的 4 个终态/中间态:
+//
+//	WAIT_BUYER_PAY  交易创建,等待买家付款
+//	TRADE_CLOSED    未付款交易超时关闭,或支付完成后全额退款
+//	TRADE_SUCCESS   交易支付成功(可退款)
+//	TRADE_FINISHED  交易结束,不可退款
+//
+// TRADE_FINISHED 与 TRADE_SUCCESS 都归到 TradeStateSuccess:对于商户来
+// 说"已付"是同一个语义,退款窗口的差异不体现在我们当前的 biz 状态机
+// 里(TradeStateRefund 已经覆盖了"已退款"这一终态)。
 func mapAlipayTradeState(status string) (biz.TradeState, string) {
 	switch status {
-	case "TRADE_SUCCESS", "TRADE_FINISHED":
-		return biz.TradeStateSuccess, status
 	case "WAIT_BUYER_PAY":
 		return biz.TradeStateNotPay, status
 	case "TRADE_CLOSED":
 		return biz.TradeStateClosed, status
+	case "TRADE_SUCCESS":
+		return biz.TradeStateSuccess, status
+	case "TRADE_FINISHED":
+		return biz.TradeStateSuccess, status
 	default:
 		return biz.TradeStateUnspecified, status
 	}
