@@ -207,6 +207,7 @@ type PaymentRepo interface {
 	GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error)
 	GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*PaymentDO, error)
 	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*PaymentDO, error)
+	ClosePayment(ctx context.Context, paymentID, orderID int64) error
 }
 
 type CreatePaymentArgs struct {
@@ -575,5 +576,24 @@ func (uc *paymentUsecase) CloseOrder(ctx context.Context, req PaymentCloseReques
 	if req.Channel == "" {
 		req.Channel = string(Wechat)
 	}
-	return uc.gateway.CloseOrder(ctx, req)
+
+	payment, err := uc.paymentRepo.GetPaymentByOutTradeNo(ctx, req.OutTradeNo)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := uc.gateway.CloseOrder(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Success {
+		if err := uc.tx.InTx(ctx, func(ctx context.Context) error {
+			return uc.paymentRepo.ClosePayment(ctx, payment.ID, payment.OrderID)
+		}); err != nil {
+			uc.log.WithContext(ctx).Errorf("close payment local sync failed payment_id=%d out_trade_no=%s: %v", payment.ID, req.OutTradeNo, err)
+		}
+	}
+
+	return result, nil
 }
