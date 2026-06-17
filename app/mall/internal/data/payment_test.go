@@ -88,6 +88,53 @@ func TestPaymentRepo_CreatePayment_DBUniqueConflict_MapsToErrPaymentConflict(t *
 		"expected biz.ErrPaymentConflict, got %v", err)
 }
 
+func TestPaymentRepo_CreatePayment_ActiveOrderChannelConflict_ReusesExisting(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+
+	pgErr := &pgconn.PgError{
+		Code:           "23505",
+		ConstraintName: "idx_payments_active_order_channel",
+		Message:        "duplicate key value violates unique constraint",
+	}
+	mockQ.EXPECT().
+		CreatePaymentWithOutTradeNo(gomock.Any(), gomock.Any()).
+		Times(1).
+		Return(db.Payment{}, pgErr)
+	mockQ.EXPECT().
+		GetActivePaymentByOrderChannel(gomock.Any(), db.GetActivePaymentByOrderChannelParams{
+			OrderID:    10,
+			PayChannel: "wechat",
+		}).
+		Times(1).
+		Return(db.Payment{
+			ID:         100,
+			OrderID:    10,
+			UserID:     1,
+			MerchantID: 2,
+			Amount:     decimal.NewFromInt(9900),
+			Status:     "pending",
+			PayChannel: "wechat",
+			OutTradeNo: pgtype.Text{String: "snow-existing", Valid: true},
+		}, nil)
+
+	d := newTestData(t, mockQ, mr)
+	r := NewPaymentRepo(d, nil, log.DefaultLogger)
+	got, err := r.CreatePayment(context.Background(), biz.CreatePaymentArgs{
+		OrderID:    10,
+		UserID:     1,
+		MerchantID: 2,
+		Amount:     9900,
+		PayChannel: "wechat",
+		OutTradeNo: "snow-dup",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, int64(100), got.ID)
+	assert.Equal(t, "snow-existing", got.OutTradeNo)
+}
+
 func TestPaymentRepo_CreatePayment_OtherDBError_PropagatedAsIs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
@@ -112,6 +159,32 @@ func TestPaymentRepo_CreatePayment_OtherDBError_PropagatedAsIs(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, errors.Is(err, biz.ErrPaymentConflict),
 		"non-23505 errors must NOT be remapped to ErrPaymentConflict")
+}
+
+func TestPaymentRepo_CreatePayment_OtherUniqueConflict_MapsToErrPaymentConflict(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+
+	pgErr := &pgconn.PgError{
+		Code:           "23505",
+		ConstraintName: "idx_payments_third_party_tx_id_channel",
+		Message:        "duplicate key value violates unique constraint",
+	}
+	mockQ.EXPECT().
+		CreatePaymentWithOutTradeNo(gomock.Any(), gomock.Any()).
+		Times(1).
+		Return(db.Payment{}, pgErr)
+
+	d := newTestData(t, mockQ, mr)
+	r := NewPaymentRepo(d, nil, log.DefaultLogger)
+	_, err := r.CreatePayment(context.Background(), biz.CreatePaymentArgs{
+		OrderID:    10,
+		OutTradeNo: "snow-1",
+		PayChannel: "wechat",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, biz.ErrPaymentConflict))
 }
 
 func TestPaymentRepo_GetActivePaymentByOrderChannel(t *testing.T) {
