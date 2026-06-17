@@ -591,6 +591,9 @@ func (r *PaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64
 func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 	return r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
+		if q == nil {
+			return fmt.Errorf("missing transaction querier in context")
+		}
 
 		switch result.TradeState {
 		case biz.TradeStateSuccess:
@@ -616,6 +619,9 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 func (r *PaymentRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
 	return r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
+		if q == nil {
+			return fmt.Errorf("missing transaction querier in context")
+		}
 		orderID, err := r.applyFailed(ctx, q, args)
 		if err != nil {
 			return err
@@ -733,7 +739,7 @@ func (r *PaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayAr
 func (r *PaymentMQRepo) EnqueueCheckPayTx(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
 	tx := pgTxFromContext(ctx)
 	if tx == nil {
-		return nil, fmt.Errorf("EnqueueCheckPayTx requires a transaction in context")
+		return nil, fmt.Errorf("missing transaction in context")
 	}
 	opts := r.checkPayInsertOpts(args, scheduledAt)
 	result, err := r.client.InsertTx(ctx, tx, args, opts)
