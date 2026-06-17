@@ -4,11 +4,13 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"os"
 
 	dbmigrations "github.com/Dailiduzhou/simple-ecommerce/app/mall/db"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	alipayv3 "github.com/go-pay/gopay/alipay/v3"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -26,7 +28,7 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentSyncRepo, NewTransaction,
+	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentSyncRepo, NewTransaction, NewAlipayClient, NewSnowflakeIDGenerator,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
@@ -37,6 +39,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.PaymentRepo), new(*PaymentRepo)),
 	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
 	wire.Bind(new(biz.PaymentSyncRepo), new(*PaymentSyncRepo)),
+	wire.Bind(new(biz.IDGenerator), new(*snowflakeGenerator)),
 )
 
 type (
@@ -157,11 +160,47 @@ func RunMigrations(c *conf.Data) error {
 	return nil
 }
 
+func NewAlipayClient(c *conf.Payment) (*alipayv3.ClientV3, error) {
+	aliConf := c.GetAlipay()
+
+	client, err := alipayv3.NewClientV3(aliConf.AppId, aliConf.PrivateKey, aliConf.IsProduction)
+	if err != nil {
+		return nil, err
+	}
+
+	// 读出三张证书的 PEM 字节流交给 v3 客户端 SetCert。v3 客户端没有
+	// SetCertSnByPath 之类按路径设置的 API,统一在启动期读一次比每次签名
+	// 时再读要快,也避免证书丢失/权限问题延迟到首次请求才暴露。
+	appCert, err := os.ReadFile(aliConf.AppCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("read alipay app cert %q: %w", aliConf.AppCertPath, err)
+	}
+	rootCert, err := os.ReadFile(aliConf.AlipayRootCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("read alipay root cert %q: %w", aliConf.AlipayRootCertPath, err)
+	}
+	publicCert, err := os.ReadFile(aliConf.AlipayPublicCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("read alipay public cert %q: %w", aliConf.AlipayPublicCertPath, err)
+	}
+	if err := client.SetCert(appCert, rootCert, publicCert); err != nil {
+		return nil, fmt.Errorf("set alipay certs: %w", err)
+	}
+
+	return client, nil
+}
+
 func (d *Data) DB(ctx context.Context) db.Querier {
 	return querierFromContext(ctx, d.q)
 }
 
 func (d *Data) GetPgTx(ctx context.Context) pgx.Tx {
+	return pgTxFromContext(ctx)
+}
+
+// pgTxFromContext extracts the raw pgx.Tx from the context. It is used by
+// data-layer repos that need to participate in an ongoing transaction.
+func pgTxFromContext(ctx context.Context) pgx.Tx {
 	if tx, ok := ctx.Value(ctxRawPgTxKey{}).(pgx.Tx); ok {
 		return tx
 	}

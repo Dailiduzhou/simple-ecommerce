@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kratos/kratos/v2"
 	"github.com/go-kratos/kratos/v2/config"
+	"github.com/go-kratos/kratos/v2/config/env"
 	"github.com/go-kratos/kratos/v2/config/file"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-kratos/kratos/v2/transport/grpc"
@@ -61,6 +62,7 @@ func main() {
 
 	c := config.New(
 		config.WithSource(
+			env.NewSource(""),
 			file.NewSource(flagconf),
 		),
 	)
@@ -75,7 +77,7 @@ func main() {
 		panic(err)
 	}
 
-	app, cleanup, err := wireApp(bc.Server, bc.Data, bc.Auth, logger)
+	app, cleanup, err := wireApp(bc.Server, bc.Data, bc.Auth, bc.Snowflake, bc.Payment, logger)
 	if err != nil {
 		panic(err)
 	}

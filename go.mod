@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/bwmarrin/snowflake v0.3.0
 	github.com/go-kratos/kratos/contrib/log/zap/v2 v2.0.0-20260404020628-f149714c1d54
 	github.com/go-kratos/kratos/v2 v2.9.2
 	github.com/go-pay/gopay v1.5.118

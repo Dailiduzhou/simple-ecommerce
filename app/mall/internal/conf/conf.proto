@@ -9,6 +9,12 @@ message Bootstrap {
   Server server = 1;
   Data data = 2;
   Auth auth = 3;
+  Snowflake snowflake = 4;
+  Payment payment = 5;
+}
+
+message Snowflake {
+  int32 node_id = 1;
 }
 
 message Auth {
@@ -47,4 +53,35 @@ message Data {
   }
   Database database = 1;
   Redis redis = 2;
+}
+
+message Payment {
+  Alipay alipay = 1;
+  Wechat wechat = 2;
+  CheckPayJob check_pay_job = 3;
+}
+
+message Alipay {
+  string app_id = 1;
+  string private_key = 2;
+  bool is_production = 3;
+  string app_cert_path = 4;
+  string alipay_public_cert_path = 5;
+  string alipay_root_cert_path = 6;
+}
+
+message Wechat {
+  string app_id = 1;
+  string mch_id = 2;
+  string api_key = 3;
+  bool is_production = 4;
+}
+
+message CheckPayJob {
+  // 首次延迟多久开始轮询。
+  google.protobuf.Duration initial_delay = 1;
+  // 最大轮询次数。
+  int32 max_polls = 2;
+  // 每次轮询间隔。
+  google.protobuf.Duration poll_interval = 3;
 }
