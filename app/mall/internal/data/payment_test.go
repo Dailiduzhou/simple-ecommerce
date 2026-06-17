@@ -8,6 +8,8 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	mockdb "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db/mock"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang/mock/gomock"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,6 +21,7 @@ import (
 func TestPaymentRepo_CreatePayment_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
 
 	mockQ.EXPECT().
 		CreatePaymentWithOutTradeNo(gomock.Any(), db.CreatePaymentWithOutTradeNoParams{
@@ -42,7 +45,8 @@ func TestPaymentRepo_CreatePayment_Success(t *testing.T) {
 			OutTradeNo: pgtype.Text{String: "snow-1", Valid: true},
 		}, nil)
 
-	r := &PaymentRepo{q: mockQ}
+	d := newTestData(t, mockQ, mr)
+	r := NewPaymentRepo(d, log.DefaultLogger)
 	got, err := r.CreatePayment(context.Background(), biz.CreatePaymentArgs{
 		OrderID:    10,
 		UserID:     1,
@@ -60,6 +64,7 @@ func TestPaymentRepo_CreatePayment_Success(t *testing.T) {
 func TestPaymentRepo_CreatePayment_DBUniqueConflict_MapsToErrPaymentConflict(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
 
 	pgErr := &pgconn.PgError{
 		Code:           "23505",
@@ -71,7 +76,8 @@ func TestPaymentRepo_CreatePayment_DBUniqueConflict_MapsToErrPaymentConflict(t *
 		Times(1).
 		Return(db.Payment{}, pgErr)
 
-	r := &PaymentRepo{q: mockQ}
+	d := newTestData(t, mockQ, mr)
+	r := NewPaymentRepo(d, log.DefaultLogger)
 	_, err := r.CreatePayment(context.Background(), biz.CreatePaymentArgs{
 		OrderID:    10,
 		OutTradeNo: "snow-dup",
@@ -85,6 +91,7 @@ func TestPaymentRepo_CreatePayment_DBUniqueConflict_MapsToErrPaymentConflict(t *
 func TestPaymentRepo_CreatePayment_OtherDBError_PropagatedAsIs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
 
 	pgErr := &pgconn.PgError{
 		Code:    "23502",
@@ -95,7 +102,8 @@ func TestPaymentRepo_CreatePayment_OtherDBError_PropagatedAsIs(t *testing.T) {
 		Times(1).
 		Return(db.Payment{}, pgErr)
 
-	r := &PaymentRepo{q: mockQ}
+	d := newTestData(t, mockQ, mr)
+	r := NewPaymentRepo(d, log.DefaultLogger)
 	_, err := r.CreatePayment(context.Background(), biz.CreatePaymentArgs{
 		OrderID:    10,
 		OutTradeNo: "snow-1",
@@ -109,6 +117,7 @@ func TestPaymentRepo_CreatePayment_OtherDBError_PropagatedAsIs(t *testing.T) {
 func TestPaymentRepo_GetActivePaymentByOrderChannel(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
 
 	mockQ.EXPECT().
 		GetActivePaymentByOrderChannel(gomock.Any(), db.GetActivePaymentByOrderChannelParams{
@@ -124,7 +133,8 @@ func TestPaymentRepo_GetActivePaymentByOrderChannel(t *testing.T) {
 			OutTradeNo: pgtype.Text{String: "snow-1", Valid: true},
 		}, nil)
 
-	r := &PaymentRepo{q: mockQ}
+	d := newTestData(t, mockQ, mr)
+	r := NewPaymentRepo(d, log.DefaultLogger)
 	got, err := r.GetActivePaymentByOrderChannel(context.Background(), 10, "wechat")
 	require.NoError(t, err)
 	assert.Equal(t, int64(100), got.ID)

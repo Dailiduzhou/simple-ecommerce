@@ -2,8 +2,10 @@ package data
 
 import (
 	"context"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -21,7 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 	"github.com/shopspring/decimal"
@@ -342,17 +344,47 @@ func orEmpty(a, b string) string {
 }
 
 type PaymentRepo struct {
-	pool *pgxpool.Pool
-	q    db.Querier
+	data *Data
+	log  *log.Helper
 }
 
-func NewPaymentRepo(pool *pgxpool.Pool) *PaymentRepo {
-	return &PaymentRepo{pool: pool, q: db.New(pool)}
+func NewPaymentRepo(data *Data, logger log.Logger) *PaymentRepo {
+	return &PaymentRepo{data: data, log: log.NewHelper(logger)}
+}
+
+func (r *PaymentRepo) getCache(ctx context.Context, key string) (*biz.PaymentDO, error) {
+	val, err := r.data.rdb.Get(ctx, key).Bytes()
+	if err != nil {
+		return nil, err
+	}
+	var p biz.PaymentDO
+	if err := json.Unmarshal(val, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (r *PaymentRepo) setCache(ctx context.Context, key string, p *biz.PaymentDO) {
+	data, err := json.Marshal(p)
+	if err != nil {
+		r.log.WithContext(ctx).Errorf("marshal payment cache: %v", err)
+		return
+	}
+	jitter := time.Duration(mrand.Intn(10)) * time.Minute
+	exp := jitter + 10*time.Minute
+	r.data.rdb.Set(ctx, key, data, exp)
+}
+
+func (r *PaymentRepo) deleteCache(ctx context.Context, key string) {
+	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
+		r.log.WithContext(ctx).Errorf("delete cache %s: %v", key, err)
+		return
+	}
 }
 
 func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
 	amount := decimal.NewFromInt(int64(args.Amount))
-	payment, err := querierFromContext(ctx, r.q).CreatePaymentWithOutTradeNo(ctx, db.CreatePaymentWithOutTradeNoParams{
+	payment, err := querierFromContext(ctx, r.data.q).CreatePaymentWithOutTradeNo(ctx, db.CreatePaymentWithOutTradeNoParams{
 		OrderID:    args.OrderID,
 		UserID:     args.UserID,
 		MerchantID: args.MerchantID,
@@ -362,50 +394,166 @@ func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentA
 		OutTradeNo: pgtype.Text{String: args.OutTradeNo, Valid: args.OutTradeNo != ""},
 	})
 	if err != nil {
-		// 23505 on idx_payments_active_out_trade_no_channel → concurrent
-		// insert raced and won; surface as a domain conflict.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, biz.ErrPaymentConflict
 		}
 		return nil, err
 	}
-	return toBizPaymentDO(payment), nil
+	p := toBizPaymentDO(payment)
+	r.setCache(ctx, fmt.Sprintf("payment:%d", p.ID), p)
+	if p.OutTradeNo != "" {
+		r.setCache(ctx, fmt.Sprintf("payment:out_trade_no:%s", p.OutTradeNo), p)
+	}
+	r.setCache(ctx, fmt.Sprintf("payment:order:%d:active:%s", p.OrderID, p.PayChannel), p)
+	return p, nil
 }
 
 func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
-	payment, err := querierFromContext(ctx, r.q).GetPayment(ctx, id)
+	cacheKey := fmt.Sprintf("payment:%d", id)
+
+	p, err := r.getCache(ctx, cacheKey)
+	if err == nil {
+		return p, nil
+	}
+	if !stderrors.Is(err, redis.Nil) {
+		r.log.WithContext(ctx).Errorf("get payment cache: %v", err)
+	}
+
+	sfKey := fmt.Sprintf("sf:payment:%d", id)
+	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
+		p, err := r.getCache(ctx, cacheKey)
+		if err == nil {
+			return p, nil
+		}
+		payment, err := querierFromContext(ctx, r.data.q).GetPayment(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return (*biz.PaymentDO)(nil), nil
+			}
+			return nil, err
+		}
+		bizP := toBizPaymentDO(payment)
+		r.setCache(ctx, cacheKey, bizP)
+		return bizP, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	return toBizPaymentDO(payment), nil
+
+	return val.(*biz.PaymentDO), nil
 }
 
 func (r *PaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
-	payment, err := querierFromContext(ctx, r.q).GetPaymentByOrder(ctx, orderID)
+	cacheKey := fmt.Sprintf("payment:order:%d", orderID)
+
+	p, err := r.getCache(ctx, cacheKey)
+	if err == nil {
+		return p, nil
+	}
+	if !stderrors.Is(err, redis.Nil) {
+		r.log.WithContext(ctx).Errorf("get payment by order cache: %v", err)
+	}
+
+	sfKey := fmt.Sprintf("sf:payment:order:%d", orderID)
+	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
+		p, err := r.getCache(ctx, cacheKey)
+		if err == nil {
+			return p, nil
+		}
+		payment, err := querierFromContext(ctx, r.data.q).GetPaymentByOrder(ctx, orderID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return (*biz.PaymentDO)(nil), nil
+			}
+			return nil, err
+		}
+		bizP := toBizPaymentDO(payment)
+		r.setCache(ctx, cacheKey, bizP)
+		return bizP, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	return toBizPaymentDO(payment), nil
+
+	return val.(*biz.PaymentDO), nil
 }
 
 func (r *PaymentRepo) GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*biz.PaymentDO, error) {
-	payment, err := querierFromContext(ctx, r.q).GetActivePaymentByOrderChannel(ctx, db.GetActivePaymentByOrderChannelParams{
-		OrderID:    orderID,
-		PayChannel: channel,
+	cacheKey := fmt.Sprintf("payment:order:%d:active:%s", orderID, channel)
+
+	p, err := r.getCache(ctx, cacheKey)
+	if err == nil {
+		return p, nil
+	}
+	if !stderrors.Is(err, redis.Nil) {
+		r.log.WithContext(ctx).Errorf("get active payment by order channel cache: %v", err)
+	}
+
+	sfKey := fmt.Sprintf("sf:payment:order:%d:active:%s", orderID, channel)
+	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
+		p, err := r.getCache(ctx, cacheKey)
+		if err == nil {
+			return p, nil
+		}
+		payment, err := querierFromContext(ctx, r.data.q).GetActivePaymentByOrderChannel(ctx, db.GetActivePaymentByOrderChannelParams{
+			OrderID:    orderID,
+			PayChannel: channel,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return (*biz.PaymentDO)(nil), nil
+			}
+			return nil, err
+		}
+		bizP := toBizPaymentDO(payment)
+		r.setCache(ctx, cacheKey, bizP)
+		return bizP, nil
 	})
+
 	if err != nil {
 		return nil, err
 	}
-	return toBizPaymentDO(payment), nil
+
+	return val.(*biz.PaymentDO), nil
 }
 
 func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*biz.PaymentDO, error) {
-	payment, err := querierFromContext(ctx, r.q).GetPaymentByOutTradeNo(ctx, pgtype.Text{String: outTradeNo, Valid: outTradeNo != ""})
+	cacheKey := fmt.Sprintf("payment:out_trade_no:%s", outTradeNo)
+
+	p, err := r.getCache(ctx, cacheKey)
+	if err == nil {
+		return p, nil
+	}
+	if !stderrors.Is(err, redis.Nil) {
+		r.log.WithContext(ctx).Errorf("get payment by out_trade_no cache: %v", err)
+	}
+
+	sfKey := fmt.Sprintf("sf:payment:out_trade_no:%s", outTradeNo)
+	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
+		p, err := r.getCache(ctx, cacheKey)
+		if err == nil {
+			return p, nil
+		}
+		payment, err := querierFromContext(ctx, r.data.q).GetPaymentByOutTradeNo(ctx, pgtype.Text{String: outTradeNo, Valid: outTradeNo != ""})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return (*biz.PaymentDO)(nil), nil
+			}
+			return nil, err
+		}
+		bizP := toBizPaymentDO(payment)
+		r.setCache(ctx, cacheKey, bizP)
+		return bizP, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	return toBizPaymentDO(payment), nil
+
+	return val.(*biz.PaymentDO), nil
 }
 
 func toBizPaymentDO(p db.Payment) *biz.PaymentDO {
