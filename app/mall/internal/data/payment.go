@@ -51,11 +51,10 @@ func notifyURLFromEnv() string {
 }
 
 var (
-	_ biz.PaymentAdapter  = (*WechatPaymentAdapter)(nil)
-	_ biz.PaymentAdapter  = (*AlipayPaymentAdapter)(nil)
-	_ biz.PaymentRepo     = (*PaymentRepo)(nil)
-	_ biz.PaymentMQRepo   = (*PaymentMQRepo)(nil)
-	_ biz.PaymentSyncRepo = (*PaymentSyncRepo)(nil)
+	_ biz.PaymentAdapter = (*WechatPaymentAdapter)(nil)
+	_ biz.PaymentAdapter = (*AlipayPaymentAdapter)(nil)
+	_ biz.PaymentRepo    = (*PaymentRepo)(nil)
+	_ biz.PaymentMQRepo  = (*PaymentMQRepo)(nil)
 )
 
 type WechatPaymentAdapter struct {
@@ -346,10 +345,11 @@ func orEmpty(a, b string) string {
 type PaymentRepo struct {
 	data *Data
 	log  *log.Helper
+	tx   biz.TxManager
 }
 
-func NewPaymentRepo(data *Data, logger log.Logger) *PaymentRepo {
-	return &PaymentRepo{data: data, log: log.NewHelper(logger)}
+func NewPaymentRepo(data *Data, tx biz.TxManager, logger log.Logger) *PaymentRepo {
+	return &PaymentRepo{data: data, tx: tx, log: log.NewHelper(logger)}
 }
 
 func (r *PaymentRepo) getCache(ctx context.Context, key string) (*biz.PaymentDO, error) {
@@ -588,6 +588,95 @@ func (r *PaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64
 	return nil
 }
 
+func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
+	return r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		if q == nil {
+			return fmt.Errorf("missing transaction querier in context")
+		}
+
+		switch result.TradeState {
+		case biz.TradeStateSuccess:
+			orderID, err := r.applySuccess(ctx, q, args, result.TransactionID)
+			if err != nil {
+				return err
+			}
+			return finalizeOrder(ctx, q, orderID, true)
+		case biz.TradeStateRefund:
+			return r.applyRefund(ctx, q, args)
+		case biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError:
+			orderID, err := r.applyFailed(ctx, q, args)
+			if err != nil {
+				return err
+			}
+			return finalizeOrder(ctx, q, orderID, false)
+		default:
+			return fmt.Errorf("wechat pay state %s is not terminal", result.TradeState.String())
+		}
+	})
+}
+
+func (r *PaymentRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
+	return r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		if q == nil {
+			return fmt.Errorf("missing transaction querier in context")
+		}
+		orderID, err := r.applyFailed(ctx, q, args)
+		if err != nil {
+			return err
+		}
+		return finalizeOrder(ctx, q, orderID, false)
+	})
+}
+
+func (r *PaymentRepo) applySuccess(ctx context.Context, q db.Querier, args biz.CheckPayArgs, txID string) (int64, error) {
+	payment, err := q.UpdatePaymentSuccess(ctx, db.UpdatePaymentSuccessParams{
+		ID: args.PaymentID,
+		ThirdPartyTxID: pgtype.Text{
+			String: txID,
+			Valid:  txID != "",
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+	orderID := args.OrderID
+	if orderID <= 0 {
+		orderID = payment.OrderID
+	}
+	return orderID, nil
+}
+
+func (r *PaymentRepo) applyRefund(ctx context.Context, q db.Querier, args biz.CheckPayArgs) error {
+	return q.UpdatePaymentRefunded(ctx, args.PaymentID)
+}
+
+func (r *PaymentRepo) applyFailed(ctx context.Context, q db.Querier, args biz.CheckPayArgs) (int64, error) {
+	if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
+		return 0, err
+	}
+	orderID := args.OrderID
+	if orderID <= 0 {
+		payment, err := q.GetPayment(ctx, args.PaymentID)
+		if err != nil {
+			return 0, err
+		}
+		orderID = payment.OrderID
+	}
+	return orderID, nil
+}
+
+func finalizeOrder(ctx context.Context, q db.Querier, orderID int64, success bool) error {
+	if orderID <= 0 {
+		return nil
+	}
+	if success {
+		return q.CompleteOrder(ctx, orderID)
+	}
+	return q.CancelOrder(ctx, orderID)
+}
+
 func toBizPaymentDO(p db.Payment) *biz.PaymentDO {
 	d := &biz.PaymentDO{
 		ID:             p.ID,
@@ -650,7 +739,7 @@ func (r *PaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayAr
 func (r *PaymentMQRepo) EnqueueCheckPayTx(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
 	tx := pgTxFromContext(ctx)
 	if tx == nil {
-		return nil, fmt.Errorf("EnqueueCheckPayTx requires a transaction in context")
+		return nil, fmt.Errorf("missing transaction in context")
 	}
 	opts := r.checkPayInsertOpts(args, scheduledAt)
 	result, err := r.client.InsertTx(ctx, tx, args, opts)
@@ -697,97 +786,6 @@ func (r *PaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJob, 
 		return nil, err
 	}
 	return toBizMQJob(job), nil
-}
-
-type PaymentSyncRepo struct {
-	tx biz.TxManager
-}
-
-func NewPaymentSyncRepo(tx biz.TxManager) *PaymentSyncRepo {
-	return &PaymentSyncRepo{tx: tx}
-}
-
-func (r *PaymentSyncRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
-	return r.tx.InTx(ctx, func(ctx context.Context) error {
-		q := querierFromContext(ctx, nil)
-
-		switch result.TradeState {
-		case biz.TradeStateSuccess:
-			orderID, err := r.applySuccess(ctx, q, args, result.TransactionID)
-			if err != nil {
-				return err
-			}
-			return finalizeOrder(ctx, q, orderID, true)
-		case biz.TradeStateRefund:
-			return r.applyRefund(ctx, q, args)
-		case biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError:
-			orderID, err := r.applyFailed(ctx, q, args)
-			if err != nil {
-				return err
-			}
-			return finalizeOrder(ctx, q, orderID, false)
-		default:
-			return fmt.Errorf("wechat pay state %s is not terminal", result.TradeState.String())
-		}
-	})
-}
-
-func (r *PaymentSyncRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
-	return r.tx.InTx(ctx, func(ctx context.Context) error {
-		q := querierFromContext(ctx, nil)
-		orderID, err := r.applyFailed(ctx, q, args)
-		if err != nil {
-			return err
-		}
-		return finalizeOrder(ctx, q, orderID, false)
-	})
-}
-
-func (r *PaymentSyncRepo) applySuccess(ctx context.Context, q db.Querier, args biz.CheckPayArgs, txID string) (int64, error) {
-	payment, err := q.UpdatePaymentSuccess(ctx, db.UpdatePaymentSuccessParams{
-		ID: args.PaymentID,
-		ThirdPartyTxID: pgtype.Text{
-			String: txID,
-			Valid:  txID != "",
-		},
-	})
-	if err != nil {
-		return 0, err
-	}
-	orderID := args.OrderID
-	if orderID <= 0 {
-		orderID = payment.OrderID
-	}
-	return orderID, nil
-}
-
-func (r *PaymentSyncRepo) applyRefund(ctx context.Context, q db.Querier, args biz.CheckPayArgs) error {
-	return q.UpdatePaymentRefunded(ctx, args.PaymentID)
-}
-
-func (r *PaymentSyncRepo) applyFailed(ctx context.Context, q db.Querier, args biz.CheckPayArgs) (int64, error) {
-	if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
-		return 0, err
-	}
-	orderID := args.OrderID
-	if orderID <= 0 {
-		payment, err := q.GetPayment(ctx, args.PaymentID)
-		if err != nil {
-			return 0, err
-		}
-		orderID = payment.OrderID
-	}
-	return orderID, nil
-}
-
-func finalizeOrder(ctx context.Context, q db.Querier, orderID int64, success bool) error {
-	if orderID <= 0 {
-		return nil
-	}
-	if success {
-		return q.CompleteOrder(ctx, orderID)
-	}
-	return q.CancelOrder(ctx, orderID)
 }
 
 func toBizMQJob(row *rivertype.JobRow) *biz.MQJob {
