@@ -7,7 +7,6 @@ import (
 
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
-	"github.com/jackc/pgx/v5"
 )
 
 type PayChannel string
@@ -383,20 +382,12 @@ func (uc *paymentUsecase) CreatePayment(ctx context.Context, orderID, userID, me
 		channel = string(Alipay)
 	}
 
-	// Idempotency: short-circuit on an existing active payment.
-	if existing, err := uc.paymentRepo.GetActivePaymentByOrderChannel(ctx, orderID, channel); err == nil && existing != nil {
-		uc.log.WithContext(ctx).Infof("reusing existing active payment_id=%d order_id=%d channel=%s out_trade_no=%s", existing.ID, orderID, channel, existing.OutTradeNo)
-		return existing, nil
-	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
-	}
-
 	outTradeNo, err := uc.resolveOutTradeNo(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 
-	return uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
+	payment, err := uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
 		OrderID:    orderID,
 		UserID:     userID,
 		MerchantID: merchantID,
@@ -404,6 +395,11 @@ func (uc *paymentUsecase) CreatePayment(ctx context.Context, orderID, userID, me
 		PayChannel: channel,
 		OutTradeNo: outTradeNo,
 	})
+	if err != nil {
+		return nil, err
+	}
+	uc.log.WithContext(ctx).Infof("using payment_id=%d order_id=%d channel=%s out_trade_no=%s", payment.ID, orderID, channel, payment.OutTradeNo)
+	return payment, nil
 }
 
 func (uc *paymentUsecase) resolveOutTradeNo(_ context.Context, supplied string) (string, error) {

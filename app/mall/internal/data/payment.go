@@ -396,6 +396,15 @@ func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentA
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			if pgErr.ConstraintName == "idx_payments_active_order_channel" {
+				existing, getErr := r.GetActivePaymentByOrderChannel(ctx, args.OrderID, args.PayChannel)
+				if getErr != nil {
+					return nil, getErr
+				}
+				if existing != nil {
+					return existing, nil
+				}
+			}
 			return nil, biz.ErrPaymentConflict
 		}
 		return nil, err
