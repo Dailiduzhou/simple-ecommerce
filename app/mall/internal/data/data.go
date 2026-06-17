@@ -28,7 +28,7 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentSyncRepo, NewTransaction, NewAlipayClient, NewSnowflakeIDGenerator,
+	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewTransaction, NewAlipayClient, NewSnowflakeIDGenerator,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
@@ -38,7 +38,6 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.OrderRepo), new(*OrderRepo)),
 	wire.Bind(new(biz.PaymentRepo), new(*PaymentRepo)),
 	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
-	wire.Bind(new(biz.PaymentSyncRepo), new(*PaymentSyncRepo)),
 	wire.Bind(new(biz.IDGenerator), new(*snowflakeGenerator)),
 )
 
@@ -49,15 +48,14 @@ type (
 
 // Data .
 type Data struct {
-	pool        *pgxpool.Pool
-	riverclient *river.Client[pgx.Tx]
-	rdb         *redis.Client
-	q           db.Querier
-	sg          *singleflight.Group
+	pool *pgxpool.Pool
+	rdb  *redis.Client
+	q    db.Querier
+	sg   *singleflight.Group
 }
 
 // NewData .
-func NewData(c *conf.Data, pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx], rdb *redis.Client) (*Data, func(), error) {
+func NewData(c *conf.Data, pool *pgxpool.Pool, rdb *redis.Client) (*Data, func(), error) {
 	cleanup := func() {
 		rdb.Close()
 		pool.Close()
@@ -65,11 +63,10 @@ func NewData(c *conf.Data, pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx]
 		log.Info("closing the data resources")
 	}
 	return &Data{
-		pool:        pool,
-		riverclient: riverClient,
-		rdb:         rdb,
-		q:           db.New(pool),
-		sg:          &singleflight.Group{},
+		pool: pool,
+		rdb:  rdb,
+		q:    db.New(pool),
+		sg:   &singleflight.Group{},
 	}, cleanup, nil
 }
 

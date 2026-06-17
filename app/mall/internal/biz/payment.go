@@ -208,6 +208,8 @@ type PaymentRepo interface {
 	GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*PaymentDO, error)
 	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*PaymentDO, error)
 	ClosePayment(ctx context.Context, paymentID, orderID int64) error
+	ApplyPayQuery(ctx context.Context, args CheckPayArgs, result *PaymentQueryResult) error
+	MarkPayExpired(ctx context.Context, args CheckPayArgs) error
 }
 
 type CreatePaymentArgs struct {
@@ -223,11 +225,6 @@ type PaymentMQRepo interface {
 	EnqueueCheckPay(ctx context.Context, args CheckPayArgs, scheduledAt time.Time) (*MQJob, error)
 	EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, scheduledAt time.Time) (*MQJob, error)
 	GetMQJob(ctx context.Context, jobID int64) (*MQJob, error)
-}
-
-type PaymentSyncRepo interface {
-	ApplyPayQuery(ctx context.Context, args CheckPayArgs, result *PaymentQueryResult) error
-	MarkPayExpired(ctx context.Context, args CheckPayArgs) error
 }
 
 type PaymentJobUsecase interface {
