@@ -141,3 +141,86 @@ func TestPaymentRepo_GetActivePaymentByOrderChannel(t *testing.T) {
 	assert.Equal(t, "wechat", got.PayChannel)
 	assert.Equal(t, "snow-1", got.OutTradeNo)
 }
+
+func TestPaymentRepo_ClosePayment(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+
+	d := newTestData(t, mockQ, mr)
+	r := NewPaymentRepo(d, log.DefaultLogger)
+
+	// Pre-populate cache entries
+	r.setCache(context.Background(), "payment:200", &biz.PaymentDO{ID: 200, OrderID: 20, PayChannel: "wechat", OutTradeNo: "snow-close"})
+	r.setCache(context.Background(), "payment:order:20", &biz.PaymentDO{ID: 200, OrderID: 20})
+	r.setCache(context.Background(), "payment:order:20:active:wechat", &biz.PaymentDO{ID: 200, OrderID: 20, PayChannel: "wechat"})
+	r.setCache(context.Background(), "payment:out_trade_no:snow-close", &biz.PaymentDO{ID: 200, OrderID: 20, OutTradeNo: "snow-close"})
+
+	mockPayment := db.Payment{
+		ID:         200,
+		OrderID:    20,
+		PayChannel: "wechat",
+		OutTradeNo: pgtype.Text{String: "snow-close", Valid: true},
+	}
+
+	// 1. Read payment for cache key resolution
+	mockQ.EXPECT().
+		GetPayment(gomock.Any(), int64(200)).
+		Times(1).
+		Return(mockPayment, nil)
+
+	// 2. Update payment status
+	mockQ.EXPECT().
+		UpdatePaymentFailed(gomock.Any(), int64(200)).
+		Times(1).
+		Return(nil)
+
+	// 3. Cancel order
+	mockQ.EXPECT().
+		CancelOrder(gomock.Any(), int64(20)).
+		Times(1).
+		Return(nil)
+
+	err := r.ClosePayment(context.Background(), 200, 20)
+	require.NoError(t, err)
+
+	// Verify all cache keys cleared
+	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), "payment:200").Val())
+	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), "payment:order:20").Val())
+	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), "payment:order:20:active:wechat").Val())
+	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), "payment:out_trade_no:snow-close").Val())
+}
+
+func TestPaymentRepo_ClosePayment_FallbackOrderID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+
+	d := newTestData(t, mockQ, mr)
+	r := NewPaymentRepo(d, log.DefaultLogger)
+
+	mockPayment := db.Payment{
+		ID:         300,
+		OrderID:    30,
+		PayChannel: "alipay",
+		OutTradeNo: pgtype.Text{String: "snow-close-ali", Valid: true},
+	}
+
+	mockQ.EXPECT().
+		GetPayment(gomock.Any(), int64(300)).
+		Times(1).
+		Return(mockPayment, nil)
+
+	mockQ.EXPECT().
+		UpdatePaymentFailed(gomock.Any(), int64(300)).
+		Times(1).
+		Return(nil)
+
+	mockQ.EXPECT().
+		CancelOrder(gomock.Any(), int64(30)). // from payment.OrderID fallback
+		Times(1).
+		Return(nil)
+
+	err := r.ClosePayment(context.Background(), 300, 0)
+	require.NoError(t, err)
+}

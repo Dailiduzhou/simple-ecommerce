@@ -556,6 +556,38 @@ func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo str
 	return val.(*biz.PaymentDO), nil
 }
 
+func (r *PaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64) error {
+	payment, err := querierFromContext(ctx, r.data.q).GetPayment(ctx, paymentID)
+	if err != nil {
+		return err
+	}
+
+	if err := querierFromContext(ctx, r.data.q).UpdatePaymentFailed(ctx, paymentID); err != nil {
+		return err
+	}
+
+	oid := orderID
+	if oid <= 0 {
+		oid = payment.OrderID
+	}
+	if oid > 0 {
+		if err := querierFromContext(ctx, r.data.q).CancelOrder(ctx, oid); err != nil {
+			return err
+		}
+	}
+
+	outTradeNo := payment.OutTradeNo.String
+	payChannel := payment.PayChannel
+	r.deleteCache(ctx, fmt.Sprintf("payment:%d", paymentID))
+	r.deleteCache(ctx, fmt.Sprintf("payment:order:%d", payment.OrderID))
+	r.deleteCache(ctx, fmt.Sprintf("payment:order:%d:active:%s", payment.OrderID, payChannel))
+	if outTradeNo != "" {
+		r.deleteCache(ctx, fmt.Sprintf("payment:out_trade_no:%s", outTradeNo))
+	}
+
+	return nil
+}
+
 func toBizPaymentDO(p db.Payment) *biz.PaymentDO {
 	d := &biz.PaymentDO{
 		ID:             p.ID,
