@@ -21,5 +21,26 @@ auth:
   refresh_token_timeout: 86400s
   phone_secret: 8a8390d0fecd4df1365888607c3897a3dd8096fe13afe9357b0df8c8969703d5
 
+snowflake:
+  node_id: "${SNOWFLAKE_NODE_ID}"
+
 trace:
   endpoint: jaeger:4317
+
+payment:
+  alipay:
+    app_id: 9021000164669272
+    private_key: "${ALIPAY_PRIVATE_KEY}"
+    is_production: false
+    app_cert_path: "${ALIPAY_APP_CERT_PATH}"
+    alipay_public_cert_path: "${ALIPAY_PUBLIC_KEY_PATH}"
+    alipay_root_cert_path: "${ALIPAY_ROOT_KEY_PATH}"
+  wechat:
+    app_id: "${WECHAT_APP_ID}"
+    mch_id: "${WECHAT_MCH_ID}"
+    api_key: "${WECHAT_API_KEY}"
+    is_production: false
+  check_pay_job:
+    initial_delay: 5s
+    max_polls: 30
+    poll_interval: 10s

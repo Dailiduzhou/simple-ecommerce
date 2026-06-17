@@ -6,6 +6,11 @@ RETURNING *;
 -- name: GetOrder :one
 SELECT * FROM orders WHERE id = $1;
 
+-- name: GetOrderByOrderNo :one
+-- 通过商户订单号(orders.out_trade_no)查询订单。
+-- 统一支付 API 的入口:order_no -> order。
+SELECT * FROM orders WHERE out_trade_no = $1;
+
 -- name: GetOrderByUser :one
 SELECT * FROM orders WHERE id = $1 AND user_id = $2;
 

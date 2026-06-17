@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-http v2.9.2
 // - protoc             v7.35.0
-// source: api/payment/v1/payment.proto
+// source: payment/v1/payment.proto
 
 package v1
 
@@ -19,31 +19,39 @@ var _ = binding.EncodeURL
 
 const _ = http.SupportPackageIsVersion1
 
+const OperationPaymentClosePayment = "/api.payment.v1.Payment/ClosePayment"
 const OperationPaymentCreatePayment = "/api.payment.v1.Payment/CreatePayment"
 const OperationPaymentCreateWechatPayCheckJob = "/api.payment.v1.Payment/CreateWechatPayCheckJob"
 const OperationPaymentGetMQJob = "/api.payment.v1.Payment/GetMQJob"
 const OperationPaymentGetPayment = "/api.payment.v1.Payment/GetPayment"
 const OperationPaymentGetPaymentByOrder = "/api.payment.v1.Payment/GetPaymentByOrder"
-const OperationPaymentNotifyPayment = "/api.payment.v1.Payment/NotifyPayment"
+const OperationPaymentQueryPayment = "/api.payment.v1.Payment/QueryPayment"
 const OperationPaymentRefundPayment = "/api.payment.v1.Payment/RefundPayment"
 
 type PaymentHTTPServer interface {
-	CreatePayment(context.Context, *CreatePaymentRequest) (*PaymentInfo, error)
+	// ClosePayment 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+	ClosePayment(context.Context, *ClosePaymentReq) (*ClosePaymentReply, error)
+	// CreatePayment 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
+	// 同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
+	// + AliPayService.Prepay 三个 RPC。
+	CreatePayment(context.Context, *CreatePaymentReq) (*CreatePaymentReply, error)
 	CreateWechatPayCheckJob(context.Context, *CreateWechatPayCheckJobRequest) (*MQJobInfo, error)
 	GetMQJob(context.Context, *GetMQJobRequest) (*MQJobInfo, error)
+	// GetPayment —— 以下 RPC 不在本次渠道统一重构范围,保留不动 ——
 	GetPayment(context.Context, *GetPaymentRequest) (*PaymentInfo, error)
 	GetPaymentByOrder(context.Context, *GetPaymentByOrderRequest) (*PaymentInfo, error)
-	// NotifyPayment 第三方支付回调
-	NotifyPayment(context.Context, *NotifyPaymentRequest) (*NotifyPaymentReply, error)
+	// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+	QueryPayment(context.Context, *QueryPaymentReq) (*QueryPaymentReply, error)
 	RefundPayment(context.Context, *RefundPaymentRequest) (*RefundPaymentReply, error)
 }
 
 func RegisterPaymentHTTPServer(s *http.Server, srv PaymentHTTPServer) {
 	r := s.Route("/")
 	r.POST("/v1/payments", _Payment_CreatePayment0_HTTP_Handler(srv))
+	r.GET("/v1/payments/lookup", _Payment_QueryPayment0_HTTP_Handler(srv))
+	r.POST("/v1/payments/lookup/close", _Payment_ClosePayment0_HTTP_Handler(srv))
 	r.GET("/v1/payments/{id}", _Payment_GetPayment0_HTTP_Handler(srv))
 	r.GET("/v1/orders/{order_id}/payment", _Payment_GetPaymentByOrder0_HTTP_Handler(srv))
-	r.POST("/v1/payments/notify", _Payment_NotifyPayment0_HTTP_Handler(srv))
 	r.POST("/v1/payments/{id}/refund", _Payment_RefundPayment0_HTTP_Handler(srv))
 	r.POST("/v1/pay/wechat/checks", _Payment_CreateWechatPayCheckJob0_HTTP_Handler(srv))
 	r.GET("/v1/payments/mq/jobs/{job_id}", _Payment_GetMQJob0_HTTP_Handler(srv))
@@ -51,7 +59,7 @@ func RegisterPaymentHTTPServer(s *http.Server, srv PaymentHTTPServer) {
 
 func _Payment_CreatePayment0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
-		var in CreatePaymentRequest
+		var in CreatePaymentReq
 		if err := ctx.Bind(&in); err != nil {
 			return err
 		}
@@ -60,13 +68,54 @@ func _Payment_CreatePayment0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.C
 		}
 		http.SetOperation(ctx, OperationPaymentCreatePayment)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.CreatePayment(ctx, req.(*CreatePaymentRequest))
+			return srv.CreatePayment(ctx, req.(*CreatePaymentReq))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {
 			return err
 		}
-		reply := out.(*PaymentInfo)
+		reply := out.(*CreatePaymentReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _Payment_QueryPayment0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in QueryPaymentReq
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationPaymentQueryPayment)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.QueryPayment(ctx, req.(*QueryPaymentReq))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*QueryPaymentReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _Payment_ClosePayment0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ClosePaymentReq
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationPaymentClosePayment)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ClosePayment(ctx, req.(*ClosePaymentReq))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ClosePaymentReply)
 		return ctx.Result(200, reply)
 	}
 }
@@ -111,28 +160,6 @@ func _Payment_GetPaymentByOrder0_HTTP_Handler(srv PaymentHTTPServer) func(ctx ht
 			return err
 		}
 		reply := out.(*PaymentInfo)
-		return ctx.Result(200, reply)
-	}
-}
-
-func _Payment_NotifyPayment0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
-	return func(ctx http.Context) error {
-		var in NotifyPaymentRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		http.SetOperation(ctx, OperationPaymentNotifyPayment)
-		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.NotifyPayment(ctx, req.(*NotifyPaymentRequest))
-		})
-		out, err := h(ctx, &in)
-		if err != nil {
-			return err
-		}
-		reply := out.(*NotifyPaymentReply)
 		return ctx.Result(200, reply)
 	}
 }
@@ -207,13 +234,19 @@ func _Payment_GetMQJob0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Contex
 }
 
 type PaymentHTTPClient interface {
-	CreatePayment(ctx context.Context, req *CreatePaymentRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
+	// ClosePayment 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+	ClosePayment(ctx context.Context, req *ClosePaymentReq, opts ...http.CallOption) (rsp *ClosePaymentReply, err error)
+	// CreatePayment 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
+	// 同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
+	// + AliPayService.Prepay 三个 RPC。
+	CreatePayment(ctx context.Context, req *CreatePaymentReq, opts ...http.CallOption) (rsp *CreatePaymentReply, err error)
 	CreateWechatPayCheckJob(ctx context.Context, req *CreateWechatPayCheckJobRequest, opts ...http.CallOption) (rsp *MQJobInfo, err error)
 	GetMQJob(ctx context.Context, req *GetMQJobRequest, opts ...http.CallOption) (rsp *MQJobInfo, err error)
+	// GetPayment —— 以下 RPC 不在本次渠道统一重构范围,保留不动 ——
 	GetPayment(ctx context.Context, req *GetPaymentRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
 	GetPaymentByOrder(ctx context.Context, req *GetPaymentByOrderRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
-	// NotifyPayment 第三方支付回调
-	NotifyPayment(ctx context.Context, req *NotifyPaymentRequest, opts ...http.CallOption) (rsp *NotifyPaymentReply, err error)
+	// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+	QueryPayment(ctx context.Context, req *QueryPaymentReq, opts ...http.CallOption) (rsp *QueryPaymentReply, err error)
 	RefundPayment(ctx context.Context, req *RefundPaymentRequest, opts ...http.CallOption) (rsp *RefundPaymentReply, err error)
 }
 
@@ -225,8 +258,25 @@ func NewPaymentHTTPClient(client *http.Client) PaymentHTTPClient {
 	return &PaymentHTTPClientImpl{client}
 }
 
-func (c *PaymentHTTPClientImpl) CreatePayment(ctx context.Context, in *CreatePaymentRequest, opts ...http.CallOption) (*PaymentInfo, error) {
-	var out PaymentInfo
+// ClosePayment 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+func (c *PaymentHTTPClientImpl) ClosePayment(ctx context.Context, in *ClosePaymentReq, opts ...http.CallOption) (*ClosePaymentReply, error) {
+	var out ClosePaymentReply
+	pattern := "/v1/payments/lookup/close"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationPaymentClosePayment))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreatePayment 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
+// 同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
+// + AliPayService.Prepay 三个 RPC。
+func (c *PaymentHTTPClientImpl) CreatePayment(ctx context.Context, in *CreatePaymentReq, opts ...http.CallOption) (*CreatePaymentReply, error) {
+	var out CreatePaymentReply
 	pattern := "/v1/payments"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationPaymentCreatePayment))
@@ -264,6 +314,7 @@ func (c *PaymentHTTPClientImpl) GetMQJob(ctx context.Context, in *GetMQJobReques
 	return &out, nil
 }
 
+// GetPayment —— 以下 RPC 不在本次渠道统一重构范围,保留不动 ——
 func (c *PaymentHTTPClientImpl) GetPayment(ctx context.Context, in *GetPaymentRequest, opts ...http.CallOption) (*PaymentInfo, error) {
 	var out PaymentInfo
 	pattern := "/v1/payments/{id}"
@@ -290,14 +341,14 @@ func (c *PaymentHTTPClientImpl) GetPaymentByOrder(ctx context.Context, in *GetPa
 	return &out, nil
 }
 
-// NotifyPayment 第三方支付回调
-func (c *PaymentHTTPClientImpl) NotifyPayment(ctx context.Context, in *NotifyPaymentRequest, opts ...http.CallOption) (*NotifyPaymentReply, error) {
-	var out NotifyPaymentReply
-	pattern := "/v1/payments/notify"
-	path := binding.EncodeURL(pattern, in, false)
-	opts = append(opts, http.Operation(OperationPaymentNotifyPayment))
+// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+func (c *PaymentHTTPClientImpl) QueryPayment(ctx context.Context, in *QueryPaymentReq, opts ...http.CallOption) (*QueryPaymentReply, error) {
+	var out QueryPaymentReply
+	pattern := "/v1/payments/lookup"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationPaymentQueryPayment))
 	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -311,154 +362,6 @@ func (c *PaymentHTTPClientImpl) RefundPayment(ctx context.Context, in *RefundPay
 	opts = append(opts, http.Operation(OperationPaymentRefundPayment))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-const OperationWechatPayServiceCloseOrder = "/api.payment.v1.WechatPayService/CloseOrder"
-const OperationWechatPayServicePrepayJSAPI = "/api.payment.v1.WechatPayService/PrepayJSAPI"
-const OperationWechatPayServiceQueryOrder = "/api.payment.v1.WechatPayService/QueryOrder"
-
-type WechatPayServiceHTTPServer interface {
-	// CloseOrder 关闭订单
-	CloseOrder(context.Context, *CloseOrderRequest) (*CloseOrderReply, error)
-	// PrepayJSAPI JSAPI 统一下单 (小程序/公众号支付)
-	PrepayJSAPI(context.Context, *PrepayJSAPIRequest) (*PrepayJSAPIReply, error)
-	// QueryOrder 查询订单状态
-	QueryOrder(context.Context, *QueryOrderRequest) (*QueryOrderReply, error)
-}
-
-func RegisterWechatPayServiceHTTPServer(s *http.Server, srv WechatPayServiceHTTPServer) {
-	r := s.Route("/")
-	r.POST("/v1/pay/wechat/prepay/jsapi", _WechatPayService_PrepayJSAPI0_HTTP_Handler(srv))
-	r.GET("/v1/pay/wechat/order/{out_trade_no}", _WechatPayService_QueryOrder0_HTTP_Handler(srv))
-	r.POST("/v1/pay/wechat/order/{out_trade_no}/close", _WechatPayService_CloseOrder0_HTTP_Handler(srv))
-}
-
-func _WechatPayService_PrepayJSAPI0_HTTP_Handler(srv WechatPayServiceHTTPServer) func(ctx http.Context) error {
-	return func(ctx http.Context) error {
-		var in PrepayJSAPIRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		http.SetOperation(ctx, OperationWechatPayServicePrepayJSAPI)
-		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.PrepayJSAPI(ctx, req.(*PrepayJSAPIRequest))
-		})
-		out, err := h(ctx, &in)
-		if err != nil {
-			return err
-		}
-		reply := out.(*PrepayJSAPIReply)
-		return ctx.Result(200, reply)
-	}
-}
-
-func _WechatPayService_QueryOrder0_HTTP_Handler(srv WechatPayServiceHTTPServer) func(ctx http.Context) error {
-	return func(ctx http.Context) error {
-		var in QueryOrderRequest
-		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindVars(&in); err != nil {
-			return err
-		}
-		http.SetOperation(ctx, OperationWechatPayServiceQueryOrder)
-		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.QueryOrder(ctx, req.(*QueryOrderRequest))
-		})
-		out, err := h(ctx, &in)
-		if err != nil {
-			return err
-		}
-		reply := out.(*QueryOrderReply)
-		return ctx.Result(200, reply)
-	}
-}
-
-func _WechatPayService_CloseOrder0_HTTP_Handler(srv WechatPayServiceHTTPServer) func(ctx http.Context) error {
-	return func(ctx http.Context) error {
-		var in CloseOrderRequest
-		if err := ctx.Bind(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindQuery(&in); err != nil {
-			return err
-		}
-		if err := ctx.BindVars(&in); err != nil {
-			return err
-		}
-		http.SetOperation(ctx, OperationWechatPayServiceCloseOrder)
-		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
-			return srv.CloseOrder(ctx, req.(*CloseOrderRequest))
-		})
-		out, err := h(ctx, &in)
-		if err != nil {
-			return err
-		}
-		reply := out.(*CloseOrderReply)
-		return ctx.Result(200, reply)
-	}
-}
-
-type WechatPayServiceHTTPClient interface {
-	// CloseOrder 关闭订单
-	CloseOrder(ctx context.Context, req *CloseOrderRequest, opts ...http.CallOption) (rsp *CloseOrderReply, err error)
-	// PrepayJSAPI JSAPI 统一下单 (小程序/公众号支付)
-	PrepayJSAPI(ctx context.Context, req *PrepayJSAPIRequest, opts ...http.CallOption) (rsp *PrepayJSAPIReply, err error)
-	// QueryOrder 查询订单状态
-	QueryOrder(ctx context.Context, req *QueryOrderRequest, opts ...http.CallOption) (rsp *QueryOrderReply, err error)
-}
-
-type WechatPayServiceHTTPClientImpl struct {
-	cc *http.Client
-}
-
-func NewWechatPayServiceHTTPClient(client *http.Client) WechatPayServiceHTTPClient {
-	return &WechatPayServiceHTTPClientImpl{client}
-}
-
-// CloseOrder 关闭订单
-func (c *WechatPayServiceHTTPClientImpl) CloseOrder(ctx context.Context, in *CloseOrderRequest, opts ...http.CallOption) (*CloseOrderReply, error) {
-	var out CloseOrderReply
-	pattern := "/v1/pay/wechat/order/{out_trade_no}/close"
-	path := binding.EncodeURL(pattern, in, false)
-	opts = append(opts, http.Operation(OperationWechatPayServiceCloseOrder))
-	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// PrepayJSAPI JSAPI 统一下单 (小程序/公众号支付)
-func (c *WechatPayServiceHTTPClientImpl) PrepayJSAPI(ctx context.Context, in *PrepayJSAPIRequest, opts ...http.CallOption) (*PrepayJSAPIReply, error) {
-	var out PrepayJSAPIReply
-	pattern := "/v1/pay/wechat/prepay/jsapi"
-	path := binding.EncodeURL(pattern, in, false)
-	opts = append(opts, http.Operation(OperationWechatPayServicePrepayJSAPI))
-	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// QueryOrder 查询订单状态
-func (c *WechatPayServiceHTTPClientImpl) QueryOrder(ctx context.Context, in *QueryOrderRequest, opts ...http.CallOption) (*QueryOrderReply, error) {
-	var out QueryOrderReply
-	pattern := "/v1/pay/wechat/order/{out_trade_no}"
-	path := binding.EncodeURL(pattern, in, true)
-	opts = append(opts, http.Operation(OperationWechatPayServiceQueryOrder))
-	opts = append(opts, http.PathTemplate(pattern))
-	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}

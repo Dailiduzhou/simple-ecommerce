@@ -24,13 +24,18 @@ import (
 // Injectors from wire.go:
 
 // wireApp init kratos application.
-func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logger log.Logger) (*kratos.App, func(), error) {
+func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snowflake *conf.Snowflake, payment *conf.Payment, logger log.Logger) (*kratos.App, func(), error) {
 	pool, cleanup, err := data.NewPgxPool(confData)
 	if err != nil {
 		return nil, nil, err
 	}
-	wechatPaymentAdapter := data.NewWechatPaymentAdapter(logger)
-	alipayPaymentAdapter := data.NewAlipayPaymentAdapter(logger)
+	wechatPaymentAdapter := data.NewWechatPaymentAdapter(payment, logger)
+	clientV3, err := data.NewAlipayClient(payment)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	alipayPaymentAdapter := data.NewAlipayPaymentAdapter(clientV3, logger)
 	v := data.NewPaymentAdapters(wechatPaymentAdapter, alipayPaymentAdapter)
 	paymentGateway := biz.NewPaymentGateway(v)
 	txManager := data.NewTransaction(pool, logger)
@@ -66,14 +71,20 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, logg
 	shippingAddressRepo := data.NewShippingAddressRepo(dataData, logger)
 	shippingAddressUsecase := biz.NewShippingAddressUsecase(shippingAddressRepo, auth, logger)
 	userService := service.NewUserService(authUsecase, userUsecase, shippingAddressUsecase, logger)
-	orderRepo := data.NewOrderRepo(pool)
+	orderRepo := data.NewOrderRepo(dataData, logger)
 	orderUsecase := biz.NewOrderUsecase(orderRepo, logger)
 	orderService := service.NewOrderService(orderUsecase)
-	paymentRepo := data.NewPaymentRepo(pool)
-	paymentUsecase := biz.NewPaymentUsecase(paymentGateway, paymentRepo, orderRepo, logger)
+	paymentRepo := data.NewPaymentRepo(dataData, logger)
 	paymentMQRepo := data.NewPaymentMQRepo(client, logger)
 	paymentJobUsecase := biz.NewPaymentJobUsecase(paymentMQRepo, logger)
-	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase)
+	snowflakeGenerator, err := data.NewSnowflakeIDGenerator(snowflake)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	paymentUsecase := biz.NewPaymentUsecase(paymentGateway, paymentRepo, orderRepo, paymentJobUsecase, txManager, snowflakeGenerator, logger)
+	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase, payment, logger)
 	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	riverServer := job.NewRiverServer(client)

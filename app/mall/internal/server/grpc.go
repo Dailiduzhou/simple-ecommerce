@@ -58,8 +58,9 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 	mallv1.RegisterMallServer(srv, mall)
 	userv1.RegisterUserServer(srv, user)
 	orderv1.RegisterOrderServer(srv, order)
+	// 统一支付入口:原 WechatPayService / AliPayService 已经被收编到
+	// Payment service,这里只注册一个 PaymentServer。
 	paymentv1.RegisterPaymentServer(srv, payment)
-	paymentv1.RegisterWechatPayServiceServer(srv, payment)
 	return srv
 }
 

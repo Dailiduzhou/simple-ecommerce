@@ -41,6 +41,7 @@ type Order struct {
 	IsCompleted bool
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+	OutTradeNo  pgtype.Text
 }
 
 type OrderItem struct {
@@ -50,6 +51,19 @@ type OrderItem struct {
 	Quantity  int32
 	UnitPrice decimal.Decimal
 	CreatedAt pgtype.Timestamptz
+}
+
+type OrderRefund struct {
+	ID           int64
+	OrderID      int64
+	UserID       int64
+	OutRefundNo  string
+	TotalAmount  int32
+	RefundAmount int32
+	Reason       string
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 }
 
 type Payment struct {
@@ -64,6 +78,7 @@ type Payment struct {
 	PaidAt         pgtype.Timestamptz
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+	OutTradeNo     pgtype.Text
 }
 
 type Product struct {

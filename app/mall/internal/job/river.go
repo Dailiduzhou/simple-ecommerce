@@ -27,7 +27,7 @@ func NewCheckPayWorker(paymentGateway biz.PaymentGateway, syncRepo biz.PaymentSy
 }
 
 func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayArgs]) error {
-	args := normalizeCheckPayArgs(job.Args)
+	args := biz.NormalizeCheckPayArgs(job.Args)
 	if err := validateCheckPayArgs(args); err != nil {
 		return river.JobCancel(err)
 	}
@@ -58,21 +58,8 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 }
 
 func (w *CheckPayWorker) NextRetry(job *river.Job[biz.CheckPayArgs]) time.Time {
-	args := normalizeCheckPayArgs(job.Args)
+	args := biz.NormalizeCheckPayArgs(job.Args)
 	return time.Now().Add(time.Duration(args.PollIntervalSeconds) * time.Second)
-}
-
-func normalizeCheckPayArgs(args biz.CheckPayArgs) biz.CheckPayArgs {
-	if args.MaxPolls <= 0 {
-		args.MaxPolls = 5
-	}
-	if args.PollIntervalSeconds <= 0 {
-		args.PollIntervalSeconds = 30
-	}
-	if args.Channel == "" {
-		args.Channel = string(biz.Wechat)
-	}
-	return args
 }
 
 func validateCheckPayArgs(args biz.CheckPayArgs) error {

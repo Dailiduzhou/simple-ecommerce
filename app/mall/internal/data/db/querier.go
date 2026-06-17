@@ -19,6 +19,7 @@ type Querier interface {
 	CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error)
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error)
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
+	CreatePaymentWithOutTradeNo(ctx context.Context, arg CreatePaymentWithOutTradeNoParams) (Payment, error)
 	CreateProduct(ctx context.Context, arg CreateProductParams) (Product, error)
 	CreateShippingAddress(ctx context.Context, arg CreateShippingAddressParams) (ShippingAddress, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -26,13 +27,18 @@ type Querier interface {
 	DeleteCategory(ctx context.Context, id int64) error
 	DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) error
 	DeleteUser(ctx context.Context, id int64) error
+	GetActivePaymentByOrderChannel(ctx context.Context, arg GetActivePaymentByOrderChannelParams) (Payment, error)
 	GetCategory(ctx context.Context, id int64) (Category, error)
 	GetDefaultShippingAddress(ctx context.Context, userID int64) (ShippingAddress, error)
 	GetEvent(ctx context.Context, id int64) (Event, error)
 	GetOrder(ctx context.Context, id int64) (Order, error)
+	// 通过商户订单号(orders.out_trade_no)查询订单。
+	// 统一支付 API 的入口:order_no -> order。
+	GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text) (Order, error)
 	GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) (Order, error)
 	GetPayment(ctx context.Context, id int64) (Payment, error)
 	GetPaymentByOrder(ctx context.Context, orderID int64) (Payment, error)
+	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo pgtype.Text) (Payment, error)
 	GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID pgtype.Text) (Payment, error)
 	GetProduct(ctx context.Context, id int64) (Product, error)
 	GetShippingAddress(ctx context.Context, arg GetShippingAddressParams) (ShippingAddress, error)
