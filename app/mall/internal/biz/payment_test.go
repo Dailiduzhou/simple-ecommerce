@@ -161,19 +161,15 @@ func TestCreatePayment_GeneratesOutTradeNo(t *testing.T) {
 	assert.Equal(t, "snow-1", got.OutTradeNo)
 }
 
-func TestCreatePayment_ReusesExistingActive(t *testing.T) {
+func TestCreatePayment_ReusesExistingActiveAfterConflict(t *testing.T) {
 	orderRepo := &fakeOrderRepo{
 		getOrder: func(ctx context.Context, id int64) (Order, error) {
 			return Order{ID: 10, TotalAmount: 9900}, nil
 		},
 	}
 	repo := &fakePaymentRepo{
-		getActive: func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
-			return &PaymentDO{ID: 99, OrderID: 10, PayChannel: channel, OutTradeNo: "existing", Status: "pending"}, nil
-		},
 		create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
-			t.Fatalf("Create should not be called when an active payment exists")
-			return nil, nil
+			return &PaymentDO{ID: 99, OrderID: 10, PayChannel: args.PayChannel, OutTradeNo: "existing", Status: "pending"}, nil
 		},
 	}
 	gen := &fakeIDGenerator{prefix: "snow-"}
