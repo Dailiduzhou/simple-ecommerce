@@ -30,16 +30,40 @@ func (p *fakeWorkerPaymentGateway) CloseOrder(ctx context.Context, req biz.Payme
 	return nil, errors.New("not implemented")
 }
 
-type fakePaymentSyncRepo struct {
+type fakeWorkerPaymentRepo struct {
 	apply   func(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error
 	expired func(ctx context.Context, args biz.CheckPayArgs) error
 }
 
-func (r *fakePaymentSyncRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
+func (r *fakeWorkerPaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *fakeWorkerPaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *fakeWorkerPaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *fakeWorkerPaymentRepo) GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*biz.PaymentDO, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *fakeWorkerPaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*biz.PaymentDO, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *fakeWorkerPaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64) error {
+	return errors.New("not implemented")
+}
+
+func (r *fakeWorkerPaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 	return r.apply(ctx, args, result)
 }
 
-func (r *fakePaymentSyncRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
+func (r *fakeWorkerPaymentRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
 	return r.expired(ctx, args)
 }
 
@@ -57,7 +81,7 @@ func TestCheckPayWorker_ApplyTerminalState(t *testing.T) {
 				}, nil
 			},
 		},
-		&fakePaymentSyncRepo{
+		&fakeWorkerPaymentRepo{
 			apply: func(ctx context.Context, gotArgs biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 				assert.Equal(t, args, gotArgs)
 				assert.Equal(t, biz.TradeStateSuccess, result.TradeState)
@@ -86,7 +110,7 @@ func TestCheckPayWorker_RetriesPendingState(t *testing.T) {
 				return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateNotPay}, nil
 			},
 		},
-		&fakePaymentSyncRepo{
+		&fakeWorkerPaymentRepo{
 			apply: func(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 				t.Fatalf("ApplyPayQuery should not be called")
 				return nil
@@ -115,7 +139,7 @@ func TestCheckPayWorker_MarksExpiredOnLastPendingAttempt(t *testing.T) {
 				return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateUserPaying}, nil
 			},
 		},
-		&fakePaymentSyncRepo{
+		&fakeWorkerPaymentRepo{
 			apply: func(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 				t.Fatalf("ApplyPayQuery should not be called")
 				return nil
@@ -143,7 +167,7 @@ func TestCheckPayWorker_CancelsInvalidArgs(t *testing.T) {
 				return nil, nil
 			},
 		},
-		&fakePaymentSyncRepo{},
+		&fakeWorkerPaymentRepo{},
 		log.DefaultLogger,
 	)
 

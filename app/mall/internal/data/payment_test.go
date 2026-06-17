@@ -46,7 +46,7 @@ func TestPaymentRepo_CreatePayment_Success(t *testing.T) {
 		}, nil)
 
 	d := newTestData(t, mockQ, mr)
-	r := NewPaymentRepo(d, log.DefaultLogger)
+	r := NewPaymentRepo(d, nil, log.DefaultLogger)
 	got, err := r.CreatePayment(context.Background(), biz.CreatePaymentArgs{
 		OrderID:    10,
 		UserID:     1,
@@ -77,7 +77,7 @@ func TestPaymentRepo_CreatePayment_DBUniqueConflict_MapsToErrPaymentConflict(t *
 		Return(db.Payment{}, pgErr)
 
 	d := newTestData(t, mockQ, mr)
-	r := NewPaymentRepo(d, log.DefaultLogger)
+	r := NewPaymentRepo(d, nil, log.DefaultLogger)
 	_, err := r.CreatePayment(context.Background(), biz.CreatePaymentArgs{
 		OrderID:    10,
 		OutTradeNo: "snow-dup",
@@ -103,7 +103,7 @@ func TestPaymentRepo_CreatePayment_OtherDBError_PropagatedAsIs(t *testing.T) {
 		Return(db.Payment{}, pgErr)
 
 	d := newTestData(t, mockQ, mr)
-	r := NewPaymentRepo(d, log.DefaultLogger)
+	r := NewPaymentRepo(d, nil, log.DefaultLogger)
 	_, err := r.CreatePayment(context.Background(), biz.CreatePaymentArgs{
 		OrderID:    10,
 		OutTradeNo: "snow-1",
@@ -134,7 +134,7 @@ func TestPaymentRepo_GetActivePaymentByOrderChannel(t *testing.T) {
 		}, nil)
 
 	d := newTestData(t, mockQ, mr)
-	r := NewPaymentRepo(d, log.DefaultLogger)
+	r := NewPaymentRepo(d, nil, log.DefaultLogger)
 	got, err := r.GetActivePaymentByOrderChannel(context.Background(), 10, "wechat")
 	require.NoError(t, err)
 	assert.Equal(t, int64(100), got.ID)
@@ -148,7 +148,7 @@ func TestPaymentRepo_ClosePayment(t *testing.T) {
 	mr := miniredis.RunT(t)
 
 	d := newTestData(t, mockQ, mr)
-	r := NewPaymentRepo(d, log.DefaultLogger)
+	r := NewPaymentRepo(d, nil, log.DefaultLogger)
 
 	// Pre-populate cache entries
 	r.setCache(context.Background(), "payment:200", &biz.PaymentDO{ID: 200, OrderID: 20, PayChannel: "wechat", OutTradeNo: "snow-close"})
@@ -197,7 +197,7 @@ func TestPaymentRepo_ClosePayment_FallbackOrderID(t *testing.T) {
 	mr := miniredis.RunT(t)
 
 	d := newTestData(t, mockQ, mr)
-	r := NewPaymentRepo(d, log.DefaultLogger)
+	r := NewPaymentRepo(d, nil, log.DefaultLogger)
 
 	mockPayment := db.Payment{
 		ID:         300,
