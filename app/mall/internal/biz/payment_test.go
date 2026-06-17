@@ -48,6 +48,14 @@ func (r *fakePaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID i
 	return nil
 }
 
+func (r *fakePaymentRepo) ApplyPayQuery(ctx context.Context, args CheckPayArgs, result *PaymentQueryResult) error {
+	return nil
+}
+
+func (r *fakePaymentRepo) MarkPayExpired(ctx context.Context, args CheckPayArgs) error {
+	return nil
+}
+
 type fakeOrderRepo struct {
 	getOrder func(ctx context.Context, id int64) (Order, error)
 }
