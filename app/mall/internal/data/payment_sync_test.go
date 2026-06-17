@@ -14,12 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// txRecorder is a minimal biz.TxManager used to assert that InTx is called
-// and to inject a mock Querier into the context the closure runs in.
 type txRecorder struct {
 	called bool
 	q      db.Querier
-	fnErr  error
 }
 
 func (t *txRecorder) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
@@ -27,19 +24,19 @@ func (t *txRecorder) InTx(ctx context.Context, fn func(ctx context.Context) erro
 	return fn(WithQuerier(ctx, t.q, nil))
 }
 
-func newTestPaymentSyncRepo(ctrl *gomock.Controller, q db.Querier) (*PaymentSyncRepo, *txRecorder) {
+func newTestPaymentRepo(ctrl *gomock.Controller, q db.Querier) (*PaymentRepo, *txRecorder) {
 	tx := &txRecorder{q: q}
-	return NewPaymentSyncRepo(tx), tx
+	return &PaymentRepo{tx: tx}, tx
 }
 
-func TestPaymentSyncRepo_ApplyPayQuery_Success_WithOrderID(t *testing.T) {
+func TestPaymentRepo_ApplyPayQuery_Success_WithOrderID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, tx := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, tx := newTestPaymentRepo(ctrl, mockQ)
 
 	mockQ.EXPECT().
 		UpdatePaymentSuccess(gomock.Any(), db.UpdatePaymentSuccessParams{
-			ID: 100,
+			ID:             100,
 			ThirdPartyTxID: pgtype.Text{String: "tx-abc", Valid: true},
 		}).
 		Times(1).
@@ -60,14 +57,14 @@ func TestPaymentSyncRepo_ApplyPayQuery_Success_WithOrderID(t *testing.T) {
 	assert.True(t, tx.called)
 }
 
-func TestPaymentSyncRepo_ApplyPayQuery_Success_OrderIDFromPayment(t *testing.T) {
+func TestPaymentRepo_ApplyPayQuery_Success_OrderIDFromPayment(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 	mockQ.EXPECT().
 		UpdatePaymentSuccess(gomock.Any(), db.UpdatePaymentSuccessParams{
-			ID: 100,
+			ID:             100,
 			ThirdPartyTxID: pgtype.Text{String: "", Valid: false},
 		}).
 		Times(1).
@@ -86,10 +83,10 @@ func TestPaymentSyncRepo_ApplyPayQuery_Success_OrderIDFromPayment(t *testing.T) 
 	require.NoError(t, err)
 }
 
-func TestPaymentSyncRepo_ApplyPayQuery_Success_NoOrderID_NoCancel(t *testing.T) {
+func TestPaymentRepo_ApplyPayQuery_Success_NoOrderID_NoCancel(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 	mockQ.EXPECT().
 		UpdatePaymentSuccess(gomock.Any(), gomock.Any()).
@@ -104,10 +101,10 @@ func TestPaymentSyncRepo_ApplyPayQuery_Success_NoOrderID_NoCancel(t *testing.T) 
 	require.NoError(t, err)
 }
 
-func TestPaymentSyncRepo_ApplyPayQuery_Refund(t *testing.T) {
+func TestPaymentRepo_ApplyPayQuery_Refund(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 	mockQ.EXPECT().
 		UpdatePaymentRefunded(gomock.Any(), int64(100)).
@@ -122,14 +119,14 @@ func TestPaymentSyncRepo_ApplyPayQuery_Refund(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPaymentSyncRepo_ApplyPayQuery_FailedWithOrderID(t *testing.T) {
+func TestPaymentRepo_ApplyPayQuery_FailedWithOrderID(t *testing.T) {
 	states := []biz.TradeState{biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError}
 	for _, st := range states {
 		st := st
 		t.Run(st.String(), func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			mockQ := mockdb.NewMockQuerier(ctrl)
-			repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+			repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 			mockQ.EXPECT().
 				UpdatePaymentFailed(gomock.Any(), int64(100)).
@@ -149,10 +146,10 @@ func TestPaymentSyncRepo_ApplyPayQuery_FailedWithOrderID(t *testing.T) {
 	}
 }
 
-func TestPaymentSyncRepo_ApplyPayQuery_FailedOrderIDFromDB(t *testing.T) {
+func TestPaymentRepo_ApplyPayQuery_FailedOrderIDFromDB(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 	mockQ.EXPECT().
 		UpdatePaymentFailed(gomock.Any(), int64(100)).
@@ -173,10 +170,10 @@ func TestPaymentSyncRepo_ApplyPayQuery_FailedOrderIDFromDB(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPaymentSyncRepo_ApplyPayQuery_NonTerminalState(t *testing.T) {
+func TestPaymentRepo_ApplyPayQuery_NonTerminalState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{
 		PaymentID: 100,
@@ -184,10 +181,10 @@ func TestPaymentSyncRepo_ApplyPayQuery_NonTerminalState(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestPaymentSyncRepo_ApplyPayQuery_UpdateError(t *testing.T) {
+func TestPaymentRepo_ApplyPayQuery_UpdateError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 	dbErr := errors.New("db boom")
 	mockQ.EXPECT().
@@ -201,10 +198,10 @@ func TestPaymentSyncRepo_ApplyPayQuery_UpdateError(t *testing.T) {
 	require.ErrorIs(t, err, dbErr)
 }
 
-func TestPaymentSyncRepo_MarkPayExpired(t *testing.T) {
+func TestPaymentRepo_MarkPayExpired(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 	mockQ.EXPECT().
 		UpdatePaymentFailed(gomock.Any(), int64(100)).
@@ -223,10 +220,10 @@ func TestPaymentSyncRepo_MarkPayExpired(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPaymentSyncRepo_MarkPayExpired_WithOrderIDSkipsGetPayment(t *testing.T) {
+func TestPaymentRepo_MarkPayExpired_WithOrderIDSkipsGetPayment(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
-	repo, _ := newTestPaymentSyncRepo(ctrl, mockQ)
+	repo, _ := newTestPaymentRepo(ctrl, mockQ)
 
 	mockQ.EXPECT().
 		UpdatePaymentFailed(gomock.Any(), int64(100)).
