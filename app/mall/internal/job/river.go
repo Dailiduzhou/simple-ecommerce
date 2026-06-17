@@ -14,14 +14,14 @@ type CheckPayWorker struct {
 	river.WorkerDefaults[biz.CheckPayArgs]
 
 	paymentGateway biz.PaymentGateway
-	syncRepo       biz.PaymentSyncRepo
+	paymentRepo    biz.PaymentRepo
 	log            *log.Helper
 }
 
-func NewCheckPayWorker(paymentGateway biz.PaymentGateway, syncRepo biz.PaymentSyncRepo, logger log.Logger) *CheckPayWorker {
+func NewCheckPayWorker(paymentGateway biz.PaymentGateway, paymentRepo biz.PaymentRepo, logger log.Logger) *CheckPayWorker {
 	return &CheckPayWorker{
 		paymentGateway: paymentGateway,
-		syncRepo:       syncRepo,
+		paymentRepo:    paymentRepo,
 		log:            log.NewHelper(logger),
 	}
 }
@@ -31,7 +31,7 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	if err := validateCheckPayArgs(args); err != nil {
 		return river.JobCancel(err)
 	}
-	if w.paymentGateway == nil || w.syncRepo == nil {
+	if w.paymentGateway == nil || w.paymentRepo == nil {
 		return river.JobCancel(fmt.Errorf("pay worker dependencies are not configured"))
 	}
 
@@ -45,11 +45,11 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 
 	switch {
 	case result.TradeState.IsTerminal():
-		return w.syncRepo.ApplyPayQuery(ctx, args, result)
+		return w.paymentRepo.ApplyPayQuery(ctx, args, result)
 	case result.TradeState.IsPending():
 		if job.Attempt >= args.MaxPolls {
 			w.log.WithContext(ctx).Infof("pay check expired payment_id=%d out_trade_no=%s channel=%s attempts=%d", args.PaymentID, args.OutTradeNo, args.Channel, job.Attempt)
-			return w.syncRepo.MarkPayExpired(ctx, args)
+			return w.paymentRepo.MarkPayExpired(ctx, args)
 		}
 		return fmt.Errorf("pay order %s is still pending: %s", args.OutTradeNo, result.TradeState.String())
 	default:
