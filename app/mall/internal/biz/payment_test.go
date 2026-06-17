@@ -44,6 +44,10 @@ func (r *fakePaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo
 	return nil, nil
 }
 
+func (r *fakePaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64) error {
+	return nil
+}
+
 type fakeOrderRepo struct {
 	getOrder func(ctx context.Context, id int64) (Order, error)
 }
