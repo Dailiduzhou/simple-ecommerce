@@ -66,9 +66,7 @@ services:
       - ./deploy/grafana/dashboard-definitions:/var/lib/grafana/dashboards:ro
 
   mall:
-    build:
-      context: .
-      dockerfile: app/mall/Dockerfile
+    image: dailiduzhou/mall:1.0
     depends_on:
       postgres:
         condition: service_healthy
