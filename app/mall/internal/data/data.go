@@ -159,6 +159,9 @@ func RunMigrations(c *conf.Data) error {
 
 func NewAlipayClient(c *conf.Payment) (*alipayv3.ClientV3, error) {
 	aliConf := c.GetAlipay()
+	if aliConf == nil {
+		return nil, fmt.Errorf("alipay configuration is missing")
+	}
 
 	client, err := alipayv3.NewClientV3(aliConf.AppId, aliConf.PrivateKey, aliConf.IsProduction)
 	if err != nil {
