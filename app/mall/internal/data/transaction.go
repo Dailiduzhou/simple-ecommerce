@@ -16,6 +16,13 @@ type transaction struct {
 	log  *log.Helper
 }
 
+type (
+	txStateKey struct{}
+	txState    struct {
+		afterCommit []func()
+	}
+)
+
 func NewTransaction(pool *pgxpool.Pool, logger log.Logger) biz.TxManager {
 	return &transaction{pool: pool, log: log.NewHelper(logger)}
 }
@@ -27,6 +34,7 @@ func (t *transaction) InTx(ctx context.Context, fn func(ctx context.Context) err
 	if err != nil {
 		return err
 	}
+	state := &txState{}
 
 	defer func() {
 		if p := recover(); p != nil {
@@ -41,11 +49,16 @@ func (t *transaction) InTx(ctx context.Context, fn func(ctx context.Context) err
 		}
 		if cerr := tx.Commit(ctx); cerr != nil {
 			err = cerr
+			return
+		}
+		for _, cb := range state.afterCommit {
+			cb()
 		}
 	}()
 
 	ctx = context.WithValue(ctx, ctxTxKey{}, db.New(tx))
 	ctx = context.WithValue(ctx, ctxRawPgTxKey{}, tx)
+	ctx = context.WithValue(ctx, txStateKey{}, state)
 	return fn(ctx)
 }
 
@@ -58,4 +71,12 @@ func WithQuerier(ctx context.Context, q db.Querier, tx pgx.Tx) context.Context {
 		ctx = context.WithValue(ctx, ctxRawPgTxKey{}, tx)
 	}
 	return ctx
+}
+
+func afterCommit(ctx context.Context, fn func()) {
+	if state, ok := ctx.Value(txStateKey{}).(*txState); ok && state != nil {
+		state.afterCommit = append(state.afterCommit, fn)
+		return
+	}
+	fn()
 }
