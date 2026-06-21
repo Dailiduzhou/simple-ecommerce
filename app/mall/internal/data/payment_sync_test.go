@@ -21,7 +21,9 @@ type txRecorder struct {
 
 func (t *txRecorder) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	t.called = true
-	return fn(WithQuerier(ctx, t.q, nil))
+	ctx = WithQuerier(ctx, t.q, nil)
+	ctx = context.WithValue(ctx, txStateKey{}, &txState{})
+	return fn(ctx)
 }
 
 func newTestPaymentRepo(ctrl *gomock.Controller, q db.Querier) (*PaymentRepo, *txRecorder) {
@@ -45,6 +47,10 @@ func TestPaymentRepo_ApplyPayQuery_Success_WithOrderID(t *testing.T) {
 		CompleteOrder(gomock.Any(), int64(555)).
 		Times(1).
 		Return(nil)
+	mockQ.EXPECT().
+		GetOrder(gomock.Any(), int64(555)).
+		Times(1).
+		Return(db.Order{ID: 555, UserID: 7, OutTradeNo: pgtype.Text{String: "order-555", Valid: true}}, nil)
 
 	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{
 		PaymentID: 100,
@@ -73,6 +79,10 @@ func TestPaymentRepo_ApplyPayQuery_Success_OrderIDFromPayment(t *testing.T) {
 		CompleteOrder(gomock.Any(), int64(777)).
 		Times(1).
 		Return(nil)
+	mockQ.EXPECT().
+		GetOrder(gomock.Any(), int64(777)).
+		Times(1).
+		Return(db.Order{ID: 777, UserID: 8, OutTradeNo: pgtype.Text{String: "order-777", Valid: true}}, nil)
 
 	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{
 		PaymentID: 100,
@@ -110,6 +120,10 @@ func TestPaymentRepo_ApplyPayQuery_Refund(t *testing.T) {
 		UpdatePaymentRefunded(gomock.Any(), int64(100)).
 		Times(1).
 		Return(nil)
+	mockQ.EXPECT().
+		GetPayment(gomock.Any(), int64(100)).
+		Times(1).
+		Return(db.Payment{ID: 100, OrderID: 555, PayChannel: "wechat", OutTradeNo: pgtype.Text{String: "pay-100", Valid: true}}, nil)
 
 	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{
 		PaymentID: 100,
@@ -133,9 +147,17 @@ func TestPaymentRepo_ApplyPayQuery_FailedWithOrderID(t *testing.T) {
 				Times(1).
 				Return(nil)
 			mockQ.EXPECT().
+				GetPayment(gomock.Any(), int64(100)).
+				Times(1).
+				Return(db.Payment{ID: 100, OrderID: 888, PayChannel: "wechat", OutTradeNo: pgtype.Text{String: "pay-100", Valid: true}}, nil)
+			mockQ.EXPECT().
 				CancelOrder(gomock.Any(), int64(888)).
 				Times(1).
 				Return(nil)
+			mockQ.EXPECT().
+				GetOrder(gomock.Any(), int64(888)).
+				Times(1).
+				Return(db.Order{ID: 888, UserID: 9, OutTradeNo: pgtype.Text{String: "order-888", Valid: true}}, nil)
 
 			err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{
 				PaymentID: 100,
@@ -158,11 +180,15 @@ func TestPaymentRepo_ApplyPayQuery_FailedOrderIDFromDB(t *testing.T) {
 	mockQ.EXPECT().
 		GetPayment(gomock.Any(), int64(100)).
 		Times(1).
-		Return(db.Payment{ID: 100, OrderID: 999}, nil)
+		Return(db.Payment{ID: 100, OrderID: 999, PayChannel: "wechat", OutTradeNo: pgtype.Text{String: "pay-100", Valid: true}}, nil)
 	mockQ.EXPECT().
 		CancelOrder(gomock.Any(), int64(999)).
 		Times(1).
 		Return(nil)
+	mockQ.EXPECT().
+		GetOrder(gomock.Any(), int64(999)).
+		Times(1).
+		Return(db.Order{ID: 999, UserID: 10, OutTradeNo: pgtype.Text{String: "order-999", Valid: true}}, nil)
 
 	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{
 		PaymentID: 100,
@@ -210,17 +236,21 @@ func TestPaymentRepo_MarkPayExpired(t *testing.T) {
 	mockQ.EXPECT().
 		GetPayment(gomock.Any(), int64(100)).
 		Times(1).
-		Return(db.Payment{ID: 100, OrderID: 444}, nil)
+		Return(db.Payment{ID: 100, OrderID: 444, PayChannel: "wechat", OutTradeNo: pgtype.Text{String: "pay-100", Valid: true}}, nil)
 	mockQ.EXPECT().
 		CancelOrder(gomock.Any(), int64(444)).
 		Times(1).
 		Return(nil)
+	mockQ.EXPECT().
+		GetOrder(gomock.Any(), int64(444)).
+		Times(1).
+		Return(db.Order{ID: 444, UserID: 11, OutTradeNo: pgtype.Text{String: "order-444", Valid: true}}, nil)
 
 	err := repo.MarkPayExpired(context.Background(), biz.CheckPayArgs{PaymentID: 100})
 	require.NoError(t, err)
 }
 
-func TestPaymentRepo_MarkPayExpired_WithOrderIDSkipsGetPayment(t *testing.T) {
+func TestPaymentRepo_MarkPayExpired_WithOrderIDStillLoadsPaymentForCacheInvalidation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
 	repo, _ := newTestPaymentRepo(ctrl, mockQ)
@@ -230,9 +260,17 @@ func TestPaymentRepo_MarkPayExpired_WithOrderIDSkipsGetPayment(t *testing.T) {
 		Times(1).
 		Return(nil)
 	mockQ.EXPECT().
+		GetPayment(gomock.Any(), int64(100)).
+		Times(1).
+		Return(db.Payment{ID: 100, OrderID: 42, PayChannel: "wechat", OutTradeNo: pgtype.Text{String: "pay-100", Valid: true}}, nil)
+	mockQ.EXPECT().
 		CancelOrder(gomock.Any(), int64(42)).
 		Times(1).
 		Return(nil)
+	mockQ.EXPECT().
+		GetOrder(gomock.Any(), int64(42)).
+		Times(1).
+		Return(db.Order{ID: 42, UserID: 12, OutTradeNo: pgtype.Text{String: "order-42", Valid: true}}, nil)
 
 	err := repo.MarkPayExpired(context.Background(), biz.CheckPayArgs{
 		PaymentID: 100,

@@ -237,11 +237,13 @@ func (r *OrderRepo) UpdateOrderStatus(ctx context.Context, id int64, status stri
 	if bizOrder.OutTradeNo != "" {
 		r.deleteCache(ctx, fmt.Sprintf("order:no:%s", bizOrder.OutTradeNo))
 	}
+	r.deleteCache(ctx, fmt.Sprintf("order:user:%d:%d", id, bizOrder.UserID))
 	r.deleteListCache(ctx, fmt.Sprintf("order:user:ongoing:%d", bizOrder.UserID))
 	r.setCache(ctx, fmt.Sprintf("order:%d", id), &bizOrder)
 	if bizOrder.OutTradeNo != "" {
 		r.setCache(ctx, fmt.Sprintf("order:no:%s", bizOrder.OutTradeNo), &bizOrder)
 	}
+	r.setCache(ctx, fmt.Sprintf("order:user:%d:%d", id, bizOrder.UserID), &bizOrder)
 	return bizOrder, nil
 }
 
@@ -257,6 +259,7 @@ func (r *OrderRepo) CancelOrder(ctx context.Context, id int64) error {
 	if existing.OutTradeNo != "" {
 		r.deleteCache(ctx, fmt.Sprintf("order:no:%s", existing.OutTradeNo))
 	}
+	r.deleteCache(ctx, fmt.Sprintf("order:user:%d:%d", id, existing.UserID))
 	r.deleteListCache(ctx, fmt.Sprintf("order:user:ongoing:%d", existing.UserID))
 	return nil
 }
@@ -273,6 +276,7 @@ func (r *OrderRepo) CompleteOrder(ctx context.Context, id int64) error {
 	if existing.OutTradeNo != "" {
 		r.deleteCache(ctx, fmt.Sprintf("order:no:%s", existing.OutTradeNo))
 	}
+	r.deleteCache(ctx, fmt.Sprintf("order:user:%d:%d", id, existing.UserID))
 	r.deleteListCache(ctx, fmt.Sprintf("order:user:ongoing:%d", existing.UserID))
 	return nil
 }
@@ -302,37 +306,45 @@ func (r *OrderRepo) getListCache(ctx context.Context, key string) ([]biz.Order, 
 }
 
 func (r *OrderRepo) setCache(ctx context.Context, key string, o *biz.Order) {
-	data, err := json.Marshal(o)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal order cache: %v", err)
-		return
-	}
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	exp := jitter + 10*time.Minute
-	r.data.rdb.Set(ctx, key, data, exp)
+	afterCommit(ctx, func() {
+		data, err := json.Marshal(o)
+		if err != nil {
+			r.log.WithContext(ctx).Errorf("marshal order cache: %v", err)
+			return
+		}
+		jitter := time.Duration(mrand.Intn(10)) * time.Minute
+		exp := jitter + 10*time.Minute
+		r.data.rdb.Set(ctx, key, data, exp)
+	})
 }
 
 func (r *OrderRepo) setListCache(ctx context.Context, key string, orders []biz.Order) {
-	data, err := json.Marshal(orders)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal order list cache: %v", err)
-		return
-	}
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	exp := jitter + 10*time.Minute
-	r.data.rdb.Set(ctx, key, data, exp)
+	afterCommit(ctx, func() {
+		data, err := json.Marshal(orders)
+		if err != nil {
+			r.log.WithContext(ctx).Errorf("marshal order list cache: %v", err)
+			return
+		}
+		jitter := time.Duration(mrand.Intn(10)) * time.Minute
+		exp := jitter + 10*time.Minute
+		r.data.rdb.Set(ctx, key, data, exp)
+	})
 }
 
 func (r *OrderRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("delete cache %s", key)
-	}
+	afterCommit(ctx, func() {
+		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
+			r.log.WithContext(ctx).Errorf("delete cache %s", key)
+		}
+	})
 }
 
 func (r *OrderRepo) deleteListCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("delete list cache %s", key)
-	}
+	afterCommit(ctx, func() {
+		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
+			r.log.WithContext(ctx).Errorf("delete list cache %s", key)
+		}
+	})
 }
 
 func toBizOrder(o db.Order) biz.Order {

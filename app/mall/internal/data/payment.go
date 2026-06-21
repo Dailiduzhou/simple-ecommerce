@@ -365,21 +365,51 @@ func (r *PaymentRepo) getCache(ctx context.Context, key string) (*biz.PaymentDO,
 }
 
 func (r *PaymentRepo) setCache(ctx context.Context, key string, p *biz.PaymentDO) {
-	data, err := json.Marshal(p)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal payment cache: %v", err)
-		return
-	}
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	exp := jitter + 10*time.Minute
-	r.data.rdb.Set(ctx, key, data, exp)
+	afterCommit(ctx, func() {
+		data, err := json.Marshal(p)
+		if err != nil {
+			r.log.WithContext(ctx).Errorf("marshal payment cache: %v", err)
+			return
+		}
+		jitter := time.Duration(mrand.Intn(10)) * time.Minute
+		exp := jitter + 10*time.Minute
+		r.data.rdb.Set(ctx, key, data, exp)
+	})
 }
 
 func (r *PaymentRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("delete cache %s: %v", key, err)
-		return
+	afterCommit(ctx, func() {
+		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
+			r.log.WithContext(ctx).Errorf("delete cache %s: %v", key, err)
+			return
+		}
+	})
+}
+
+func (r *PaymentRepo) invalidatePaymentCaches(ctx context.Context, payment db.Payment) {
+	r.deleteCache(ctx, fmt.Sprintf("payment:%d", payment.ID))
+	r.deleteCache(ctx, fmt.Sprintf("payment:order:%d", payment.OrderID))
+	r.deleteCache(ctx, fmt.Sprintf("payment:order:%d:active:%s", payment.OrderID, payment.PayChannel))
+	if payment.OutTradeNo.Valid && payment.OutTradeNo.String != "" {
+		r.deleteCache(ctx, fmt.Sprintf("payment:out_trade_no:%s", payment.OutTradeNo.String))
 	}
+}
+
+func (r *PaymentRepo) invalidateOrderCaches(ctx context.Context, q db.Querier, orderID int64) error {
+	if orderID <= 0 {
+		return nil
+	}
+	order, err := q.GetOrder(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	r.deleteCache(ctx, fmt.Sprintf("order:%d", orderID))
+	if order.OutTradeNo.Valid && order.OutTradeNo.String != "" {
+		r.deleteCache(ctx, fmt.Sprintf("order:no:%s", order.OutTradeNo.String))
+	}
+	r.deleteCache(ctx, fmt.Sprintf("order:user:%d:%d", orderID, order.UserID))
+	r.deleteCache(ctx, fmt.Sprintf("order:user:ongoing:%d", order.UserID))
+	return nil
 }
 
 func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
@@ -566,12 +596,13 @@ func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo str
 }
 
 func (r *PaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64) error {
-	payment, err := querierFromContext(ctx, r.data.q).GetPayment(ctx, paymentID)
+	q := querierFromContext(ctx, r.data.q)
+	payment, err := q.GetPayment(ctx, paymentID)
 	if err != nil {
 		return err
 	}
 
-	if err := querierFromContext(ctx, r.data.q).UpdatePaymentFailed(ctx, paymentID); err != nil {
+	if err := q.UpdatePaymentFailed(ctx, paymentID); err != nil {
 		return err
 	}
 
@@ -580,18 +611,16 @@ func (r *PaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64
 		oid = payment.OrderID
 	}
 	if oid > 0 {
-		if err := querierFromContext(ctx, r.data.q).CancelOrder(ctx, oid); err != nil {
+		if err := q.CancelOrder(ctx, oid); err != nil {
 			return err
 		}
 	}
 
-	outTradeNo := payment.OutTradeNo.String
-	payChannel := payment.PayChannel
-	r.deleteCache(ctx, fmt.Sprintf("payment:%d", paymentID))
-	r.deleteCache(ctx, fmt.Sprintf("payment:order:%d", payment.OrderID))
-	r.deleteCache(ctx, fmt.Sprintf("payment:order:%d:active:%s", payment.OrderID, payChannel))
-	if outTradeNo != "" {
-		r.deleteCache(ctx, fmt.Sprintf("payment:out_trade_no:%s", outTradeNo))
+	r.invalidatePaymentCaches(ctx, payment)
+	if oid > 0 {
+		if err := r.invalidateOrderCaches(ctx, q, oid); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -606,19 +635,32 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 
 		switch result.TradeState {
 		case biz.TradeStateSuccess:
-			orderID, err := r.applySuccess(ctx, q, args, result.TransactionID)
+			payment, orderID, err := r.applySuccess(ctx, q, args, result.TransactionID)
 			if err != nil {
 				return err
 			}
-			return finalizeOrder(ctx, q, orderID, true)
+			if err := finalizeOrder(ctx, q, orderID, true); err != nil {
+				return err
+			}
+			r.invalidatePaymentCaches(ctx, payment)
+			return r.invalidateOrderCaches(ctx, q, orderID)
 		case biz.TradeStateRefund:
-			return r.applyRefund(ctx, q, args)
-		case biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError:
-			orderID, err := r.applyFailed(ctx, q, args)
+			payment, err := r.applyRefund(ctx, q, args)
 			if err != nil {
 				return err
 			}
-			return finalizeOrder(ctx, q, orderID, false)
+			r.invalidatePaymentCaches(ctx, payment)
+			return nil
+		case biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError:
+			payment, orderID, err := r.applyFailed(ctx, q, args)
+			if err != nil {
+				return err
+			}
+			if err := finalizeOrder(ctx, q, orderID, false); err != nil {
+				return err
+			}
+			r.invalidatePaymentCaches(ctx, payment)
+			return r.invalidateOrderCaches(ctx, q, orderID)
 		default:
 			return fmt.Errorf("wechat pay state %s is not terminal", result.TradeState.String())
 		}
@@ -631,15 +673,19 @@ func (r *PaymentRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs)
 		if q == nil {
 			return fmt.Errorf("missing transaction querier in context")
 		}
-		orderID, err := r.applyFailed(ctx, q, args)
+		payment, orderID, err := r.applyFailed(ctx, q, args)
 		if err != nil {
 			return err
 		}
-		return finalizeOrder(ctx, q, orderID, false)
+		if err := finalizeOrder(ctx, q, orderID, false); err != nil {
+			return err
+		}
+		r.invalidatePaymentCaches(ctx, payment)
+		return r.invalidateOrderCaches(ctx, q, orderID)
 	})
 }
 
-func (r *PaymentRepo) applySuccess(ctx context.Context, q db.Querier, args biz.CheckPayArgs, txID string) (int64, error) {
+func (r *PaymentRepo) applySuccess(ctx context.Context, q db.Querier, args biz.CheckPayArgs, txID string) (db.Payment, int64, error) {
 	payment, err := q.UpdatePaymentSuccess(ctx, db.UpdatePaymentSuccessParams{
 		ID: args.PaymentID,
 		ThirdPartyTxID: pgtype.Text{
@@ -648,32 +694,39 @@ func (r *PaymentRepo) applySuccess(ctx context.Context, q db.Querier, args biz.C
 		},
 	})
 	if err != nil {
-		return 0, err
+		return db.Payment{}, 0, err
 	}
 	orderID := args.OrderID
 	if orderID <= 0 {
 		orderID = payment.OrderID
 	}
-	return orderID, nil
+	return payment, orderID, nil
 }
 
-func (r *PaymentRepo) applyRefund(ctx context.Context, q db.Querier, args biz.CheckPayArgs) error {
-	return q.UpdatePaymentRefunded(ctx, args.PaymentID)
+func (r *PaymentRepo) applyRefund(ctx context.Context, q db.Querier, args biz.CheckPayArgs) (db.Payment, error) {
+	if err := q.UpdatePaymentRefunded(ctx, args.PaymentID); err != nil {
+		return db.Payment{}, err
+	}
+	payment, err := q.GetPayment(ctx, args.PaymentID)
+	if err != nil {
+		return db.Payment{}, err
+	}
+	return payment, nil
 }
 
-func (r *PaymentRepo) applyFailed(ctx context.Context, q db.Querier, args biz.CheckPayArgs) (int64, error) {
+func (r *PaymentRepo) applyFailed(ctx context.Context, q db.Querier, args biz.CheckPayArgs) (db.Payment, int64, error) {
 	if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
-		return 0, err
+		return db.Payment{}, 0, err
+	}
+	payment, err := q.GetPayment(ctx, args.PaymentID)
+	if err != nil {
+		return db.Payment{}, 0, err
 	}
 	orderID := args.OrderID
 	if orderID <= 0 {
-		payment, err := q.GetPayment(ctx, args.PaymentID)
-		if err != nil {
-			return 0, err
-		}
 		orderID = payment.OrderID
 	}
-	return orderID, nil
+	return payment, orderID, nil
 }
 
 func finalizeOrder(ctx context.Context, q db.Querier, orderID int64, success bool) error {
