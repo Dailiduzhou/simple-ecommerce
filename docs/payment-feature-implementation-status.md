@@ -1,6 +1,6 @@
 # Payment Feature Implementation Status
 
-Date: 2026-06-10
+Date: 2026-07-07 (updated)
 
 ## Context
 
@@ -10,30 +10,38 @@ This document records the current implementation status of the payment subsystem
 
 ```
 HTTP/gRPC Transport
-  PaymentService       WechatPayService (JSAPI)
-  ─ CreatePayment      ─ PrepayJSAPI
-  ─ NotifyPayment      ─ QueryOrder
-  ─ CreateWechatCheck  ─ CloseOrder
+  PaymentService (unified)
+  ─ CreatePayment      ← unified prepay (wechat + alipay)
+  ─ QueryPayment       ← unified query
+  ─ ClosePayment       ← unified close
+  ─ GetPayment         ← read payment by ID
+  ─ GetPaymentByOrder  ← read payment by order ID
+  ─ CreateWechatCheck  ← enqueue poll job
   ─ GetMQJob
-       │                    │
-Biz Layer                   │
-  PaymentJobUsecase         PaymentGateway (router)
-  ─ EnqueueCheckWechat      ─ Prepay / Query / Close
-       │                    │
-       │            ┌───────┘
-  PaymentMQRepo (iface)     │
-       │                    │
-Data Layer                  │
-  PaymentMQRepo (River)     │
-  PaymentSyncRepo           │
+  ─ HandleWechatPayNotify (HTTP callback)
+       │
+Biz Layer
+  PaymentUsecase
+  ─ PrepayForOrder / PrepayForOrderWithCheckJob
+  ─ QueryOrder / CloseOrder
+  ─ EnqueueWechatCheckJobByOutTradeNo
+  PaymentJobUsecase
+  ─ EnqueueCheckPay / EnqueueCheckPayTx
+       │
+  PaymentGateway (router)
+  ─ Prepay / Query / Close → adapter by channel
+       │
+Data Layer
+  PaymentRepo (DB + Redis cache)
+  PaymentMQRepo (River)
        │              ┌─────┴──────┐
        │              WechatAdapter │
        │              AlipayAdapter │
        │              └────────────┘
        │
 Job Layer (River Workers)
-  CheckWechatPayWorker
-  ─ Work(): poll Wechat order status
+  CheckPayWorker (channel-agnostic)
+  ─ Work(): poll order status via gateway
   ─ NextRetry(): backoff retry strategy
 ```
 
@@ -52,11 +60,11 @@ Job Layer (River Workers)
 
 **Adapter methods:**
 
-| Operation | Wechat (gopay/wechat) | Alipay (gopay/alipay) |
+| Operation | Wechat (gopay/wechat) | Alipay (gopay/alipay/v3) |
 |-----------|----------------------|----------------------|
-| Prepay | `UnifiedOrder` (JSAPI) | `TradePrecreate` (QR code) |
+| Prepay | `UnifiedOrder` (JSAPI) | `TradeWapPay` (WAP redirect) |
 | QueryOrder | `QueryOrder` | `TradeQuery` |
-| CloseOrder | `CloseOrder` | `TradeClose` |
+| CloseOrder | `CloseOrder` | `POST /v3/alipay/trade/close` (custom via `DoAliPayAPISelfV3`) |
 
 **Notes:**
 - Both adapters use `go-pay/gopay` library clients
@@ -88,103 +96,116 @@ REVOKED ────────────┤
 PAYERROR ───────────┘
 ```
 
+**Alipay → unified mapping** (`mapAlipayTradeState`):
+
+| Alipay `trade_status` | Unified `TradeState` |
+|----------------------|---------------------|
+| `WAIT_BUYER_PAY` | `NOTPAY` |
+| `TRADE_SUCCESS` | `SUCCESS` |
+| `TRADE_FINISHED` | `SUCCESS` |
+| `TRADE_CLOSED` | `CLOSED` |
+
 ### 3. Message Queue (River)
 
 | Component | Status | File |
 |-----------|--------|------|
-| River client setup | **Done** | `app/mall/internal/data/data.go:94-115` |
-| `payments` queue (max 10 workers) | **Done** | `app/mall/internal/data/data.go:107` |
-| `RiverServer` (lifecycle) | **Done** | `app/mall/internal/job/job.go:14-29` |
-| `PaymentMQRepo.EnqueueCheckWechatPay()` | **Done** | `app/mall/internal/data/payment.go:253-277` |
-| `PaymentMQRepo.GetMQJob()` | **Done** | `app/mall/internal/data/payment.go:280-289` |
-| `PaymentJobUsecase` (biz layer) | **Done** | `app/mall/internal/biz/payment.go:193-240` |
+| River client setup | **Done** | `app/mall/internal/data/data.go:101-122` |
+| `payments` queue (max 10 workers) | **Done** | `app/mall/internal/data/data.go:114` |
+| `RiverServer` (lifecycle) | **Done** | `app/mall/internal/job/job.go:15-29` |
+| `PaymentMQRepo.EnqueueCheckPay()` | **Done** | `app/mall/internal/data/payment.go:789-799` |
+| `PaymentMQRepo.EnqueueCheckPayTx()` | **Done** | `app/mall/internal/data/payment.go:801-815` |
+| `PaymentMQRepo.GetMQJob()` | **Done** | `app/mall/internal/data/payment.go:842-851` |
+| `PaymentJobUsecase` (biz layer) | **Done** | `app/mall/internal/biz/payment.go:244-289` |
 
 **Enqueue features:**
 - Delayed execution via `ScheduledAt`
-- Idempotent deduplication via `UniqueOpts{ByArgs: true}`
-- Tagging for operational visibility (`wechat-pay`, `payment-{id}`)
+- Idempotent deduplication via `UniqueOpts{ByArgs: true, ByQueue: true}` (dedup by `out_trade_no` which carries `river:"unique"` tag)
+- Tagging for operational visibility (`pay-channel-{channel}`, `payment-{id}`)
 - Configurable max polls and poll interval
+- Transactional enqueue via `InsertTx` (used in `PrepayForOrderWithCheckJob`)
 
 ### 4. Async Order Query (异步轮询查单)
 
 | Component | Status | File |
 |-----------|--------|------|
-| `CheckWechatPayArgs` (River job arg) | **Done** | `app/mall/internal/biz/payment.go:148-155` |
-| `CheckWechatPayWorker.Work()` | **Done** | `app/mall/internal/job/river.go:29-57` |
-| `CheckWechatPayWorker.NextRetry()` | **Done** | `app/mall/internal/job/river.go:60-63` |
+| `CheckPayArgs` (River job arg, channel-agnostic) | **Done** | `app/mall/internal/biz/payment.go:152-164` |
+| `CheckPayWorker.Work()` | **Done** | `app/mall/internal/job/river.go:29-57` |
+| `CheckPayWorker.NextRetry()` | **Done** | `app/mall/internal/job/river.go:60-63` |
 | Worker registration | **Done** | `app/mall/internal/job/job.go:31-35` |
 
 **Polling flow:**
 
 ```
-1.  Poll wechat order status via PaymentGateway.QueryOrder()
+1.  Poll order status via PaymentGateway.QueryOrder() (channel from args)
 2.  IsTerminal()?
-    ├── Yes → ApplyWechatPayQuery() [write DB atomically]
+    ├── Yes → ApplyPayQuery() [write DB atomically]
     │         ├── SUCCESS → UpdatePaymentSuccess + CompleteOrder
     │         ├── REFUND  → UpdatePaymentRefunded
     │         └── CLOSED/REVOKED/PAYERROR → UpdatePaymentFailed + CancelOrder
     └── IsPending()?
         ├── attempt < MaxPolls → return error (triggers River retry)
-        └── attempt >= MaxPolls → MarkWechatPayExpired()
+        └── attempt >= MaxPolls → MarkPayExpired()
 ```
 
 **Default polling parameters:**
-- `MaxPolls = 5`
-- `PollIntervalSeconds = 30`
-- Max total wait: 5 × 30 = 150 seconds before expiry
+- `MaxPolls = 5` (NormalizeCheckPayArgs default), overridable to 30 via service config
+- `PollIntervalSeconds = 30` (NormalizeCheckPayArgs default), overridable to 10 via service config
+- Max total wait: MaxPolls × PollIntervalSeconds
 
-### 5. Result Sync to DB (PaymentSyncRepo)
+### 5. Result Sync to DB (PaymentRepo)
 
 | Component | Status | File |
 |-----------|--------|------|
-| `PaymentSyncRepo.ApplyWechatPayQuery()` | **Done** | `app/mall/internal/data/payment.go:299-354` |
-| `PaymentSyncRepo.MarkWechatPayExpired()` | **Done** | `app/mall/internal/data/payment.go:356-383` |
+| `PaymentRepo.ApplyPayQuery()` | **Done** | `app/mall/internal/data/payment.go:629-668` |
+| `PaymentRepo.MarkPayExpired()` | **Done** | `app/mall/internal/data/payment.go:670-686` |
+| `PaymentRepo.ClosePayment()` | **Done** | `app/mall/internal/data/payment.go:598-627` |
 
-Both methods use PostgreSQL transactions to atomically update payment + order records.
+All methods use PostgreSQL transactions to atomically update payment + order records, then invalidate Redis caches via `afterCommit` hooks.
 
 ### 6. Callback Handling (回调处理)
 
 | Component | Status | File |
 |-----------|--------|------|
-| HTTP route (`POST /v1/pay/wechat/notify`) | **Done** | `app/mall/internal/server/http.go:70` |
-| `HandleWechatPayNotify()` | **Stub** | `app/mall/internal/service/payment.go:131-139` |
-| Proto `NotifyPayment` RPC | **Stub** | `app/mall/internal/service/payment.go:35-37` |
+| Wechat HTTP route (`POST /v1/pay/wechat/notify`) | **Done** | `app/mall/internal/server/http.go:71` |
+| `HandleWechatPayNotify()` (XML parse + sign verify + enqueue) | **Done** | `app/mall/internal/service/payment.go:246-290` |
+| Alipay HTTP route (`POST /v1/pay/alipay/notify`) | **Not implemented** | — |
+| Proto `NotifyPayment` RPC | **Stub** | `app/mall/internal/service/payment.go:206-208` |
 
-**Current callback implementation:**
+**Current Wechat callback implementation:**
 
 ```go
 func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
-    if _, err := io.ReadAll(ctx.Request().Body); err != nil {
-        return errors.BadRequest("WECHAT_PAY_NOTIFY_BODY", err.Error())
+    req := ctx.Request()
+    notifyReq, err := wechat.ParseNotify(req)
+    // ... signature verification with apiKey ...
+    if notifyReq.ReturnCode == "SUCCESS" && notifyReq.ResultCode == "SUCCESS" && notifyReq.OutTradeNo != "" {
+        // enqueue a check job (delay=0) to actively query payment result
+        s.paymentUc.EnqueueWechatCheckJobByOutTradeNo(ctx, notifyReq.OutTradeNo, checkJob)
     }
-    return ctx.JSON(200, wechatPayNotifyAck{
-        Code:    "SUCCESS",
-        Message: "success",
-    })
+    ack := wechat.NotifyResponse{ReturnCode: "SUCCESS", ReturnMsg: "OK"}
+    // return XML response
 }
 ```
 
-**Missing:**
-- Signature verification (验签)
-- Callback body decryption (解密)
-- Actual payment status update via `PaymentSyncRepo`
-- Order status transition
-- Idempotency handling for duplicate callbacks
+**Alipay callback — not yet implemented:**
+- No route registered for `/v1/pay/alipay/notify`
+- No signature verification (RSA2)
+- No payment status update
+- `ALIPAY_NOTIFY_URL` env var is configured and sent during prepay, but server has no handler
 
 ### 7. API Endpoints (Service Layer)
 
 | RPC | Status | File |
 |-----|--------|------|
-| `CreatePayment` | **Stub** | `app/mall/internal/service/payment.go:26-28` |
-| `GetPayment` | **Stub** | `app/mall/internal/service/payment.go:29-31` |
-| `GetPaymentByOrder` | **Stub** | `app/mall/internal/service/payment.go:32-34` |
-| `NotifyPayment` | **Stub** | `app/mall/internal/service/payment.go:35-37` |
-| `RefundPayment` | **Stub** | `app/mall/internal/service/payment.go:38-40` |
-| `PrepayJSAPI` | **Done** | `app/mall/internal/service/payment.go:74-96` |
-| `QueryOrder` | **Done** | `app/mall/internal/service/payment.go:98-115` |
-| `CloseOrder` | **Done** | `app/mall/internal/service/payment.go:117-129` |
-| `CreateWechatPayCheckJob` | **Done** | `app/mall/internal/service/payment.go:42-61` |
-| `GetMQJob` | **Done** | `app/mall/internal/service/payment.go:63-72` |
+| `CreatePayment` (unified) | **Done** | `app/mall/internal/service/payment.go:55-119` |
+| `QueryPayment` (unified) | **Done** | `app/mall/internal/service/payment.go:143-164` |
+| `ClosePayment` (unified) | **Done** | `app/mall/internal/service/payment.go:167-183` |
+| `GetPayment` | **Done** | `app/mall/internal/service/payment.go:188-194` |
+| `GetPaymentByOrder` | **Done** | `app/mall/internal/service/payment.go:197-203` |
+| `RefundPayment` | **Stub** | `app/mall/internal/service/payment.go:206-208` |
+| `CreateWechatPayCheckJob` | **Done** | `app/mall/internal/service/payment.go:211-230` |
+| `GetMQJob` | **Done** | `app/mall/internal/service/payment.go:233-242` |
+| `HandleWechatPayNotify` (HTTP) | **Done** | `app/mall/internal/service/payment.go:246-290` |
 
 ### 8. Database Schema
 
@@ -194,9 +215,14 @@ func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
 | `payments` | **Done** | `app/mall/db/migrations/000001_init_schema.up.sql:130-154` |
 | sqlc generated queries | **Done** | `app/mall/internal/data/db/{payments,orders}.sql.go` |
 
-**`payments` table columns:** id, order_id, user_id, merchant_id, amount, status (pending/success/failed/refunded), pay_channel (wechat/alipay), third_party_tx_id (unique index), paid_at, created_at, updated_at.
+**`payments` table columns:** id, order_id, user_id, merchant_id, amount, status (pending/success/failed/refunded), pay_channel (wechat/alipay), out_trade_no (merchant order number), third_party_tx_id (unique index per channel), paid_at, created_at, updated_at.
 
-**`orders` table columns:** id, user_id, address_id, total_amount, status (creating/paid/shipped/completed/cancelled), is_completed, created_at, updated_at.
+**Key indexes:**
+- `idx_payments_active_out_trade_no_channel`: UNIQUE PARTIAL `(out_trade_no, pay_channel) WHERE status IN ('pending','success')`
+- `idx_payments_active_order_channel`: UNIQUE PARTIAL `(order_id, pay_channel) WHERE status IN ('pending','success')`
+- `idx_payments_third_party_tx_id_channel`: UNIQUE PARTIAL `(third_party_tx_id, pay_channel) WHERE third_party_tx_id IS NOT NULL`
+
+**`orders` table columns:** id, user_id, address_id, total_amount (in cents), out_trade_no (merchant order number), status (creating/paid/shipped/completed/cancelled), is_completed, created_at, updated_at.
 
 ### 9. Wire Dependency Injection
 
@@ -214,46 +240,54 @@ func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
 ```
 WechatPaymentAdapter ─┐
 AlipayPaymentAdapter ─┤
-                      ├→ PaymentAdapters → PaymentGateway ─┐
-PgxPool ─────────────────────────────────────┘             │
-  │                                                       │
-  ├→ PaymentSyncRepo ────────────────────┐                │
-  │                                      ├→ CheckWechatPayWorker → Workers
-  ├→ RiverClient ───────┐               │
-  │                     ├→ PaymentMQRepo ┤
-  │                     │               │
-  │                     └→ PaymentJobUsecase → PaymentService
-  │                          (enqueue facade)       (service layer)
-  │
-  └→ Data → Repos → Usecases → Services
+                      ├→ NewPaymentAdapters → PaymentGateway ─┐
+PgxPool ─────────────────────────────────────────┘             │
+  │                                                           │
+  ├→ PaymentRepo (DB + Redis cache) ─────────┐                │
+  │                                          ├→ CheckPayWorker → Workers
+  ├→ RiverClient ───────┐                   │
+  │                     ├→ PaymentMQRepo ────┤
+  │                     │                   │
+  │                     └→ PaymentJobUsecase ┤
+  │                          (enqueue facade) │
+  │                                          │
+  ├→ TxManager ──────────────────────────────┤
+  ├→ IDGenerator ────────────────────────────┤
+  │                                          │
+  └→ NewPaymentUsecase(gateway, repos, ...) ─┤
+                                             │
+  NewPaymentService(uc, jobs, conf) ←────────┘
 ```
 
 ## Gap Summary
 
 ### Working
 
-- Wechat/Alipay prepay, query, and close operations via adapters
-- Channel routing through `PaymentGateway`
-- River job queue for async polling
-- `CheckWechatPayWorker` polling loop with retry and expiry
-- `PaymentSyncRepo` transaction-based state updates to DB
-- gRPC and HTTP endpoints for prepay, query, close, and check job APIs
+- Unified `CreatePayment` API: order lookup → payment record → third-party prepay → frontend action encoding
+- Wechat: `PrepayForOrderWithCheckJob` — atomic payment write + River enqueue in transaction
+- Alipay: `PrepayForOrder` → `TradeWapPay` → redirect URL
+- Channel routing through `PaymentGateway` (Wechat + Alipay adapters)
+- River job queue for async polling (`CheckPayWorker` — channel-agnostic)
+- `CheckPayWorker` polling loop with retry and expiry
+- `PaymentRepo.ApplyPayQuery()` / `MarkPayExpired()` transaction-based state updates to DB
+- Redis + singleflight caching for payment reads with `afterCommit` invalidation
+- Wechat callback: XML parsing, signature verification, check job enqueue
+- gRPC and HTTP endpoints for unified payment APIs
 - Complete Wire DI wiring from data through biz through service to server
 
 ### Not Yet Implemented
 
 | Feature | Priority | Description |
 |---------|----------|-------------|
-| Wechat callback validation | High | Verify signature, decrypt body, actually update payment status in `HandleWechatPayNotify` |
-| `CreatePayment` service | High | Create payment record + enqueue check job atomically |
-| `NotifyPayment` service | Medium | Protocol-based notification handling |
-| `GetPayment` / `GetPaymentByOrder` | Low | Read payment records from DB |
-| Order service layer | Medium | `app/mall/internal/service/order.go` is entirely stubbed out |
-| Adapter client configuration | Medium | Both `WechatPaymentAdapter` and `AlipayPaymentAdapter` clients are nil (not wired with actual credentials) |
+| Alipay callback handler | High | No route for `/v1/pay/alipay/notify`; no RSA2 signature verification; no state sync |
+| `RefundPayment` service | Medium | Returns empty stub |
+| Order usecase layer | Medium | `OrderUsecase` methods in `biz/order.go` return nil |
+| Adapter client configuration | Medium | Both `WechatPaymentAdapter` and `AlipayPaymentAdapter` clients may be nil if credentials not configured |
 
 ### Related
 
 - Refund functionality is documented in `docs/refund-feature-plan-and-progress.md`
+- Alipay-specific flow is documented in `docs/payment-business-flow-alipay.md`
 
 ## Dependencies
 

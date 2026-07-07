@@ -1,6 +1,6 @@
 # Payment Business Flow
 
-Date: 2026-06-10
+Date: 2026-07-07 (updated)
 
 ## Overview
 
@@ -8,14 +8,23 @@ This document traces the complete business flow of the payment subsystem, coveri
 
 **Key design decisions:**
 
-- Payment data has **no caching** — every read goes directly to PostgreSQL for strong consistency.
+- Payment reads use **Redis + singleflight** caching with jittered TTL (~10-20 min).
 - State updates are **transactional** — payment and order status changes are wrapped in a single PostgreSQL transaction.
 - Async polling is powered by **River** (PostgreSQL-backed job queue), not a separate message broker.
-- Wechat callback is a **stub** — it returns `SUCCESS` without signature verification, decryption, or state updates.
+- The unified `CreatePayment` API creates a payment record before calling the third-party prepay.
+- Wechat callback is **implemented** — it parses XML, verifies signature, and enqueues a check job.
+- Alipay callback is **not yet implemented** — no route registered.
+- The `CheckPayWorker` is channel-agnostic (replaces the old `CheckWechatPayWorker`).
+
+> For the Alipay-specific flow, see [payment-business-flow-alipay.md](payment-business-flow-alipay.md).
 
 ---
 
-## Stage 1: Prepay
+## Stage 1: Prepay (Legacy — superseded by unified CreatePayment)
+
+> **Note:** The old `PrepayJSAPI` endpoint is preserved for backward compatibility but the recommended entry point is now `POST /v1/payments` (unified `CreatePayment`). The unified flow creates a payment record before calling the third-party API. See [payment-business-flow-alipay.md](payment-business-flow-alipay.md) for the current flow.
+
+The legacy `PrepayJSAPI` flow:
 
 ```
 Client                   PaymentService               Wechat Pay API
@@ -32,31 +41,50 @@ Client                   PaymentService               Wechat Pay API
  │                           │         ◄── prepay_id     │
  │                           │                            │
  │                           │ Build JSAPI signing params │
- │                           │ in memory:                 │
- │                           │   AppID, TimeStamp,        │
- │                           │   NonceStr, Package,       │
- │                           │   SignType, PaySign(MD5)   │
  │                           │                            │
  │  PrepayJSAPIReply          │                            │
- │  {app_id, time_stamp,     │                            │
- │   nonce_str, package,     │                            │
- │   sign_type, pay_sign}    │                            │
+ │  {app_id, time_stamp, ...}│                            │
  │◄──────────────────────────│                            │
- │                           │                            │
- │  Client calls             │                            │
- │  wx.requestPayment()      │                            │
 ```
 
-**Database:** None. No records are written at this stage.
-
-**Cache:** None.
-
-**MQ:** None.
+**Database:** None. No records are written at this stage (legacy flow only).
 
 **Files:**
-- `app/mall/internal/service/payment.go:74-96` — service entry
-- `app/mall/internal/biz/payment_gateway.go:29-36` — channel routing
-- `app/mall/internal/data/payment.go:45-83` — Wechat Prepay implementation via `go-pay/gopay/wechat`
+- `app/mall/internal/service/payment.go` — service entry (legacy)
+- `app/mall/internal/biz/payment_gateway.go` — channel routing
+- `app/mall/internal/data/payment.go` — Wechat Prepay implementation via `go-pay/gopay/wechat`
+
+### Stage 1 (Current): Unified CreatePayment
+
+The current unified flow (`POST /v1/payments`):
+
+1. `protoToBizChannel()` maps proto enum → biz channel string (`wechat`/`alipay`)
+2. `PaymentUsecase.PrepayForOrder()`:
+   - `orderRepo.GetOrderByOrderNo()` — **SELECT** from `orders`
+   - `CreatePayment()` — **INSERT** into `payments` (with idempotency via `idx_payments_active_order_channel`)
+   - `gateway.Prepay()` → adapter → third-party API
+3. For **Wechat** channels: `PrepayForOrderWithCheckJob()` wraps steps 2 + River enqueue in a single transaction
+4. `encodePrepayPayload()` encodes the third-party response into `action_type` + `payload` JSON
+
+**Database:**
+
+| Table | Operation | Notes |
+|-------|-----------|-------|
+| `orders` | **SELECT** | `GetOrderByOrderNo` — look up order by merchant order number |
+| `payments` | **INSERT** | `CreatePaymentWithOutTradeNo` — create payment record with `status=pending` |
+
+**Cache:**
+
+| Operation | Key | Notes |
+|-----------|-----|-------|
+| **SET** | `payment:{id}` | Cache the new payment record |
+| **SET** | `payment:out_trade_no:{no}` | Cache by merchant order number |
+| **SET** | `payment:order:{id}:active:{channel}` | Cache active payment by order+channel |
+
+**Files:**
+- `app/mall/internal/service/payment.go:55-119` — unified entry point
+- `app/mall/internal/biz/payment.go:450-509` — `PrepayForOrder` / `PrepayForOrderWithCheckJob`
+- `app/mall/internal/data/payment.go:415-449` — `CreatePayment` DB write + cache
 
 ---
 
@@ -256,65 +284,72 @@ func (w *CheckWechatPayWorker) NextRetry(job *river.Job[biz.CheckWechatPayArgs])
 
 ---
 
-## Stage 4: Wechat Callback (Stub)
+## Stage 4: Wechat Callback (Implemented)
 
 ```
 Wechat Pay                     Mall Server
  │                               │
  │  POST /v1/pay/wechat/notify   │
- │  {encrypted+signed pay result}│
+ │  {XML with signature}         │
  │──────────────────────────────►│
  │                               │
- │                               │ io.ReadAll(body)
- │                               │ ── no signature verification
- │                               │ ── no decryption
- │                               │ ── no PaymentSyncRepo call
- │                               │ ── no state update
+ │                               │ wechat.ParseNotify(req)
+ │                               │ wechat.VerifySign(apiKey, signType, notifyReq)
  │                               │
- │  HTTP 200                     │
- │  {"code":"SUCCESS",           │
- │   "message":"success"}        │
+ │                               │ if ReturnCode=SUCCESS && ResultCode=SUCCESS:
+ │                               │   EnqueueWechatCheckJobByOutTradeNo()
+ │                               │   ── tx: SELECT payment by out_trade_no
+ │                               │   ── tx: INSERT river_job (delay=0)
+ │                               │
+ │  XML Response                 │
+ │  <xml><return_code>SUCCESS    │
+ │  </return_code>               │
+ │  <return_msg>OK</return_msg>  │
+ │  </xml>                       │
  │◄──────────────────────────────│
 ```
 
-**Missing from callback implementation:**
+**Implementation details:**
 
-- Signature verification (验签) — no check that the notification actually came from Wechat
-- Body decryption (解密) — Wechat encrypts callback bodies with AES-256-GCM
-- State update — no call to `PaymentSyncRepo.ApplyWechatPayQuery()`
-- Idempotency — no guard against duplicate notifications
+- Signature verification uses `wechat.VerifySign()` with the configured `ApiKey`
+- On success, enqueues a check job (delay=0) via `EnqueueWechatCheckJobByOutTradeNo()` in a transaction
+- If enqueue fails, logs a warning but still returns SUCCESS to Wechat (avoids infinite retry loops)
+- Returns XML response (not JSON) as required by Wechat
 
-**Callback vs Polling relationship:** When properly implemented, callback and polling complement each other. If callback arrives first, the River job on its next poll sees the terminal state and returns nil (idempotent). If polling completes first, the callback is already redundant and can safely return `SUCCESS`.
+**Callback vs Polling relationship:** When callback arrives first, the River job on its next poll sees the terminal state and returns nil (idempotent). If polling completes first, the callback's check job will also see the terminal state.
 
 **Files:**
-- `app/mall/internal/server/http.go:70` — route registration (raw HTTP, outside proto-generated routes)
-- `app/mall/internal/service/payment.go:131-139` — stub handler
+- `app/mall/internal/server/http.go:71` — route registration
+- `app/mall/internal/service/payment.go:246-290` — callback handler with XML parsing + signature verification + check job enqueue
+
+### Alipay Callback (Not Implemented)
+
+No route registered for `/v1/pay/alipay/notify`. The `ALIPAY_NOTIFY_URL` env var is configured and sent to Alipay during prepay, but the server has no handler to receive the callback.
 
 ---
 
 ## Cache Strategy
 
-**Payment uses zero caching.**
-
-This contrasts with other modules in the project:
+**Payment uses Redis + singleflight caching for reads.**
 
 | Module | Cache | Pattern | Reason |
 |--------|-------|---------|--------|
 | **Event** | Redis + singleflight | Read-through cache with jittered TTL (~20 min) | Read-heavy, stale data acceptable |
 | **Product** | Partial Redis | Read-through | Read-heavy, stale data acceptable |
-| **Payment** | **None** | Direct PostgreSQL reads | Payment state must be strongly consistent |
-| **Order** | **None** | Direct PostgreSQL reads | Order state must be strongly consistent |
+| **Payment** | Redis + singleflight | Read-through with jittered TTL (10-20 min) | Read-heavy during lookups; writes invalidate caches via `afterCommit` hooks |
+| **Order** | Redis + singleflight | Read-through with jittered TTL (10-20 min) | Same pattern as payment |
 
-The Event module's caching pattern (from `app/mall/internal/data/event.go`) uses:
+The payment caching pattern (from `app/mall/internal/data/payment.go`) uses:
 - `singleflight.Group` to deduplicate concurrent cache-miss DB reads
 - Redis with jittered TTL (`10 + rand(0-10) min`) to avoid thundering herd on expiry
-- Scan-based cache invalidation on writes
+- `afterCommit` cache invalidation on writes (ApplyPayQuery, MarkPayExpired, ClosePayment)
 
-Payment intentionally avoids this pattern because:
-
-1. Payment reads are low-frequency (only during explicit user lookup).
-2. Payment state changes are irreversible — showing stale data is a correctness bug.
-3. The Wechat API is the source of truth; the local DB mirrors it. Caching would add a third layer of staleness.
+Cache keys:
+- `payment:{id}` — by payment ID
+- `payment:order:{order_id}` — by order ID
+- `payment:order:{order_id}:active:{channel}` — active payment by order+channel
+- `payment:out_trade_no:{no}` — by merchant order number
+- `order:{id}`, `order:no:{out_trade_no}`, `order:user:{user_id}:{order_id}`, `order:user:ongoing:{user_id}` — order caches
 
 ---
 
@@ -504,19 +539,19 @@ PgxPool ────────────────────────
 
 ### Working end-to-end
 
-- PrepayJSAPI → Wechat UnifiedOrder → return JSAPI params
-- CreateWechatPayCheckJob → River INSERT with dedup + delayed schedule
-- CheckWechatPayWorker → poll → transactional DB sync → retry/expire
-- QueryOrder / CloseOrder via PaymentGateway
+- Unified `CreatePayment` → order lookup → payment record → third-party prepay → return frontend action
+- Wechat: `PrepayForOrderWithCheckJob` → atomic payment write + River enqueue in transaction
+- Alipay: `PrepayForOrder` → payment record → `TradeWapPay` → return redirect URL
+- `CheckPayWorker` → poll → transactional DB sync → retry/expire (channel-agnostic)
+- Wechat callback → XML parse → signature verify → enqueue check job
+- QueryOrder / CloseOrder via PaymentGateway (both channels)
+- Redis + singleflight caching for payment reads with `afterCommit` invalidation
 
 ### Stubs / not implemented
 
 | Component | Priority | What's missing |
 |-----------|----------|----------------|
-| `CreatePayment` service | High | No payment record is created before Prepay; the flow has no initial DB write |
-| Wechat callback (`HandleWechatPayNotify`) | High | No signature verification, no decryption, no state update |
-| `GetPayment` / `GetPaymentByOrder` | Low | Read endpoints return empty stubs |
-| `NotifyPayment` proto endpoint | Low | Returns empty stub |
-| Order service (all methods) | Medium | `app/mall/internal/service/order.go` is entirely stubbed |
-| Adapter client config | Medium | Both Wechat and Alipay adapter clients are nil (credentials not wired) |
-| Refund | Medium | See `docs/refund-feature-plan-and-progress.md` |
+| Alipay callback handler | High | No route for `/v1/pay/alipay/notify`; no signature verification; no state sync |
+| `RefundPayment` service | Medium | Returns empty stub |
+| Order service (all methods) | Medium | `OrderUsecase` methods return nil |
+| Adapter client config | Medium | Both Wechat and Alipay adapter clients may be nil if credentials not configured |
