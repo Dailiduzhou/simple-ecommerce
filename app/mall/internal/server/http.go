@@ -69,6 +69,7 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 	// Payment service,这里只注册一个 PaymentHTTPServer。
 	paymentv1.RegisterPaymentHTTPServer(srv, payment)
 	srv.Route("/").POST("/v1/pay/wechat/notify", payment.HandleWechatPayNotify)
+	srv.Route("/").POST("/v1/pay/alipay/notify", payment.HandleAlipayPayNotify)
 	return srv
 }
 

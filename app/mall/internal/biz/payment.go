@@ -325,6 +325,10 @@ type PaymentUsecase interface {
 	// 入队微信支付轮询任务,用于微信异步通知后主动查询支付结果。
 	// checkJob 中 PaymentID/OrderID/OutTradeNo 会被忽略,由 biz 层根据查询结果填充。
 	EnqueueWechatCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, checkJob CheckPayArgs) (*MQJob, error)
+	// EnqueueCheckJobByOutTradeNo 按商户订单号查询 payment 并在一个事务中
+	// 入队支付轮询任务,用于异步通知后主动查询支付结果。
+	// checkJob 中 Channel/PaymentID/OrderID/OutTradeNo 会被忽略,由 biz 层根据查询结果和传入的 channel 填充。
+	EnqueueCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, channel string, checkJob CheckPayArgs) (*MQJob, error)
 	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
 	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
 }
@@ -509,6 +513,10 @@ func (uc *paymentUsecase) PrepayForOrderWithCheckJob(ctx context.Context, args P
 }
 
 func (uc *paymentUsecase) EnqueueWechatCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, checkJob CheckPayArgs) (*MQJob, error) {
+	return uc.EnqueueCheckJobByOutTradeNo(ctx, outTradeNo, string(Wechat), checkJob)
+}
+
+func (uc *paymentUsecase) EnqueueCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, channel string, checkJob CheckPayArgs) (*MQJob, error) {
 	if outTradeNo == "" {
 		return nil, errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
 	}
@@ -524,7 +532,7 @@ func (uc *paymentUsecase) EnqueueWechatCheckJobByOutTradeNo(ctx context.Context,
 		checkJob.PaymentID = payment.ID
 		checkJob.OrderID = payment.OrderID
 		checkJob.OutTradeNo = payment.OutTradeNo
-		checkJob.Channel = string(Wechat)
+		checkJob.Channel = channel
 		j, err := uc.paymentJobs.EnqueueCheckPayTx(ctx, checkJob, 0)
 		if err != nil {
 			return err
