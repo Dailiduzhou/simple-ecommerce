@@ -168,7 +168,8 @@ All methods use PostgreSQL transactions to atomically update payment + order rec
 |-----------|--------|------|
 | Wechat HTTP route (`POST /v1/pay/wechat/notify`) | **Done** | `app/mall/internal/server/http.go:71` |
 | `HandleWechatPayNotify()` (XML parse + sign verify + enqueue) | **Done** | `app/mall/internal/service/payment.go:246-290` |
-| Alipay HTTP route (`POST /v1/pay/alipay/notify`) | **Not implemented** | — |
+| Alipay HTTP route (`POST /v1/pay/alipay/notify`) | **Done** | `app/mall/internal/server/http.go:72` |
+| `HandleAlipayPayNotify()` (form parse + cert verify + enqueue) | **Done** | `app/mall/internal/service/payment.go:293-342` |
 | Proto `NotifyPayment` RPC | **Stub** | `app/mall/internal/service/payment.go:206-208` |
 
 **Current Wechat callback implementation:**
@@ -187,11 +188,29 @@ func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
 }
 ```
 
-**Alipay callback — not yet implemented:**
-- No route registered for `/v1/pay/alipay/notify`
-- No signature verification (RSA2)
-- No payment status update
-- `ALIPAY_NOTIFY_URL` env var is configured and sent during prepay, but server has no handler
+**Current Alipay callback implementation:**
+
+```go
+func (s *PaymentService) HandleAlipayPayNotify(ctx khttp.Context) error {
+    req := ctx.Request()
+    notifyReq, err := alipay.ParseNotifyToBodyMap(req)
+    // ... certificate-based signature verification ...
+    tradeStatus := notifyReq.GetString("trade_status")
+    outTradeNo := notifyReq.GetString("out_trade_no")
+    if (tradeStatus == "TRADE_SUCCESS" || tradeStatus == "TRADE_FINISHED") && outTradeNo != "" {
+        // enqueue a check job (delay=0) to actively query payment result
+        s.paymentUc.EnqueueCheckJobByOutTradeNo(ctx, outTradeNo, string(biz.Alipay), checkJob)
+    }
+    // return plain text "success" or "fail"
+}
+```
+
+**Response format comparison:**
+
+| Channel | Success Response | Failure Response |
+|---------|-----------------|------------------|
+| Wechat | XML: `<xml><return_code>SUCCESS</return_code>...</xml>` | Error (Wechat retries) |
+| Alipay | Plain text: `"success"` | Plain text: `"fail"` (Alipay retries 8 times within 25h) |
 
 ### 7. API Endpoints (Service Layer)
 
@@ -206,6 +225,7 @@ func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
 | `CreateWechatPayCheckJob` | **Done** | `app/mall/internal/service/payment.go:211-230` |
 | `GetMQJob` | **Done** | `app/mall/internal/service/payment.go:233-242` |
 | `HandleWechatPayNotify` (HTTP) | **Done** | `app/mall/internal/service/payment.go:246-290` |
+| `HandleAlipayPayNotify` (HTTP) | **Done** | `app/mall/internal/service/payment.go:293-342` |
 
 ### 8. Database Schema
 
@@ -272,6 +292,7 @@ PgxPool ────────────────────────
 - `PaymentRepo.ApplyPayQuery()` / `MarkPayExpired()` transaction-based state updates to DB
 - Redis + singleflight caching for payment reads with `afterCommit` invalidation
 - Wechat callback: XML parsing, signature verification, check job enqueue
+- Alipay callback: form parsing, certificate verification, check job enqueue
 - gRPC and HTTP endpoints for unified payment APIs
 - Complete Wire DI wiring from data through biz through service to server
 
@@ -279,7 +300,6 @@ PgxPool ────────────────────────
 
 | Feature | Priority | Description |
 |---------|----------|-------------|
-| Alipay callback handler | High | No route for `/v1/pay/alipay/notify`; no RSA2 signature verification; no state sync |
 | `RefundPayment` service | Medium | Returns empty stub |
 | Order usecase layer | Medium | `OrderUsecase` methods in `biz/order.go` return nil |
 | Adapter client configuration | Medium | Both `WechatPaymentAdapter` and `AlipayPaymentAdapter` clients may be nil if credentials not configured |
