@@ -322,9 +322,34 @@ Wechat Pay                     Mall Server
 - `app/mall/internal/server/http.go:71` — route registration
 - `app/mall/internal/service/payment.go:246-290` — callback handler with XML parsing + signature verification + check job enqueue
 
-### Alipay Callback (Not Implemented)
+### Alipay Callback (Implemented)
 
-No route registered for `/v1/pay/alipay/notify`. The `ALIPAY_NOTIFY_URL` env var is configured and sent to Alipay during prepay, but the server has no handler to receive the callback.
+Route registered at `http.go:72`:
+
+```go
+srv.Route("/").POST("/v1/pay/alipay/notify", payment.HandleAlipayPayNotify)
+```
+
+**Implementation details:**
+
+- Parses form-urlencoded parameters via `alipay.ParseNotifyToBodyMap(req)`
+- Signature verification uses `alipay.VerifySignWithCert(certPath, notifyReq)` (certificate mode)
+- On `trade_status=TRADE_SUCCESS` or `TRADE_FINISHED`, enqueues a check job (delay=0) via `EnqueueCheckJobByOutTradeNo()` in a transaction
+- If enqueue fails, logs a warning but still returns "success" to Alipay (avoids infinite retry loops)
+- Returns plain text response: `"success"` or `"fail"`
+
+**Response format:**
+
+| Scenario | Response | Alipay behavior |
+|----------|----------|-----------------|
+| Parse failure | `"fail"` | Retry (8 times within 25h) |
+| Signature verification failure | `"fail"` | Retry |
+| Enqueue failure | `"success"` | Stop retry (logged for debugging) |
+| Success | `"success"` | Stop retry |
+
+**Files:**
+- `app/mall/internal/server/http.go:72` — route registration
+- `app/mall/internal/service/payment.go:293-342` — callback handler with form parsing + certificate verification + check job enqueue
 
 ---
 
@@ -544,6 +569,7 @@ PgxPool ────────────────────────
 - Alipay: `PrepayForOrder` → payment record → `TradeWapPay` → return redirect URL
 - `CheckPayWorker` → poll → transactional DB sync → retry/expire (channel-agnostic)
 - Wechat callback → XML parse → signature verify → enqueue check job
+- Alipay callback → form parse → certificate verify → enqueue check job
 - QueryOrder / CloseOrder via PaymentGateway (both channels)
 - Redis + singleflight caching for payment reads with `afterCommit` invalidation
 
@@ -551,7 +577,6 @@ PgxPool ────────────────────────
 
 | Component | Priority | What's missing |
 |-----------|----------|----------------|
-| Alipay callback handler | High | No route for `/v1/pay/alipay/notify`; no signature verification; no state sync |
 | `RefundPayment` service | Medium | Returns empty stub |
 | Order service (all methods) | Medium | `OrderUsecase` methods return nil |
 | Adapter client config | Medium | Both Wechat and Alipay adapter clients may be nil if credentials not configured |

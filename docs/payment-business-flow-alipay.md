@@ -11,7 +11,7 @@ Date: 2026-07-07
 - 支付读操作使用 **Redis + singleflight** 缓存，写操作通过 PostgreSQL 事务保证一致性。
 - 异步轮询由 **River**（基于 PostgreSQL 的任务队列）驱动，无需独立消息中间件。
 - 统一支付入口 `CreatePayment` 整合了微信/支付宝两个渠道，通过 `PayChannel` 枚举路由。
-- 支付宝**没有**自动入队轮询任务（仅微信在 prepay 时自动入队），支付宝依赖回调 + 手动查询。
+- 支付宝**没有**自动入队轮询任务（仅微信在 prepay 时自动入队），支付宝依赖回调入队 + 手动查询。
 
 ---
 
@@ -25,6 +25,7 @@ Date: 2026-07-07
 │  ─ QueryPayment      ← 统一查询                                  │
 │  ─ ClosePayment      ← 统一关闭                                  │
 │  ─ HandleWechatPayNotify ← 微信回调（HTTP）                      │
+│  ─ HandleAlipayPayNotify ← 支付宝回调（HTTP）                    │
 │  ─ CreateWechatPayCheckJob ← 手动入队轮询                        │
 │  ─ GetPayment / GetPaymentByOrder ← 查询流水                    │
 ├─────────────────────────────────────────────────────────────────┤
@@ -33,7 +34,7 @@ Date: 2026-07-07
 │  ─ PrepayForOrder         ← order_no → payment → prepay         │
 │  ─ PrepayForOrderWithCheckJob ← 微信专用：prepay + 入队原子化    │
 │  ─ QueryOrder / CloseOrder                                      │
-│  ─ EnqueueWechatCheckJobByOutTradeNo ← 回调后入队               │
+│  ─ EnqueueCheckJobByOutTradeNo ← 回调后入队（渠道无关）          │
 │                                                                 │
 │  PaymentJobUsecase                                              │
 │  ─ EnqueueCheckPay / EnqueueCheckPayTx                          │
@@ -134,31 +135,74 @@ sequenceDiagram
 sequenceDiagram
     actor AliServer as 支付宝服务器
     participant Svc as PaymentService (HTTP)
+    participant Uc as PaymentUsecase
+    participant MQ as PaymentMQRepo
+    participant River as River (PostgreSQL)
 
     AliServer->>Svc: POST /v1/pay/alipay/notify<br/>(form-urlencoded 签名参数)
 
-    Note over Svc: ⚠️ 当前未实现！<br/>路由未注册，无 handler
+    Note over Svc: 1. alipay.ParseNotifyToBodyMap(req)<br/>解析 form 参数
 
-    Svc-->>AliServer: HTTP 404
+    Note over Svc: 2. alipay.VerifySignWithCert()<br/>证书模式验签
+
+    alt 验签失败
+        Svc-->>AliServer: "fail" (触发支付宝重试)
+    else 验签成功
+        Note over Svc: 3. 提取 trade_status, out_trade_no
+
+        alt trade_status = TRADE_SUCCESS 或 TRADE_FINISHED
+            Svc->>Uc: EnqueueCheckJobByOutTradeNo(out_trade_no, "alipay", checkJob)
+            Uc->>MQ: EnqueueCheckPayTx(args, scheduledAt=now)
+            MQ->>River: INSERT river_job (kind=check_pay, delay=0)
+            River-->>MQ: JobRow
+            MQ-->>Uc: MQJob
+            Uc-->>Svc: MQJob
+        end
+
+        Svc-->>AliServer: "success" (支付宝停止重试)
+    end
 ```
 
-**当前状态：支付宝回调尚未实现。**
+**实现状态：已完成。**
 
-HTTP 服务器只注册了微信回调路由（`http.go:71`）：
+HTTP 服务器注册了支付宝回调路由（`http.go:72`）：
 
 ```go
-srv.Route("/").POST("/v1/pay/wechat/notify", payment.HandleWechatPayNotify)
+srv.Route("/").POST("/v1/pay/alipay/notify", payment.HandleAlipayPayNotify)
 ```
 
-没有对应的 `/v1/pay/alipay/notify` 路由。
+**回调处理流程：**
 
-**需要实现的内容：**
+1. `alipay.ParseNotifyToBodyMap(req)` — 解析 form-urlencoded 参数
+2. `alipay.VerifySignWithCert(alipayPublicCertPath, notifyReq)` — 证书模式验签
+3. 提取 `trade_status` 和 `out_trade_no`
+4. 当 `trade_status` 为 `TRADE_SUCCESS` 或 `TRADE_FINISHED` 时，入队 check job（延迟为 0）
+5. 返回纯文本响应
 
-- 支付宝签名验证（RSA2）
-- 解析回调参数（`trade_status`, `out_trade_no`, `trade_no` 等）
-- 调用 `PaymentSyncRepo.ApplyPayQuery()` 同步支付状态
-- 幂等处理（重复回调）
-- 返回 `success` 文本
+**响应格式：**
+
+| 场景 | 返回值 | 支付宝行为 |
+|------|--------|-----------|
+| 解析失败 | `"fail"` | 重试（25h 内 8 次） |
+| 验签失败 | `"fail"` | 重试 |
+| 入队失败 | `"success"` | 停止重试（日志记录） |
+| 成功 | `"success"` | 停止重试 |
+
+**代码文件：**
+
+- `app/mall/internal/service/payment.go:293-342` — `HandleAlipayPayNotify` 实现
+- `app/mall/internal/server/http.go:72` — 路由注册
+- `app/mall/internal/biz/payment.go:511-536` — `EnqueueCheckJobByOutTradeNo` 入队逻辑
+
+**与微信回调的差异：**
+
+| 特性 | 微信 | 支付宝 |
+|------|------|--------|
+| 请求格式 | XML | form-urlencoded |
+| 验签方式 | `wechat.VerifySign(apiKey, signType, notifyReq)` | `alipay.VerifySignWithCert(certPath, notifyReq)` |
+| 响应格式 | XML (`<xml><return_code>SUCCESS</return_code>...</xml>`) | 纯文本 (`"success"` / `"fail"`) |
+| 失败响应 | 返回错误（微信会重试） | `"fail"`（支付宝会重试） |
+| 入队时机 | `ReturnCode=SUCCESS && ResultCode=SUCCESS` | `trade_status=TRADE_SUCCESS` 或 `TRADE_FINISHED` |
 
 ---
 
@@ -517,16 +561,12 @@ T+15s     用户在支付宝完成支付
           ── 支付宝内部状态: WAIT_BUYER_PAY → TRADE_SUCCESS
 
 T+15s     支付宝发送异步回调 → POST /v1/pay/alipay/notify
-          ── ⚠️ 当前未实现，返回 404
+          ── ParseNotifyToBodyMap 解析参数
+          ── VerifySignWithCert 证书验签
+          ── EnqueueCheckJobByOutTradeNo 入队 check job (delay=0)
+          ── 返回 "success"
 
-T+30s     客户端/运营 调用 GET /v1/payments/lookup 查询
-          ── 支付宝 TradeQuery → trade_status=TRADE_SUCCESS
-          ── 返回给客户端（不写 DB）
-
-T+35s     客户端/运营 调用 POST /v1/pay/wechat/checks 手动入队
-          ── river_job INSERT (kind=check_pay, scheduled_at=now+delay)
-
-T+40s     River 调度 CheckPayWorker (attempt=1)
+T+16s     River 调度 CheckPayWorker (attempt=1)
           ── 支付宝 TradeQuery → trade_status=TRADE_SUCCESS (终态)
           ── BEGIN TRANSACTION
           ──   UPDATE payments SET status='success', third_party_tx_id='...'
@@ -534,6 +574,8 @@ T+40s     River 调度 CheckPayWorker (attempt=1)
           ── COMMIT
           ── afterCommit: 失效 8 个缓存键
           ── Worker 返回 nil → job 标记 completed
+
+Duration: ~1 秒从回调到支付确认
 ```
 
 ---
@@ -545,12 +587,13 @@ T+40s     River 调度 CheckPayWorker (attempt=1)
 | "Payment uses zero caching" | 支付读操作使用 Redis + singleflight 缓存 | 已增加缓存层 |
 | "No payment record is created before Prepay" | `PrepayForOrder` 在 prepay 前创建 payment 记录 | 已实现 |
 | "Wechat callback is a stub" | `HandleWechatPayNotify` 已实现 XML 解析、签名验证、入队 check job | 已实现 |
+| "Alipay callback not implemented" | `HandleAlipayPayNotify` 已实现 form 解析、证书验签、入队 check job | 已实现 |
 | "CreatePayment service: Stub" | `CreatePayment` 已实现统一支付入口 | 已实现 |
 | "GetPayment / GetPaymentByOrder: Stub" | 已实现，走 Redis + singleflight 缓存 | 已实现 |
 | 文档中 Worker 名为 `CheckWechatPayWorker` | 实际已重命名为 `CheckPayWorker`，渠道无关 | 已更名 |
 | 文档中 MQ job kind 为 `check_wechat_pay` | 实际为 `check_pay` | 已更正 |
 | 文档中默认 MaxPolls=5, PollInterval=30s | service 层配置覆盖为 MaxPolls=30, PollInterval=10s | 以配置为准 |
-| 文档中没有支付宝相关内容 | 支付宝适配器、关单幂等、状态映射均已实现 | 本文档补充 |
+| 文档中没有支付宝相关内容 | 支付宝适配器、关单幂等、状态映射、回调均已实现 | 本文档补充 |
 | 文档中 `orders.total_amount` 为 INTEGER (分) | 实际代码中 payments 用 NUMERIC(10,2)（元），orders 用 INTEGER（分），存在单位不一致 | 注意单位转换 |
 
 ---
@@ -559,7 +602,6 @@ T+40s     River 调度 CheckPayWorker (attempt=1)
 
 | 功能 | 优先级 | 说明 |
 |------|--------|------|
-| 支付宝异步回调 handler | **高** | 路由未注册，无签名验证，无状态同步 |
 | 退款（RefundPayment） | 中 | service 层返回空 stub |
 | OrderUsecase 各方法 | 中 | `biz/order.go` 中全部返回 nil |
 
