@@ -13,6 +13,7 @@ import (
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
+	"github.com/go-pay/gopay/alipay"
 	"github.com/go-pay/gopay/wechat"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -182,8 +183,6 @@ func (s *PaymentService) ClosePayment(ctx context.Context, req *pb.ClosePaymentR
 	return &pb.ClosePaymentReply{Success: result.Success}, nil
 }
 
-// —— 以下 RPC 不在本次渠道统一重构范围,保留旧实现 ——
-
 // GetPayment 按 int64 id 查询支付流水。
 func (s *PaymentService) GetPayment(ctx context.Context, req *pb.GetPaymentRequest) (*pb.PaymentInfo, error) {
 	payment, err := s.paymentUc.GetPayment(ctx, req.Id)
@@ -286,6 +285,69 @@ func (s *PaymentService) HandleWechatPayNotify(ctx khttp.Context) error {
 	ack := wechat.NotifyResponse{ReturnCode: "SUCCESS", ReturnMsg: "OK"}
 	ctx.Response().Header().Set("Content-Type", "application/xml; charset=utf-8")
 	_, err = ctx.Response().Write([]byte(ack.ToXmlString()))
+	return err
+}
+
+// HandleAlipayPayNotify 处理支付宝异步通知的 HTTP 回调(不走 gRPC)。
+// 流程:解析 form -> 验签(证书模式) -> 业务成功时入队一个延迟为 0 的 check job 主动查询 -> 返回 "success"。
+//
+// 支付宝回调协议要求响应体为纯文本:
+//   - "success": 支付宝停止重试
+//   - "fail": 支付宝按策略重试(25h 内 8 次)
+//
+// 任何其它格式(JSON 等)支付宝视为异常,行为不确定。
+func (s *PaymentService) HandleAlipayPayNotify(ctx khttp.Context) error {
+	ctx.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")
+
+	req := ctx.Request()
+	notifyReq, err := alipay.ParseNotifyToBodyMap(req)
+	if err != nil {
+		s.log.WithContext(ctx).Errorf("alipay notify parse failed: %v", err)
+		_, writeErr := ctx.Response().Write([]byte("fail"))
+		return writeErr
+	}
+
+	// 获取支付宝公钥证书路径用于验签
+	alipayPublicCertPath := ""
+	if s.paymentConf != nil && s.paymentConf.Alipay != nil {
+		alipayPublicCertPath = s.paymentConf.Alipay.AlipayPublicCertPath
+	}
+	if alipayPublicCertPath != "" {
+		ok, err := alipay.VerifySignWithCert(alipayPublicCertPath, notifyReq)
+		if err != nil {
+			s.log.WithContext(ctx).Errorf("alipay notify verify error: %v", err)
+			_, writeErr := ctx.Response().Write([]byte("fail"))
+			return writeErr
+		}
+		if !ok {
+			s.log.WithContext(ctx).Warn("alipay notify sign verification failed")
+			_, writeErr := ctx.Response().Write([]byte("fail"))
+			return writeErr
+		}
+	}
+
+	// 提取业务参数
+	outTradeNo := notifyReq.GetString("out_trade_no")
+	tradeStatus := notifyReq.GetString("trade_status")
+
+	// TRADE_SUCCESS: 交易支付成功(可退款)
+	// TRADE_FINISHED: 交易结束(不可退款)
+	// 两种状态都表示支付完成,需要入队 check job 同步状态
+	if (tradeStatus == "TRADE_SUCCESS" || tradeStatus == "TRADE_FINISHED") && outTradeNo != "" {
+		checkJob := biz.CheckPayArgs{
+			Channel:             string(biz.Alipay),
+			Source:              "alipay_notify",
+			MaxPolls:            s.checkPayMaxPolls(),
+			PollIntervalSeconds: s.checkPayPollIntervalSeconds(),
+		}
+		if _, err := s.paymentUc.EnqueueCheckJobByOutTradeNo(ctx, outTradeNo, string(biz.Alipay), checkJob); err != nil {
+			// 入队失败不返回错误给支付宝,避免支付宝重试导致更多失败入队,
+			// 但需要留下日志便于排查。
+			s.log.WithContext(ctx).Warnf("failed to enqueue check job from alipay notify out_trade_no=%s: %v", outTradeNo, err)
+		}
+	}
+
+	_, err = ctx.Response().Write([]byte("success"))
 	return err
 }
 

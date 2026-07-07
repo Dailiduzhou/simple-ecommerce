@@ -30,6 +30,7 @@ type fakePaymentUsecase struct {
 	prepayForOrder            func(ctx context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error)
 	prepayForOrderWithCheckJob func(ctx context.Context, args biz.PrepayForOrderArgs, checkJob biz.CheckPayArgs, delay time.Duration) (*biz.PrepayForOrderResult, *biz.MQJob, error)
 	enqueueWechatCheckJobByOutTradeNo func(ctx context.Context, outTradeNo string, checkJob biz.CheckPayArgs) (*biz.MQJob, error)
+	enqueueCheckJobByOutTradeNo       func(ctx context.Context, outTradeNo string, channel string, checkJob biz.CheckPayArgs) (*biz.MQJob, error)
 	queryOrder                func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
 	closeOrder                func(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error)
 }
@@ -81,6 +82,13 @@ func (u *fakePaymentUsecase) EnqueueWechatCheckJobByOutTradeNo(ctx context.Conte
 		return nil, errors.New("enqueueWechatCheckJobByOutTradeNo not implemented in fake")
 	}
 	return u.enqueueWechatCheckJobByOutTradeNo(ctx, outTradeNo, checkJob)
+}
+
+func (u *fakePaymentUsecase) EnqueueCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, channel string, checkJob biz.CheckPayArgs) (*biz.MQJob, error) {
+	if u.enqueueCheckJobByOutTradeNo == nil {
+		return nil, errors.New("enqueueCheckJobByOutTradeNo not implemented in fake")
+	}
+	return u.enqueueCheckJobByOutTradeNo(ctx, outTradeNo, channel, checkJob)
 }
 
 func (u *fakePaymentUsecase) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
