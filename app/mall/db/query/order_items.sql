@@ -1,13 +1,13 @@
 -- name: CreateOrderItem :one
-INSERT INTO order_items (order_id, product_id, quantity, unit_price)
-VALUES ($1, $2, $3, $4)
+INSERT INTO order_items (order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: ListOrderItems :many
 SELECT * FROM order_items WHERE order_id = $1;
 
--- name: ListOrderItemsWithProduct :many
-SELECT oi.*, p.name AS product_name, p.cover_image
+-- name: RestoreOrderItemStock :exec
+UPDATE products p
+SET stock = p.stock + oi.quantity, updated_at = CURRENT_TIMESTAMP
 FROM order_items oi
-JOIN products p ON p.id = oi.product_id
-WHERE oi.order_id = $1;
+WHERE oi.order_id = $1 AND oi.product_id = p.id;
