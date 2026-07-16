@@ -9,10 +9,10 @@ ifeq ($(GOHOSTOS), windows)
 	#Git_Bash= $(subst cmd\,bin\bash.exe,$(dir $(shell where git)))
 	Git_Bash=$(subst \,/,$(subst cmd\,bin\bash.exe,$(dir $(shell where git))))
 	INTERNAL_PROTO_FILES=$(shell $(Git_Bash) -c "find internal -name *.proto")
-	API_PROTO_FILES=$(shell $(Git_Bash) -c "find api -name *.proto")
+	API_PROTO_FILES=$(shell $(Git_Bash) -c "find -L api -name *.proto")
 else
 	INTERNAL_PROTO_FILES=$(shell find internal -name *.proto)
-	API_PROTO_FILES=$(shell find api -name *.proto)
+	API_PROTO_FILES=$(shell find -L api -name *.proto)
 endif
 
 .PHONY: init
@@ -40,9 +40,16 @@ api:
 	       --proto_path=./third_party \
  	       --go_out=paths=source_relative:./api \
  	       --go-http_out=paths=source_relative:./api \
- 	       --go-grpc_out=paths=source_relative:./api \
+	       --go-grpc_out=paths=source_relative:./api \
+	       --go-errors_out=paths=source_relative:./api \
 	       --openapi_out=fq_schema_naming=true,default_response=false:. \
 	       $(API_PROTO_FILES)
+
+.PHONY: db
+# generate sqlc and database mocks
+db:
+	sqlc generate
+	mockgen -source=internal/data/db/querier.go -destination=internal/data/db/mock/querier_mock.go
 
 .PHONY: build
 # build
@@ -60,6 +67,7 @@ generate:
 all:
 	make api
 	make config
+	make db
 	make generate
 
 # show help
