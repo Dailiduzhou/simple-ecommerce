@@ -108,6 +108,7 @@ func TestUserService_Login(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), got.Id)
 	assert.NotEmpty(t, got.Token)
+	assert.NotEmpty(t, got.RefreshToken)
 
 	claims, err := s.authUc.ParseAccessToken(got.Token)
 	require.NoError(t, err)
@@ -124,7 +125,7 @@ func TestUserService_GetUser_NotFound(t *testing.T) {
 	}
 	s := newTestUserService(repo)
 
-	got, err := s.GetUser(context.Background(), &pb.GetUserRequest{Id: 404})
+	got, err := s.GetUser(authenticatedPaymentContext(404, "user"), &pb.GetUserRequest{Id: 404})
 	require.Error(t, err)
 	assert.Nil(t, got)
 	assert.True(t, pb.IsUserNotFound(err))
@@ -141,7 +142,7 @@ func TestUserService_UpdateUser(t *testing.T) {
 	}
 	s := newTestUserService(repo)
 
-	got, err := s.UpdateUser(context.Background(), &pb.UpdateUserRequest{
+	got, err := s.UpdateUser(authenticatedPaymentContext(3, "user"), &pb.UpdateUserRequest{
 		Id:       3,
 		Nickname: "nick",
 		RealName: "real",
@@ -153,6 +154,12 @@ func TestUserService_UpdateUser(t *testing.T) {
 	assert.Equal(t, "user", got.Role)
 }
 
+func TestUserService_RejectsCrossUserAccess(t *testing.T) {
+	s := newTestUserService(&fakeUserRepo{})
+	_, err := s.GetUser(authenticatedPaymentContext(3, "user"), &pb.GetUserRequest{Id: 4})
+	require.True(t, kratoserrors.IsForbidden(err))
+}
+
 func TestUserService_DeleteUser(t *testing.T) {
 	repo := &fakeUserRepo{
 		deleteUser: func(ctx context.Context, id int64) error {
@@ -162,7 +169,7 @@ func TestUserService_DeleteUser(t *testing.T) {
 	}
 	s := newTestUserService(repo)
 
-	got, err := s.DeleteUser(context.Background(), &pb.DeleteUserRequest{Id: 5})
+	got, err := s.DeleteUser(authenticatedPaymentContext(5, "user"), &pb.DeleteUserRequest{Id: 5})
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 }
@@ -175,7 +182,7 @@ func TestUserService_DeleteUser_Error(t *testing.T) {
 	}
 	s := newTestUserService(repo)
 
-	got, err := s.DeleteUser(context.Background(), &pb.DeleteUserRequest{Id: 5})
+	got, err := s.DeleteUser(authenticatedPaymentContext(5, "user"), &pb.DeleteUserRequest{Id: 5})
 	require.Error(t, err)
 	assert.Nil(t, got)
 	assert.Equal(t, int32(500), kratoserrors.FromError(err).Code)

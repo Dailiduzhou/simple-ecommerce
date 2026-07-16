@@ -35,11 +35,12 @@ func NewUserRepo(data *Data, logger log.Logger) *UserRepo {
 
 type ShippingAddressRepo struct {
 	data *Data
+	tx   biz.TxManager
 	log  *log.Helper
 }
 
-func NewShippingAddressRepo(data *Data, logger log.Logger) *ShippingAddressRepo {
-	return &ShippingAddressRepo{data: data, log: log.NewHelper(logger)}
+func NewShippingAddressRepo(data *Data, tx biz.TxManager, logger log.Logger) *ShippingAddressRepo {
+	return &ShippingAddressRepo{data: data, tx: tx, log: log.NewHelper(logger)}
 }
 
 func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEncrypt, passwordHash string) (*biz.User, error) {
@@ -59,13 +60,12 @@ func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEnc
 		return nil, err
 	}
 	bizUser := toBizUser(u)
-	r.setCache(ctx, fmt.Sprintf("user:%d", bizUser.ID), bizUser)
-	r.setCache(ctx, fmt.Sprintf("user:phone:%s", phoneHash), bizUser)
+	r.setCache(ctx, redisKey("user", bizUser.ID), bizUser)
 	return bizUser, nil
 }
 
 func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error) {
-	cacheKey := fmt.Sprintf("user:%d", id)
+	cacheKey := redisKey("user", id)
 
 	u, err := r.getCache(ctx, cacheKey)
 	if err == nil {
@@ -90,7 +90,6 @@ func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error)
 		}
 		bizUser := toBizUser(u)
 		r.setCache(ctx, cacheKey, bizUser)
-		r.setCache(ctx, fmt.Sprintf("user:phone:%s", bizUser.PhoneHash), bizUser)
 		return bizUser, nil
 	})
 
@@ -102,22 +101,8 @@ func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error)
 }
 
 func (r *UserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*biz.User, error) {
-	cacheKey := fmt.Sprintf("user:phone:%s", phoneHash)
-
-	u, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return u, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get user phone cache: %v", err)
-	}
-
 	sfKey := fmt.Sprintf("sf:user:phone:%s", phoneHash)
 	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		userDoublecheck, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return userDoublecheck, nil
-		}
 		u, err := r.data.q.GetUserByPhoneHash(ctx, phoneHash)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -126,8 +111,7 @@ func (r *UserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*b
 			return nil, err
 		}
 		bizUser := toBizUser(u)
-		r.setCache(ctx, cacheKey, bizUser)
-		r.setCache(ctx, fmt.Sprintf("user:%d", bizUser.ID), bizUser)
+		r.setCache(ctx, redisKey("user", bizUser.ID), bizUser)
 		return bizUser, nil
 	})
 
@@ -148,15 +132,13 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName 
 		return nil, err
 	}
 	bizUser := toBizUser(u)
-	r.deleteCache(ctx, fmt.Sprintf("user:%d", id))
-	r.deleteCache(ctx, fmt.Sprintf("user:phone:%s", bizUser.PhoneHash))
-	r.setCache(ctx, fmt.Sprintf("user:%d", id), bizUser)
-	r.setCache(ctx, fmt.Sprintf("user:phone:%s", bizUser.PhoneHash), bizUser)
+	r.deleteCache(ctx, redisKey("user", id))
+	r.setCache(ctx, redisKey("user", id), bizUser)
 	return bizUser, nil
 }
 
 func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
-	u, err := r.GetUserByID(ctx, id)
+	u, err := r.data.q.GetUserByID(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -164,10 +146,8 @@ func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	r.deleteCache(ctx, fmt.Sprintf("user:%d", id))
-	if u != nil {
-		r.deleteCache(ctx, fmt.Sprintf("user:phone:%s", u.PhoneHash))
-	}
+	r.deleteCache(ctx, redisKey("user", id))
+	r.deleteCache(ctx, redisKey("user", "phone", u.PhoneHash))
 	return nil
 }
 
@@ -184,14 +164,24 @@ func (r *UserRepo) getCache(ctx context.Context, key string) (*biz.User, error) 
 }
 
 func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.User) {
-	data, err := json.Marshal(user)
+	profile := struct {
+		ID        int64
+		Nickname  string
+		RealName  string
+		Role      string
+		CreatedAt time.Time
+		UpdatedAt time.Time
+	}{user.ID, user.Nickname, user.RealName, user.Role, user.CreatedAt, user.UpdatedAt}
+	data, err := json.Marshal(profile)
 	if err != nil {
 		r.log.WithContext(ctx).Errorf("marshal user cache: %v", err)
 		return
 	}
 	jitter := time.Duration(mrand.Intn(10)) * time.Minute
 	exp := jitter + 10*time.Minute
-	r.data.rdb.Set(ctx, key, data, exp)
+	if err := r.data.rdb.Set(ctx, key, data, exp).Err(); err != nil {
+		r.log.WithContext(ctx).Errorw("msg", "write user profile cache failed", "key", key, "error", err)
+	}
 }
 
 func (r *UserRepo) deleteCache(ctx context.Context, key string) {
@@ -258,58 +248,80 @@ func (r *ShippingAddressRepo) getListCache(ctx context.Context, key string) ([]b
 }
 
 func (r *ShippingAddressRepo) setCache(ctx context.Context, key string, sa *biz.ShippingAddress) {
-	data, err := json.Marshal(sa)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal shipping address cache: %v", err)
-		return
-	}
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	exp := jitter + 10*time.Minute
-	r.data.rdb.Set(ctx, key, data, exp)
+	afterCommit(ctx, func() {
+		data, err := json.Marshal(sa)
+		if err == nil {
+			err = r.data.rdb.Set(ctx, key, data, time.Duration(mrand.Intn(10))*time.Minute+10*time.Minute).Err()
+		}
+		if err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "write shipping address cache failed", "key", key, "error", err)
+		}
+	})
 }
 
 func (r *ShippingAddressRepo) setListCache(ctx context.Context, key string, sas []biz.ShippingAddress) {
-	data, err := json.Marshal(sas)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal shipping address list cache: %v", err)
-		return
-	}
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	exp := jitter + 10*time.Minute
-	r.data.rdb.Set(ctx, key, data, exp)
+	afterCommit(ctx, func() {
+		data, err := json.Marshal(sas)
+		if err == nil {
+			err = r.data.rdb.Set(ctx, key, data, time.Duration(mrand.Intn(10))*time.Minute+10*time.Minute).Err()
+		}
+		if err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "write shipping address list cache failed", "key", key, "error", err)
+		}
+	})
 }
 
 func (r *ShippingAddressRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("delete cache %s", key)
-		return
-	}
+	afterCommit(ctx, func() {
+		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
+			r.log.WithContext(ctx).Errorf("delete cache %s", key)
+		}
+	})
 }
 
 func (r *ShippingAddressRepo) deleteListCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("delete list cache %s", key)
-		return
-	}
+	afterCommit(ctx, func() {
+		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
+			r.log.WithContext(ctx).Errorf("delete list cache %s", key)
+		}
+	})
 }
 
 func (r *ShippingAddressRepo) CreateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, receiverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*biz.ShippingAddress, error) {
 	isValid := addressTag != ""
 
-	sd, err := r.data.q.CreateShippingAddress(ctx, db.CreateShippingAddressParams{
-		UserID: userID, ReceiverName: receiverName, ReceiverPhoneHash: receiverPhoneHash, ReceiverPhoneEncrypt: receiverPhoneEncrypt, Province: province, City: city, District: district, DetailAddress: detailAddress, AddressTag: pgtype.Text{String: addressTag, Valid: isValid}, IsDefault: isDefault,
+	var sd db.ShippingAddress
+	var oldDefaultID int64
+	err := r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		if isDefault {
+			if old, err := q.GetDefaultShippingAddress(ctx, userID); err == nil {
+				oldDefaultID = old.ID
+			} else if !stderrors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			if err := q.ClearDefaultShippingAddress(ctx, userID); err != nil {
+				return err
+			}
+		}
+		var err error
+		sd, err = q.CreateShippingAddress(ctx, db.CreateShippingAddressParams{UserID: userID, ReceiverName: receiverName, ReceiverPhoneHash: receiverPhoneHash, ReceiverPhoneEncrypt: receiverPhoneEncrypt, Province: province, City: city, District: district, DetailAddress: detailAddress, AddressTag: pgtype.Text{String: addressTag, Valid: isValid}, IsDefault: isDefault})
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	result := toBizShippingAddress(sd)
-	r.setCache(ctx, fmt.Sprintf("shipping_addr:%d", result.ID), &result)
-	r.deleteListCache(ctx, fmt.Sprintf("shipping_addr:user:%d", userID))
+	r.setCache(ctx, shippingAddressCacheKey(userID, result.ID), &result)
+	if oldDefaultID > 0 {
+		r.deleteCache(ctx, shippingAddressCacheKey(userID, oldDefaultID))
+	}
+	r.deleteListCache(ctx, redisKey("shipping_addr", "user", userID))
 	return &result, nil
 }
 
 func (r *ShippingAddressRepo) ListShippingAddressesByUser(ctx context.Context, userID int64) ([]biz.ShippingAddress, error) {
-	cacheKey := fmt.Sprintf("shipping_addr:user:%d", userID)
+	cacheKey := redisKey("shipping_addr", "user", userID)
 
 	sas, err := r.getListCache(ctx, cacheKey)
 	if err == nil {
@@ -345,10 +357,14 @@ func (r *ShippingAddressRepo) ListShippingAddressesByUser(ctx context.Context, u
 }
 
 func (r *ShippingAddressRepo) GetShippingAddress(ctx context.Context, id int64, userID int64) (*biz.ShippingAddress, error) {
-	cacheKey := fmt.Sprintf("shipping_addr:%d", id)
+	cacheKey := shippingAddressCacheKey(userID, id)
 
 	sa, err := r.getCache(ctx, cacheKey)
 	if err == nil {
+		if sa.UserID != userID {
+			r.deleteCache(ctx, cacheKey)
+			return nil, biz.ErrShippingAddressNotFound
+		}
 		return sa, nil
 	}
 	if !stderrors.Is(err, redis.Nil) {
@@ -359,6 +375,9 @@ func (r *ShippingAddressRepo) GetShippingAddress(ctx context.Context, id int64, 
 	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
 		sa, err := r.getCache(ctx, cacheKey)
 		if err == nil {
+			if sa.UserID != userID {
+				return nil, biz.ErrShippingAddressNotFound
+			}
 			return sa, nil
 		}
 		dbSa, err := r.data.q.GetShippingAddress(ctx, db.GetShippingAddressParams{
@@ -367,7 +386,7 @@ func (r *ShippingAddressRepo) GetShippingAddress(ctx context.Context, id int64, 
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.User)(nil), nil
+				return nil, biz.ErrShippingAddressNotFound
 			}
 			return nil, err
 		}
@@ -386,7 +405,7 @@ func (r *ShippingAddressRepo) GetShippingAddress(ctx context.Context, id int64, 
 func (r *ShippingAddressRepo) UpdateShippingAddress(ctx context.Context, id int64, userID int64, receiverName string, receiverPhoneHash string, receiverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string) (*biz.ShippingAddress, error) {
 	isValid := addressTag != ""
 
-	sa, err := r.data.q.UpdateShippingAddress(ctx, db.UpdateShippingAddressParams{
+	sa, err := querierFromContext(ctx, r.data.q).UpdateShippingAddress(ctx, db.UpdateShippingAddressParams{
 		ID:                   id,
 		UserID:               userID,
 		ReceiverName:         receiverName,
@@ -402,37 +421,56 @@ func (r *ShippingAddressRepo) UpdateShippingAddress(ctx context.Context, id int6
 		return nil, err
 	}
 	result := toBizShippingAddress(sa)
-	r.deleteCache(ctx, fmt.Sprintf("shipping_addr:%d", id))
-	r.deleteListCache(ctx, fmt.Sprintf("shipping_addr:user:%d", userID))
-	r.setCache(ctx, fmt.Sprintf("shipping_addr:%d", id), &result)
+	r.deleteCache(ctx, shippingAddressCacheKey(userID, id))
+	r.deleteListCache(ctx, redisKey("shipping_addr", "user", userID))
+	r.setCache(ctx, shippingAddressCacheKey(userID, id), &result)
 	return &result, nil
 }
 
 func (r *ShippingAddressRepo) SetDefaultShippingAddress(ctx context.Context, id int64, userID int64) error {
-	err := r.data.q.ClearDefaultShippingAddress(ctx, userID)
-	if err != nil {
-		return err
-	}
-	err = r.data.q.SetDefaultShippingAddress(ctx, db.SetDefaultShippingAddressParams{
-		ID:     id,
-		UserID: userID,
+	var oldDefaultID int64
+	err := r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		if _, err := q.GetShippingAddress(ctx, db.GetShippingAddressParams{ID: id, UserID: userID}); err != nil {
+			if stderrors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrShippingAddressNotFound
+			}
+			return err
+		}
+		if old, err := q.GetDefaultShippingAddress(ctx, userID); err == nil {
+			oldDefaultID = old.ID
+		} else if !stderrors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if err := q.ClearDefaultShippingAddress(ctx, userID); err != nil {
+			return err
+		}
+		return q.SetDefaultShippingAddress(ctx, db.SetDefaultShippingAddressParams{ID: id, UserID: userID})
 	})
 	if err != nil {
 		return err
 	}
-	r.deleteListCache(ctx, fmt.Sprintf("shipping_addr:user:%d", userID))
+	r.deleteListCache(ctx, redisKey("shipping_addr", "user", userID))
+	r.deleteCache(ctx, shippingAddressCacheKey(userID, id))
+	if oldDefaultID > 0 {
+		r.deleteCache(ctx, shippingAddressCacheKey(userID, oldDefaultID))
+	}
 	return nil
 }
 
 func (r *ShippingAddressRepo) DeleteShippingAddress(ctx context.Context, id int64, userID int64) error {
-	err := r.data.q.DeleteShippingAddress(ctx, db.DeleteShippingAddressParams{
+	err := querierFromContext(ctx, r.data.q).DeleteShippingAddress(ctx, db.DeleteShippingAddressParams{
 		ID:     id,
 		UserID: userID,
 	})
 	if err != nil {
 		return err
 	}
-	r.deleteCache(ctx, fmt.Sprintf("shipping_addr:%d", id))
-	r.deleteListCache(ctx, fmt.Sprintf("shipping_addr:user:%d", userID))
+	r.deleteCache(ctx, shippingAddressCacheKey(userID, id))
+	r.deleteListCache(ctx, redisKey("shipping_addr", "user", userID))
 	return nil
+}
+
+func shippingAddressCacheKey(userID, addressID int64) string {
+	return redisKey("shipping_addr", "user", userID, addressID)
 }

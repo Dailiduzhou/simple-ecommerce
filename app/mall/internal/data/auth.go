@@ -2,7 +2,6 @@ package data
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
@@ -22,7 +21,7 @@ func NewAuthRepo(rdb *redis.Client, logger log.Logger) *AuthRepo {
 }
 
 func (r *AuthRepo) SetBlacklist(ctx context.Context, tokenID string, expiration time.Duration) error {
-	key := fmt.Sprintf("jwt:blacklist:%s", tokenID)
+	key := redisKey("jwt", "blacklist", tokenID)
 	if err := r.rdb.Set(ctx, key, "1", expiration).Err(); err != nil {
 		r.log.Errorf("set blacklist failed: %v", err)
 		return err
@@ -31,7 +30,7 @@ func (r *AuthRepo) SetBlacklist(ctx context.Context, tokenID string, expiration 
 }
 
 func (r *AuthRepo) IsBlacklisted(ctx context.Context, tokenID string) (bool, error) {
-	key := fmt.Sprintf("jwt:blacklist:%s", tokenID)
+	key := redisKey("jwt", "blacklist", tokenID)
 	exists, err := r.rdb.Exists(ctx, key).Result()
 	if err != nil {
 		r.log.Errorf("check blacklist failed: %v", err)
