@@ -2,72 +2,105 @@ package job
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/riverqueue/river"
 )
 
 type CheckPayWorker struct {
 	river.WorkerDefaults[biz.CheckPayArgs]
-
 	paymentGateway biz.PaymentGateway
 	paymentRepo    biz.PaymentRepo
 	log            *log.Helper
 }
 
-func NewCheckPayWorker(paymentGateway biz.PaymentGateway, paymentRepo biz.PaymentRepo, logger log.Logger) *CheckPayWorker {
-	return &CheckPayWorker{
-		paymentGateway: paymentGateway,
-		paymentRepo:    paymentRepo,
-		log:            log.NewHelper(logger),
-	}
+func NewCheckPayWorker(gateway biz.PaymentGateway, repo biz.PaymentRepo, logger log.Logger) *CheckPayWorker {
+	return &CheckPayWorker{paymentGateway: gateway, paymentRepo: repo, log: log.NewHelper(logger)}
+}
+
+type pollOutput struct {
+	PollCount int `json:"poll_count"`
 }
 
 func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayArgs]) error {
 	args := biz.NormalizeCheckPayArgs(job.Args)
-	if err := validateCheckPayArgs(args); err != nil {
-		return river.JobCancel(err)
+	if args.PaymentID <= 0 || args.Provider == "" {
+		return river.JobCancel(fmt.Errorf("payment_id and provider are required"))
 	}
 	if w.paymentGateway == nil || w.paymentRepo == nil {
-		return river.JobCancel(fmt.Errorf("pay worker dependencies are not configured"))
+		return river.JobCancel(fmt.Errorf("payment worker dependencies are missing"))
 	}
-
-	result, err := w.paymentGateway.QueryOrder(ctx, biz.PaymentQueryRequest{
-		Channel:    args.Channel,
-		OutTradeNo: args.OutTradeNo,
-	})
+	payment, err := w.paymentRepo.GetPayment(ctx, args.PaymentID)
 	if err != nil {
 		return err
 	}
-
-	switch {
-	case result.TradeState.IsTerminal():
-		return w.paymentRepo.ApplyPayQuery(ctx, args, result)
-	case result.TradeState.IsPending():
-		if job.Attempt >= args.MaxPolls {
-			w.log.WithContext(ctx).Infof("pay check expired payment_id=%d out_trade_no=%s channel=%s attempts=%d", args.PaymentID, args.OutTradeNo, args.Channel, job.Attempt)
-			return w.paymentRepo.MarkPayExpired(ctx, args)
-		}
-		return fmt.Errorf("pay order %s is still pending: %s", args.OutTradeNo, result.TradeState.String())
-	default:
-		return fmt.Errorf("pay order %s has unsupported trade state: %s", args.OutTradeNo, result.TradeState.String())
+	method, err := biz.ParsePaymentMethod(payment.Method)
+	if err != nil {
+		return river.JobCancel(err)
 	}
+	if method.Provider != args.Provider {
+		return river.JobCancel(fmt.Errorf("job provider does not match payment method"))
+	}
+
+	result, err := w.paymentGateway.Query(ctx, biz.PaymentQueryRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+	if err != nil {
+		observability.PaymentReconcileJob(ctx, args.Provider, "technical_error")
+		return err
+	}
+	if result.TradeState.IsTerminal() {
+		err := w.paymentRepo.ApplyPayQuery(ctx, args, result)
+		if err != nil {
+			observability.PaymentReconcileJob(ctx, args.Provider, "apply_error")
+		} else {
+			observability.PaymentReconcileJob(ctx, args.Provider, "terminal")
+		}
+		return err
+	}
+	if !result.TradeState.IsPending() {
+		return fmt.Errorf("provider returned unsupported state %s", result.TradeState)
+	}
+
+	state := pollOutput{PollCount: args.PollCount}
+	if output := job.Output(); len(output) > 0 {
+		_ = json.Unmarshal(output, &state)
+	}
+	state.PollCount++
+	args.PollCount = state.PollCount
+	if err := river.RecordOutput(ctx, state); err != nil {
+		return err
+	}
+	if state.PollCount < args.MaxPolls {
+		observability.PaymentReconcileJob(ctx, args.Provider, "pending")
+		return river.JobSnooze(time.Duration(args.PollIntervalSeconds) * time.Second)
+	}
+
+	if err := w.paymentRepo.MarkPayClosePending(ctx, args); err != nil {
+		return err
+	}
+	capabilities, err := w.paymentGateway.Capabilities(method)
+	if err != nil {
+		return err
+	}
+	if !capabilities.SupportsClose {
+		return w.paymentRepo.MarkReconciliationRequired(ctx, biz.ReconciliationFailure{PaymentID: payment.ID, Provider: method.Provider, Attempt: max(1, job.Attempt), LastError: "business polling deadline reached and provider cannot close"})
+	}
+	closed, err := w.paymentGateway.Close(ctx, biz.PaymentCloseRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+	if err != nil {
+		return err
+	}
+	if !closed.Success {
+		return fmt.Errorf("provider did not confirm payment close")
+	}
+	return w.paymentRepo.ApplyPayQuery(ctx, args, &biz.PaymentQueryResult{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: closed.TransactionID, TradeState: biz.TradeStateClosed, Amount: payment.Amount, Currency: payment.Currency})
 }
 
 func (w *CheckPayWorker) NextRetry(job *river.Job[biz.CheckPayArgs]) time.Time {
-	args := biz.NormalizeCheckPayArgs(job.Args)
-	return time.Now().Add(time.Duration(args.PollIntervalSeconds) * time.Second)
-}
-
-func validateCheckPayArgs(args biz.CheckPayArgs) error {
-	if args.PaymentID <= 0 {
-		return fmt.Errorf("payment_id is required")
-	}
-	if args.OutTradeNo == "" {
-		return fmt.Errorf("out_trade_no is required")
-	}
-	return nil
+	// Only technical errors reach River retry. Business pending uses JobSnooze.
+	backoff := time.Second << min(job.Attempt, 6)
+	return time.Now().Add(backoff)
 }
