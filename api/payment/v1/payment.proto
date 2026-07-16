@@ -9,21 +9,9 @@ option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1;v1";
 option java_multiple_files = true;
 option java_package = "api.payment.v1";
 
-// 支付渠道枚举。
-// 服务端负责把枚举值映射到内部 biz.PayChannel(wechat/alipay)并从 extra_params
-// 中抽取渠道特有的字段(如 WECHAT_JSAPI 需要的 openid)。
-enum PayChannel {
-  PAY_CHANNEL_UNSPECIFIED  = 0;
-  PAY_CHANNEL_ALIPAY_WAP   = 1;  // 支付宝手机网站支付
-  PAY_CHANNEL_ALIPAY_APP   = 2;  // 支付宝 APP 支付
-  PAY_CHANNEL_WECHAT_JSAPI = 3;  // 微信 JSAPI(小程序/公众号)
-  PAY_CHANNEL_WECHAT_NATIVE = 4; // 微信 NATIVE(扫码)
-  PAY_CHANNEL_WECHAT_APP   = 5;  // 微信 APP 支付
-}
-
 // 支付服务。
 // 原 WechatPayService / AliPayService 已经被收编到本 service,前端只需
-// 通过 channel 字段路由到具体渠道,不再为不同渠道调用不同的 RPC。
+// 通过 method 字段路由到已注册 adapter,不再为不同渠道调用不同的 RPC。
 service Payment {
   // 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
   // 同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
@@ -50,22 +38,22 @@ service Payment {
     };
   }
 
-  // —— 以下 RPC 不在本次渠道统一重构范围,保留不动 ——
   rpc GetPayment(GetPaymentRequest) returns (PaymentInfo) {
     option (google.api.http) = {get: "/v1/payments/{id}"};
   }
   rpc GetPaymentByOrder(GetPaymentByOrderRequest) returns (PaymentInfo) {
     option (google.api.http) = {get: "/v1/orders/{order_id}/payment"};
   }
+  // 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
   rpc RefundPayment(RefundPaymentRequest) returns (RefundPaymentReply) {
     option (google.api.http) = {
       post: "/v1/payments/{id}/refund"
       body: "*"
     };
   }
-  rpc CreateWechatPayCheckJob(CreateWechatPayCheckJobRequest) returns (MQJobInfo) {
+  rpc CreatePaymentCheckJob(CreatePaymentCheckJobRequest) returns (MQJobInfo) {
     option (google.api.http) = {
-      post: "/v1/pay/wechat/checks"
+      post: "/v1/payments/{payment_id}/checks"
       body: "*"
     };
   }
@@ -76,26 +64,27 @@ service Payment {
 
 // 统一创建支付请求。
 // - order_no: 商户订单号(对应 orders.out_trade_no)。
-// - channel: 支付渠道枚举。
+// - method: provider-neutral 的 "provider:product"，例如 "alipay:wap"。
 // - client_ip: 客户端 IP,微信风控必传。
 // - extra_params: 渠道特有的扩展参数抹平字段:
 //     * WECHAT_JSAPI 必须传 "openid"。
 //     * ALIPAY_WAP 可传 "return_url"。
-// - description / total_amount: 可选;省略时服务端从订单商品和金额兜底。
+// - description: 可选;省略时服务端从订单号生成安全描述。
+// - total_amount: 已废弃且服务端忽略，金额只从订单读取。
 message CreatePaymentReq {
   string order_no = 1;
-  PayChannel channel = 2;
+  string method = 2;
   string client_ip = 3;
   map<string, string> extra_params = 4;
   string description = 5;
-  int32 total_amount = 6;
+  int32 total_amount = 6 [deprecated = true];
 }
 
 // 统一创建支付响应。
 // - action_type: 告诉前端该怎么处理 payload。
-//     * "FORM_SUBMIT"  — 支付宝表单,前端把 payload 渲染到 <form> 提交。
-//     * "URL_REDIRECT" — 直接跳转链接,前端 location.href = payload。
-//     * "WECHAT_INVOKE" — 唤起微信 JSAPI,前端用 WeixinJSBridge / jweixin 触发。
+//     * "form"     — 提交表单。
+//     * "redirect" — 跳转链接。
+//     * "invoke"   — 调用客户端支付 SDK/API。
 // - payload: 渠道真实的支付参数,序列化为 JSON 字符串,字段契约见 service 注释。
 message CreatePaymentReply {
   string action_type = 1;
@@ -104,18 +93,19 @@ message CreatePaymentReply {
 
 message QueryPaymentReq {
   string out_trade_no = 1;
-  PayChannel channel = 2;
+  reserved 2;
 }
 message QueryPaymentReply {
   string out_trade_no = 1;
   string transaction_id = 2;
   TradeState trade_state = 3;
-  int32 total_amount = 4;
+  int64 amount_minor = 4;
+  string currency = 5;
 }
 
 message ClosePaymentReq {
   string out_trade_no = 1;
-  PayChannel channel = 2;
+  reserved 2;
 }
 message ClosePaymentReply {
   bool success = 1;
@@ -126,13 +116,14 @@ message PaymentInfo {
   int64 order_id = 2;
   int64 user_id = 3;
   int64 merchant_id = 4;
-  string amount = 5;
-  string status = 6; // pending/success/failed/refunded
-  string pay_channel = 7;
+  int64 amount_minor = 5;
+  string status = 6;
+  string method = 7;
   string third_party_tx_id = 8;
   google.protobuf.Timestamp paid_at = 9;
   google.protobuf.Timestamp created_at = 10;
   string out_trade_no = 11;
+  string currency = 12;
 }
 
 message GetPaymentRequest {
@@ -148,14 +139,12 @@ message RefundPaymentRequest {
 }
 message RefundPaymentReply {}
 
-message CreateWechatPayCheckJobRequest {
+message CreatePaymentCheckJobRequest {
   int64 payment_id = 1;
-  int64 order_id = 2;
-  string out_trade_no = 3;
-  int32 delay_seconds = 4;
-  int32 max_polls = 5;
-  int32 poll_interval_seconds = 6;
-  string source = 7;
+  int32 delay_seconds = 2;
+  int32 max_polls = 3;
+  int32 poll_interval_seconds = 4;
+  string trigger = 5;
 }
 
 message GetMQJobRequest {

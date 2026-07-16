@@ -83,6 +83,7 @@ message LoginRequest {
 message LoginReply {
   int64 id = 1;
   string token = 2;
+  string refresh_token = 3;
 }
 
 message GetUserRequest {

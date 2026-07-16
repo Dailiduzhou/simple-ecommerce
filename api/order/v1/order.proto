@@ -52,6 +52,8 @@ message OrderInfo {
   repeated OrderItem items = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+  string order_no = 10;
+  string currency = 11;
 }
 
 message CreateOrderRequest {
