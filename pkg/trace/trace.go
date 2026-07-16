@@ -2,6 +2,7 @@ package trace
 
 import (
 	"context"
+	"net/url"
 	"os"
 
 	"go.opentelemetry.io/otel"
@@ -15,8 +16,9 @@ import (
 func InitTracer(serviceName string) func() {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
-		endpoint = "jaeger:4317"
+		endpoint = "otel-collector:4317"
 	}
+	endpoint = grpcEndpoint(endpoint)
 
 	ctx := context.Background()
 
@@ -48,4 +50,12 @@ func InitTracer(serviceName string) func() {
 			otel.Handle(err)
 		}
 	}
+}
+
+func grpcEndpoint(value string) string {
+	parsed, err := url.Parse(value)
+	if err == nil && parsed.Host != "" {
+		return parsed.Host
+	}
+	return value
 }
