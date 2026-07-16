@@ -11,55 +11,57 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const cancelOrder = `-- name: CancelOrder :exec
-UPDATE orders SET is_completed = TRUE, status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = $1
+const countOrdersByUser = `-- name: CountOrdersByUser :one
+SELECT COUNT(*) FROM orders WHERE user_id = $1
 `
 
-func (q *Queries) CancelOrder(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, cancelOrder, id)
-	return err
-}
-
-const completeOrder = `-- name: CompleteOrder :exec
-UPDATE orders SET is_completed = TRUE, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $1
-`
-
-func (q *Queries) CompleteOrder(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, completeOrder, id)
-	return err
+func (q *Queries) CountOrdersByUser(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrdersByUser, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createOrder = `-- name: CreateOrder :one
-INSERT INTO orders (user_id, address_id, total_amount)
-VALUES ($1, $2, $3)
-RETURNING id, user_id, address_id, total_amount, status, is_completed, created_at, updated_at, out_trade_no
+INSERT INTO orders (user_id, address_id, total_amount_minor, currency, status, out_trade_no)
+VALUES ($1, $2, $3, $4, 'pending_payment', $5)
+RETURNING id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency
 `
 
 type CreateOrderParams struct {
-	UserID      int64
-	AddressID   int64
-	TotalAmount int32
+	UserID           int64
+	AddressID        int64
+	TotalAmountMinor int64
+	Currency         string
+	OutTradeNo       pgtype.Text
 }
 
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error) {
-	row := q.db.QueryRow(ctx, createOrder, arg.UserID, arg.AddressID, arg.TotalAmount)
+	row := q.db.QueryRow(ctx, createOrder,
+		arg.UserID,
+		arg.AddressID,
+		arg.TotalAmountMinor,
+		arg.Currency,
+		arg.OutTradeNo,
+	)
 	var i Order
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.AddressID,
-		&i.TotalAmount,
+		&i.TotalAmountMinor,
 		&i.Status,
 		&i.IsCompleted,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OutTradeNo,
+		&i.Currency,
 	)
 	return i, err
 }
 
 const getOrder = `-- name: GetOrder :one
-SELECT id, user_id, address_id, total_amount, status, is_completed, created_at, updated_at, out_trade_no FROM orders WHERE id = $1
+SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE id = $1
 `
 
 func (q *Queries) GetOrder(ctx context.Context, id int64) (Order, error) {
@@ -69,18 +71,19 @@ func (q *Queries) GetOrder(ctx context.Context, id int64) (Order, error) {
 		&i.ID,
 		&i.UserID,
 		&i.AddressID,
-		&i.TotalAmount,
+		&i.TotalAmountMinor,
 		&i.Status,
 		&i.IsCompleted,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OutTradeNo,
+		&i.Currency,
 	)
 	return i, err
 }
 
 const getOrderByOrderNo = `-- name: GetOrderByOrderNo :one
-SELECT id, user_id, address_id, total_amount, status, is_completed, created_at, updated_at, out_trade_no FROM orders WHERE out_trade_no = $1
+SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE out_trade_no = $1
 `
 
 // 通过商户订单号(orders.out_trade_no)查询订单。
@@ -92,18 +95,19 @@ func (q *Queries) GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text)
 		&i.ID,
 		&i.UserID,
 		&i.AddressID,
-		&i.TotalAmount,
+		&i.TotalAmountMinor,
 		&i.Status,
 		&i.IsCompleted,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OutTradeNo,
+		&i.Currency,
 	)
 	return i, err
 }
 
 const getOrderByUser = `-- name: GetOrderByUser :one
-SELECT id, user_id, address_id, total_amount, status, is_completed, created_at, updated_at, out_trade_no FROM orders WHERE id = $1 AND user_id = $2
+SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE id = $1 AND user_id = $2
 `
 
 type GetOrderByUserParams struct {
@@ -118,12 +122,62 @@ func (q *Queries) GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) 
 		&i.ID,
 		&i.UserID,
 		&i.AddressID,
-		&i.TotalAmount,
+		&i.TotalAmountMinor,
 		&i.Status,
 		&i.IsCompleted,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OutTradeNo,
+		&i.Currency,
+	)
+	return i, err
+}
+
+const getOrderByUserForUpdate = `-- name: GetOrderByUserForUpdate :one
+SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE
+`
+
+type GetOrderByUserForUpdateParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) GetOrderByUserForUpdate(ctx context.Context, arg GetOrderByUserForUpdateParams) (Order, error) {
+	row := q.db.QueryRow(ctx, getOrderByUserForUpdate, arg.ID, arg.UserID)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AddressID,
+		&i.TotalAmountMinor,
+		&i.Status,
+		&i.IsCompleted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OutTradeNo,
+		&i.Currency,
+	)
+	return i, err
+}
+
+const getOrderForUpdate = `-- name: GetOrderForUpdate :one
+SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetOrderForUpdate(ctx context.Context, id int64) (Order, error) {
+	row := q.db.QueryRow(ctx, getOrderForUpdate, id)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AddressID,
+		&i.TotalAmountMinor,
+		&i.Status,
+		&i.IsCompleted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OutTradeNo,
+		&i.Currency,
 	)
 	return i, err
 }
@@ -140,7 +194,7 @@ func (q *Queries) HasOngoingOrders(ctx context.Context, userID int64) (bool, err
 }
 
 const listOngoingOrdersByUser = `-- name: ListOngoingOrdersByUser :many
-SELECT id, user_id, address_id, total_amount, status, is_completed, created_at, updated_at, out_trade_no FROM orders WHERE user_id = $1 AND is_completed = FALSE ORDER BY id DESC
+SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE user_id = $1 AND is_completed = FALSE ORDER BY id DESC
 `
 
 func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error) {
@@ -156,12 +210,13 @@ func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]
 			&i.ID,
 			&i.UserID,
 			&i.AddressID,
-			&i.TotalAmount,
+			&i.TotalAmountMinor,
 			&i.Status,
 			&i.IsCompleted,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.OutTradeNo,
+			&i.Currency,
 		); err != nil {
 			return nil, err
 		}
@@ -174,7 +229,7 @@ func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]
 }
 
 const listOrdersByUser = `-- name: ListOrdersByUser :many
-SELECT id, user_id, address_id, total_amount, status, is_completed, created_at, updated_at, out_trade_no FROM orders WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3
+SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3
 `
 
 type ListOrdersByUserParams struct {
@@ -196,12 +251,13 @@ func (q *Queries) ListOrdersByUser(ctx context.Context, arg ListOrdersByUserPara
 			&i.ID,
 			&i.UserID,
 			&i.AddressID,
-			&i.TotalAmount,
+			&i.TotalAmountMinor,
 			&i.Status,
 			&i.IsCompleted,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.OutTradeNo,
+			&i.Currency,
 		); err != nil {
 			return nil, err
 		}
@@ -213,28 +269,74 @@ func (q *Queries) ListOrdersByUser(ctx context.Context, arg ListOrdersByUserPara
 	return items, nil
 }
 
-const updateOrderStatus = `-- name: UpdateOrderStatus :one
-UPDATE orders SET status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, user_id, address_id, total_amount, status, is_completed, created_at, updated_at, out_trade_no
+const markOrderCancelled = `-- name: MarkOrderCancelled :one
+UPDATE orders SET is_completed = TRUE, status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'cancelling'
+RETURNING id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency
 `
 
-type UpdateOrderStatusParams struct {
-	ID     int64
-	Status string
-}
-
-func (q *Queries) UpdateOrderStatus(ctx context.Context, arg UpdateOrderStatusParams) (Order, error) {
-	row := q.db.QueryRow(ctx, updateOrderStatus, arg.ID, arg.Status)
+func (q *Queries) MarkOrderCancelled(ctx context.Context, id int64) (Order, error) {
+	row := q.db.QueryRow(ctx, markOrderCancelled, id)
 	var i Order
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.AddressID,
-		&i.TotalAmount,
+		&i.TotalAmountMinor,
 		&i.Status,
 		&i.IsCompleted,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OutTradeNo,
+		&i.Currency,
+	)
+	return i, err
+}
+
+const markOrderCancelling = `-- name: MarkOrderCancelling :one
+UPDATE orders SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'pending_payment'
+RETURNING id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency
+`
+
+func (q *Queries) MarkOrderCancelling(ctx context.Context, id int64) (Order, error) {
+	row := q.db.QueryRow(ctx, markOrderCancelling, id)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AddressID,
+		&i.TotalAmountMinor,
+		&i.Status,
+		&i.IsCompleted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OutTradeNo,
+		&i.Currency,
+	)
+	return i, err
+}
+
+const markOrderPaid = `-- name: MarkOrderPaid :one
+UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'pending_payment'
+RETURNING id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency
+`
+
+func (q *Queries) MarkOrderPaid(ctx context.Context, id int64) (Order, error) {
+	row := q.db.QueryRow(ctx, markOrderPaid, id)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AddressID,
+		&i.TotalAmountMinor,
+		&i.Status,
+		&i.IsCompleted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OutTradeNo,
+		&i.Currency,
 	)
 	return i, err
 }

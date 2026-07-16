@@ -11,14 +11,15 @@ import (
 )
 
 type Querier interface {
-	CancelOrder(ctx context.Context, id int64) error
 	ClearDefaultShippingAddress(ctx context.Context, userID int64) error
-	CompleteOrder(ctx context.Context, id int64) error
+	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
 	CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error)
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error)
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
+	CreatePaymentNotification(ctx context.Context, arg CreatePaymentNotificationParams) (PaymentNotification, error)
+	CreatePaymentReconciliationFailure(ctx context.Context, arg CreatePaymentReconciliationFailureParams) (PaymentReconciliationFailure, error)
 	CreatePaymentWithOutTradeNo(ctx context.Context, arg CreatePaymentWithOutTradeNoParams) (Payment, error)
 	CreateProduct(ctx context.Context, arg CreateProductParams) (Product, error)
 	CreateShippingAddress(ctx context.Context, arg CreateShippingAddressParams) (ShippingAddress, error)
@@ -31,43 +32,58 @@ type Querier interface {
 	GetCategory(ctx context.Context, id int64) (Category, error)
 	GetDefaultShippingAddress(ctx context.Context, userID int64) (ShippingAddress, error)
 	GetEvent(ctx context.Context, id int64) (Event, error)
+	GetLatestPaymentByOrder(ctx context.Context, orderID int64) (Payment, error)
 	GetOrder(ctx context.Context, id int64) (Order, error)
 	// 通过商户订单号(orders.out_trade_no)查询订单。
 	// 统一支付 API 的入口:order_no -> order。
 	GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text) (Order, error)
 	GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) (Order, error)
+	GetOrderByUserForUpdate(ctx context.Context, arg GetOrderByUserForUpdateParams) (Order, error)
+	GetOrderForUpdate(ctx context.Context, id int64) (Order, error)
 	GetPayment(ctx context.Context, id int64) (Payment, error)
-	GetPaymentByOrder(ctx context.Context, orderID int64) (Payment, error)
 	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo pgtype.Text) (Payment, error)
 	GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID pgtype.Text) (Payment, error)
+	GetPaymentForUpdate(ctx context.Context, id int64) (Payment, error)
+	GetPaymentNotification(ctx context.Context, id int64) (PaymentNotification, error)
 	GetProduct(ctx context.Context, id int64) (Product, error)
+	GetProductForOrder(ctx context.Context, id int64) (Product, error)
 	GetShippingAddress(ctx context.Context, arg GetShippingAddressParams) (ShippingAddress, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error)
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
 	HasOngoingPayments(ctx context.Context, userID int64) (bool, error)
+	HasSuccessfulPaymentByOrder(ctx context.Context, orderID int64) (bool, error)
+	IncrementProductStock(ctx context.Context, arg IncrementProductStockParams) error
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
 	ListEventsByStatus(ctx context.Context, arg ListEventsByStatusParams) ([]Event, error)
 	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)
 	ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error)
-	ListOrderItemsWithProduct(ctx context.Context, orderID int64) ([]ListOrderItemsWithProductRow, error)
 	ListOrdersByUser(ctx context.Context, arg ListOrdersByUserParams) ([]Order, error)
+	ListPaymentsByOrderForUpdate(ctx context.Context, orderID int64) ([]Payment, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]Product, error)
 	ListProductsByCategory(ctx context.Context, arg ListProductsByCategoryParams) ([]Product, error)
 	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
 	ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error)
 	ListTopCategories(ctx context.Context) ([]Category, error)
 	ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error)
+	MarkOrderCancelled(ctx context.Context, id int64) (Order, error)
+	MarkOrderCancelling(ctx context.Context, id int64) (Order, error)
+	MarkOrderPaid(ctx context.Context, id int64) (Order, error)
+	MarkPaymentClosePending(ctx context.Context, id int64) (Payment, error)
+	MarkPaymentClosed(ctx context.Context, id int64) (Payment, error)
+	MarkPaymentNotificationFailed(ctx context.Context, arg MarkPaymentNotificationFailedParams) error
+	MarkPaymentNotificationProcessed(ctx context.Context, id int64) error
+	MarkPaymentPending(ctx context.Context, arg MarkPaymentPendingParams) (Payment, error)
+	MarkPaymentReconcileRequired(ctx context.Context, id int64) (Payment, error)
+	MarkPaymentSuccess(ctx context.Context, arg MarkPaymentSuccessParams) (Payment, error)
+	RestoreOrderItemStock(ctx context.Context, orderID int64) error
 	SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) error
 	SoftDeleteEvent(ctx context.Context, id int64) error
 	SoftDeleteProduct(ctx context.Context, id int64) error
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event, error)
 	UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) error
-	UpdateOrderStatus(ctx context.Context, arg UpdateOrderStatusParams) (Order, error)
-	UpdatePaymentFailed(ctx context.Context, id int64) error
 	UpdatePaymentRefunded(ctx context.Context, id int64) error
-	UpdatePaymentSuccess(ctx context.Context, arg UpdatePaymentSuccessParams) (Payment, error)
 	UpdateProduct(ctx context.Context, arg UpdateProductParams) (Product, error)
 	UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) error
 	UpdateShippingAddress(ctx context.Context, arg UpdateShippingAddressParams) (ShippingAddress, error)
