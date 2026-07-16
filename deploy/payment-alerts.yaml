@@ -1,0 +1,28 @@
+groups:
+  - name: payment-correctness
+    rules:
+      - alert: PaymentAmountMismatch
+        expr: increase(payment_amount_mismatch_total[1m]) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations: {summary: "Payment amount mismatch detected"}
+      - alert: PaymentStateConflict
+        expr: increase(payment_state_conflict_total[5m]) > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations: {summary: "Payment state conflict detected"}
+      - alert: PaymentCallbackPersistenceFailure
+        expr: increase(payment_callback_persist_failure_total[1m]) > 0
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: "Payment callback persistence has failed"}
+      - alert: PaymentReconciliationRequired
+        expr: increase(payment_reconcile_required_total[5m]) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations: {summary: "A payment requires reconciliation"}
+      - alert: RiverPaymentJobDiscarded
+        expr: increase(river_job_discarded_total{kind="check_pay"}[5m]) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations: {summary: "A payment reconciliation job was discarded"}
