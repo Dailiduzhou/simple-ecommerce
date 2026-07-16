@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/shopspring/decimal"
 )
@@ -67,6 +68,9 @@ func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, n
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
 		return nil, err
 	}
+	if price.IsNegative() || !price.Shift(2).Equal(price.Shift(2).Truncate(0)) {
+		return nil, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must use at most two decimal places")
+	}
 	discount, err := decimal.NewFromString(discountStr)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("invalid discount: %v", err)
@@ -95,6 +99,9 @@ func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryI
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
 		return nil, err
+	}
+	if price.IsNegative() || !price.Shift(2).Equal(price.Shift(2).Truncate(0)) {
+		return nil, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must use at most two decimal places")
 	}
 	discount, err := decimal.NewFromString(discountStr)
 	if err != nil {
