@@ -5,8 +5,8 @@ import (
 
 	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
-	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 	"github.com/go-kratos/kratos/v2/middleware"
+	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 )
 
 func CheckBlacklist(authUc biz.AuthUsecase) middleware.Middleware {
@@ -39,15 +39,12 @@ func CheckBlacklist(authUc biz.AuthUsecase) middleware.Middleware {
 	}
 }
 
-type keyClaims struct{}
-
 func WithClaims(ctx context.Context, claims *biz.EcommerceClaims) context.Context {
-	return context.WithValue(ctx, keyClaims{}, claims)
+	return biz.WithClaims(ctx, claims)
 }
 
 func ClaimsFromContext(ctx context.Context) (*biz.EcommerceClaims, bool) {
-	claims, ok := ctx.Value(keyClaims{}).(*biz.EcommerceClaims)
-	return claims, ok
+	return biz.ClaimsFromContext(ctx)
 }
 
 func InjectClaims() middleware.Middleware {
