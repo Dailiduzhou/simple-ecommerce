@@ -33,37 +33,41 @@ type Event struct {
 }
 
 type Order struct {
-	ID          int64
-	UserID      int64
-	AddressID   int64
-	TotalAmount int32
-	Status      string
-	IsCompleted bool
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
-	OutTradeNo  pgtype.Text
+	ID               int64
+	UserID           int64
+	AddressID        int64
+	TotalAmountMinor int64
+	Status           string
+	IsCompleted      bool
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	OutTradeNo       pgtype.Text
+	Currency         string
 }
 
 type OrderItem struct {
-	ID        int64
-	OrderID   int64
-	ProductID int64
-	Quantity  int32
-	UnitPrice decimal.Decimal
-	CreatedAt pgtype.Timestamptz
+	ID                  int64
+	OrderID             int64
+	ProductID           int64
+	Quantity            int32
+	UnitPriceMinor      int64
+	CreatedAt           pgtype.Timestamptz
+	ProductNameSnapshot string
+	CoverImageSnapshot  []byte
 }
 
 type OrderRefund struct {
-	ID           int64
-	OrderID      int64
-	UserID       int64
-	OutRefundNo  string
-	TotalAmount  int32
-	RefundAmount int32
-	Reason       string
-	Status       string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID                int64
+	OrderID           int64
+	UserID            int64
+	OutRefundNo       string
+	TotalAmountMinor  int64
+	RefundAmountMinor int64
+	Reason            string
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	Currency          string
 }
 
 type Payment struct {
@@ -71,7 +75,7 @@ type Payment struct {
 	OrderID        int64
 	UserID         int64
 	MerchantID     int64
-	Amount         decimal.Decimal
+	AmountMinor    int64
 	Status         string
 	PayChannel     string
 	ThirdPartyTxID pgtype.Text
@@ -79,13 +83,40 @@ type Payment struct {
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
 	OutTradeNo     pgtype.Text
+	Currency       string
+	ActionType     pgtype.Text
+	ActionPayload  []byte
+}
+
+type PaymentNotification struct {
+	ID              int64
+	Provider        string
+	ProviderEventID pgtype.Text
+	OutTradeNo      string
+	PayloadHash     string
+	VerifiedAt      pgtype.Timestamptz
+	ProcessedAt     pgtype.Timestamptz
+	Status          string
+	LastError       pgtype.Text
+	CreatedAt       pgtype.Timestamptz
+}
+
+type PaymentReconciliationFailure struct {
+	ID         int64
+	PaymentID  int64
+	Provider   string
+	RiverJobID pgtype.Int8
+	Attempt    int32
+	LastError  string
+	CreatedAt  pgtype.Timestamptz
+	ResolvedAt pgtype.Timestamptz
 }
 
 type Product struct {
 	ID          int64
 	CategoryID  int64
 	Name        string
-	Price       decimal.Decimal
+	PriceMinor  int64
 	Discount    decimal.Decimal
 	Stock       int32
 	Status      int16

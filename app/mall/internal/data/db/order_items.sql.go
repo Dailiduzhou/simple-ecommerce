@@ -7,22 +7,21 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/shopspring/decimal"
 )
 
 const createOrderItem = `-- name: CreateOrderItem :one
-INSERT INTO order_items (order_id, product_id, quantity, unit_price)
-VALUES ($1, $2, $3, $4)
-RETURNING id, order_id, product_id, quantity, unit_price, created_at
+INSERT INTO order_items (order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, order_id, product_id, quantity, unit_price_minor, created_at, product_name_snapshot, cover_image_snapshot
 `
 
 type CreateOrderItemParams struct {
-	OrderID   int64
-	ProductID int64
-	Quantity  int32
-	UnitPrice decimal.Decimal
+	OrderID             int64
+	ProductID           int64
+	Quantity            int32
+	UnitPriceMinor      int64
+	ProductNameSnapshot string
+	CoverImageSnapshot  []byte
 }
 
 func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error) {
@@ -30,7 +29,9 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		arg.OrderID,
 		arg.ProductID,
 		arg.Quantity,
-		arg.UnitPrice,
+		arg.UnitPriceMinor,
+		arg.ProductNameSnapshot,
+		arg.CoverImageSnapshot,
 	)
 	var i OrderItem
 	err := row.Scan(
@@ -38,14 +39,16 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		&i.OrderID,
 		&i.ProductID,
 		&i.Quantity,
-		&i.UnitPrice,
+		&i.UnitPriceMinor,
 		&i.CreatedAt,
+		&i.ProductNameSnapshot,
+		&i.CoverImageSnapshot,
 	)
 	return i, err
 }
 
 const listOrderItems = `-- name: ListOrderItems :many
-SELECT id, order_id, product_id, quantity, unit_price, created_at FROM order_items WHERE order_id = $1
+SELECT id, order_id, product_id, quantity, unit_price_minor, created_at, product_name_snapshot, cover_image_snapshot FROM order_items WHERE order_id = $1
 `
 
 func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error) {
@@ -62,8 +65,10 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderIte
 			&i.OrderID,
 			&i.ProductID,
 			&i.Quantity,
-			&i.UnitPrice,
+			&i.UnitPriceMinor,
 			&i.CreatedAt,
+			&i.ProductNameSnapshot,
+			&i.CoverImageSnapshot,
 		); err != nil {
 			return nil, err
 		}
@@ -75,49 +80,14 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderIte
 	return items, nil
 }
 
-const listOrderItemsWithProduct = `-- name: ListOrderItemsWithProduct :many
-SELECT oi.id, oi.order_id, oi.product_id, oi.quantity, oi.unit_price, oi.created_at, p.name AS product_name, p.cover_image
+const restoreOrderItemStock = `-- name: RestoreOrderItemStock :exec
+UPDATE products p
+SET stock = p.stock + oi.quantity, updated_at = CURRENT_TIMESTAMP
 FROM order_items oi
-JOIN products p ON p.id = oi.product_id
-WHERE oi.order_id = $1
+WHERE oi.order_id = $1 AND oi.product_id = p.id
 `
 
-type ListOrderItemsWithProductRow struct {
-	ID          int64
-	OrderID     int64
-	ProductID   int64
-	Quantity    int32
-	UnitPrice   decimal.Decimal
-	CreatedAt   pgtype.Timestamptz
-	ProductName string
-	CoverImage  []byte
-}
-
-func (q *Queries) ListOrderItemsWithProduct(ctx context.Context, orderID int64) ([]ListOrderItemsWithProductRow, error) {
-	rows, err := q.db.Query(ctx, listOrderItemsWithProduct, orderID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListOrderItemsWithProductRow
-	for rows.Next() {
-		var i ListOrderItemsWithProductRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrderID,
-			&i.ProductID,
-			&i.Quantity,
-			&i.UnitPrice,
-			&i.CreatedAt,
-			&i.ProductName,
-			&i.CoverImage,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) RestoreOrderItemStock(ctx context.Context, orderID int64) error {
+	_, err := q.db.Exec(ctx, restoreOrderItemStock, orderID)
+	return err
 }
