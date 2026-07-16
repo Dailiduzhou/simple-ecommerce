@@ -2,7 +2,8 @@ package job
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -10,186 +11,93 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type fakeWorkerPaymentGateway struct {
-	query func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error)
+type workerGateway struct {
+	result *biz.PaymentQueryResult
+	err    error
+	query  biz.PaymentQueryRequest
 }
 
-func (p *fakeWorkerPaymentGateway) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
-	return nil, errors.New("not implemented")
+func (g *workerGateway) Capabilities(biz.PaymentMethod) (biz.PaymentCapabilities, error) {
+	return biz.PaymentCapabilities{SupportsClose: true}, nil
+}
+func (g *workerGateway) Prepay(context.Context, biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
+	return nil, nil
+}
+func (g *workerGateway) Query(_ context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+	g.query = req
+	return g.result, g.err
+}
+func (g *workerGateway) Close(context.Context, biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+	return &biz.PaymentCloseResult{Success: true}, nil
+}
+func (g *workerGateway) ParseAndVerifyNotification(string, *http.Request) (*biz.PaymentNotification, error) {
+	return nil, nil
+}
+func (g *workerGateway) NotificationAck(string, bool) (biz.PaymentNotificationAck, error) {
+	return biz.DefaultPaymentNotificationAck(), nil
 }
 
-func (p *fakeWorkerPaymentGateway) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
-	return p.query(ctx, req)
+type workerRepo struct {
+	payment     *biz.PaymentDO
+	applied     bool
+	appliedArgs biz.CheckPayArgs
 }
 
-func (p *fakeWorkerPaymentGateway) CloseOrder(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
-	return nil, errors.New("not implemented")
+func (r *workerRepo) CreatePayment(context.Context, biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
+	return nil, nil
+}
+func (r *workerRepo) MarkPaymentPending(context.Context, int64, biz.PaymentAction) (*biz.PaymentDO, error) {
+	return nil, nil
+}
+func (r *workerRepo) GetPayment(context.Context, int64) (*biz.PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *workerRepo) GetPaymentByUser(context.Context, int64, int64) (*biz.PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *workerRepo) GetLatestPaymentByOrder(context.Context, int64) (*biz.PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *workerRepo) GetActivePaymentByOrderMethod(context.Context, int64, string) (*biz.PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *workerRepo) GetPaymentByOutTradeNo(context.Context, string) (*biz.PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *workerRepo) ApplyPayQuery(_ context.Context, args biz.CheckPayArgs, _ *biz.PaymentQueryResult) error {
+	r.applied = true
+	r.appliedArgs = args
+	return nil
+}
+func (r *workerRepo) MarkPayClosePending(context.Context, biz.CheckPayArgs) error { return nil }
+func (r *workerRepo) MarkReconciliationRequired(context.Context, biz.ReconciliationFailure) error {
+	return nil
+}
+func (r *workerRepo) RecordReconciliationFailure(context.Context, biz.ReconciliationFailure) error {
+	return nil
 }
 
-type fakeWorkerPaymentRepo struct {
-	apply   func(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error
-	expired func(ctx context.Context, args biz.CheckPayArgs) error
+func TestCheckPayWorker_AppliesTerminalProviderResult(t *testing.T) {
+	method := biz.PaymentMethod{Provider: "wechat", Product: "native"}
+	payment := &biz.PaymentDO{ID: 8, Method: method.String(), OutTradeNo: "pay_8", Amount: 10000, Currency: "CNY"}
+	gateway := &workerGateway{result: &biz.PaymentQueryResult{Method: method, OutTradeNo: "pay_8", TransactionID: "tx_8", TradeState: biz.TradeStateSuccess, Amount: 10000, Currency: "CNY"}}
+	repo := &workerRepo{payment: payment}
+	worker := NewCheckPayWorker(gateway, repo, log.DefaultLogger)
+	job := &river.Job[biz.CheckPayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.CheckPayArgs{PaymentID: 8, Provider: "wechat", Trigger: "callback"}}
+	require.NoError(t, worker.Work(context.Background(), job))
+	require.True(t, repo.applied)
+	require.Equal(t, "pay_8", gateway.query.OutTradeNo)
+	require.Equal(t, "callback", repo.appliedArgs.Trigger)
 }
 
-func (r *fakeWorkerPaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (r *fakeWorkerPaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (r *fakeWorkerPaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (r *fakeWorkerPaymentRepo) GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*biz.PaymentDO, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (r *fakeWorkerPaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*biz.PaymentDO, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (r *fakeWorkerPaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64) error {
-	return errors.New("not implemented")
-}
-
-func (r *fakeWorkerPaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
-	return r.apply(ctx, args, result)
-}
-
-func (r *fakeWorkerPaymentRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
-	return r.expired(ctx, args)
-}
-
-func TestCheckPayWorker_ApplyTerminalState(t *testing.T) {
-	args := biz.CheckPayArgs{PaymentID: 12, OutTradeNo: "order-12", Channel: "wechat", MaxPolls: 5, PollIntervalSeconds: 30, Source: "api"}
-	worker := NewCheckPayWorker(
-		&fakeWorkerPaymentGateway{
-			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
-				assert.Equal(t, "order-12", req.OutTradeNo)
-				return &biz.PaymentQueryResult{
-					OutTradeNo:    req.OutTradeNo,
-					TransactionID: "wx-12",
-					TradeState:    biz.TradeStateSuccess,
-					TotalAmount:   9900,
-				}, nil
-			},
-		},
-		&fakeWorkerPaymentRepo{
-			apply: func(ctx context.Context, gotArgs biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
-				assert.Equal(t, args, gotArgs)
-				assert.Equal(t, biz.TradeStateSuccess, result.TradeState)
-				assert.Equal(t, "wx-12", result.TransactionID)
-				return nil
-			},
-			expired: func(ctx context.Context, args biz.CheckPayArgs) error {
-				t.Fatalf("MarkPayExpired should not be called")
-				return nil
-			},
-		},
-		log.DefaultLogger,
-	)
-
-	err := worker.Work(context.Background(), &river.Job[biz.CheckPayArgs]{
-		JobRow: &rivertype.JobRow{Attempt: 1},
-		Args:   args,
-	})
-	require.NoError(t, err)
-}
-
-func TestCheckPayWorker_RetriesPendingState(t *testing.T) {
-	worker := NewCheckPayWorker(
-		&fakeWorkerPaymentGateway{
-			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
-				return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateNotPay}, nil
-			},
-		},
-		&fakeWorkerPaymentRepo{
-			apply: func(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
-				t.Fatalf("ApplyPayQuery should not be called")
-				return nil
-			},
-			expired: func(ctx context.Context, args biz.CheckPayArgs) error {
-				t.Fatalf("MarkPayExpired should not be called")
-				return nil
-			},
-		},
-		log.DefaultLogger,
-	)
-
-	err := worker.Work(context.Background(), &river.Job[biz.CheckPayArgs]{
-		JobRow: &rivertype.JobRow{Attempt: 2},
-		Args:   biz.CheckPayArgs{PaymentID: 12, OutTradeNo: "order-12", MaxPolls: 5},
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "still pending")
-}
-
-func TestCheckPayWorker_MarksExpiredOnLastPendingAttempt(t *testing.T) {
-	args := biz.CheckPayArgs{PaymentID: 12, OrderID: 34, OutTradeNo: "order-12", Channel: "wechat", MaxPolls: 3, PollIntervalSeconds: 30, Source: "api"}
-	worker := NewCheckPayWorker(
-		&fakeWorkerPaymentGateway{
-			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
-				return &biz.PaymentQueryResult{OutTradeNo: req.OutTradeNo, TradeState: biz.TradeStateUserPaying}, nil
-			},
-		},
-		&fakeWorkerPaymentRepo{
-			apply: func(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
-				t.Fatalf("ApplyPayQuery should not be called")
-				return nil
-			},
-			expired: func(ctx context.Context, gotArgs biz.CheckPayArgs) error {
-				assert.Equal(t, args, gotArgs)
-				return nil
-			},
-		},
-		log.DefaultLogger,
-	)
-
-	err := worker.Work(context.Background(), &river.Job[biz.CheckPayArgs]{
-		JobRow: &rivertype.JobRow{Attempt: 3},
-		Args:   args,
-	})
-	require.NoError(t, err)
-}
-
-func TestCheckPayWorker_CancelsInvalidArgs(t *testing.T) {
-	worker := NewCheckPayWorker(
-		&fakeWorkerPaymentGateway{
-			query: func(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
-				t.Fatalf("QueryOrder should not be called")
-				return nil, nil
-			},
-		},
-		&fakeWorkerPaymentRepo{},
-		log.DefaultLogger,
-	)
-
-	err := worker.Work(context.Background(), &river.Job[biz.CheckPayArgs]{
-		JobRow: &rivertype.JobRow{Attempt: 1},
-		Args:   biz.CheckPayArgs{OutTradeNo: "order-12"},
-	})
-	require.Error(t, err)
-
-	var cancelErr *river.JobCancelError
-	assert.True(t, errors.As(err, &cancelErr), err)
-	assert.Contains(t, err.Error(), "payment_id is required")
-}
-
-func TestCheckPayWorker_NextRetryUsesPollInterval(t *testing.T) {
-	worker := NewCheckPayWorker(nil, nil, log.DefaultLogger)
-
-	before := time.Now().Add(9 * time.Second)
-	got := worker.NextRetry(&river.Job[biz.CheckPayArgs]{
-		Args: biz.CheckPayArgs{PollIntervalSeconds: 10},
-	})
-	after := time.Now().Add(11 * time.Second)
-
-	assert.True(t, !got.Before(before) && !got.After(after), got)
+func TestCheckPayWorker_TechnicalQueryErrorUsesRiverRetry(t *testing.T) {
+	payment := &biz.PaymentDO{ID: 8, Method: "wechat:native", OutTradeNo: "pay_8"}
+	worker := NewCheckPayWorker(&workerGateway{err: fmt.Errorf("timeout")}, &workerRepo{payment: payment}, log.DefaultLogger)
+	job := &river.Job[biz.CheckPayArgs]{JobRow: &rivertype.JobRow{Attempt: 2}, Args: biz.CheckPayArgs{PaymentID: 8, Provider: "wechat"}}
+	err := worker.Work(context.Background(), job)
+	require.EqualError(t, err, "timeout")
+	require.True(t, worker.NextRetry(job).After(time.Now()))
 }
