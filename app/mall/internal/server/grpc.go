@@ -12,10 +12,12 @@ import (
 	custommid "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server/middleware"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 
+	validatorv2 "github.com/go-kratos/kratos/contrib/middleware/validate/v2"
 	"github.com/go-kratos/kratos/v2/log"
 	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 	"github.com/go-kratos/kratos/v2/middleware/recovery"
 	"github.com/go-kratos/kratos/v2/middleware/selector"
+	"github.com/go-kratos/kratos/v2/middleware/tracing"
 	"github.com/go-kratos/kratos/v2/transport/grpc"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
@@ -36,6 +38,9 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 	opts := []grpc.ServerOption{
 		grpc.Middleware(
 			recovery.Recovery(),
+			tracing.Server(),
+			custommid.SafeLogging(logger),
+			validatorv2.ProtoValidate(),
 			selector.Server(
 				jwtMiddleware,
 				custommid.InjectClaims(),
