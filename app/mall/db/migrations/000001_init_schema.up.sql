@@ -82,6 +82,8 @@ CREATE INDEX idx_products_status ON products(status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_products_image_main ON products USING GIN (cover_image);
 CREATE INDEX idx_products_media_assets ON products USING GIN (media_assets);
 
+COMMENT ON COLUMN products.status IS '商品状态：0=下架，1=上架；当前业务未定义其他状态值';
+
 CREATE TABLE orders (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL,

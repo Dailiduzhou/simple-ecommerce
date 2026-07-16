@@ -9,6 +9,7 @@ SELECT * FROM products WHERE id = $1 AND deleted_at IS NULL;
 -- name: GetProductForOrder :one
 SELECT * FROM products WHERE id = $1 AND deleted_at IS NULL FOR UPDATE;
 
+-- 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
 -- name: ListProductsByCategory :many
 SELECT * FROM products
 WHERE category_id = $1 AND status = 1 AND deleted_at IS NULL
