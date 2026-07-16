@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"strings"
 
 	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
 	orderv1 "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
@@ -13,10 +14,12 @@ import (
 	custommid "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server/middleware"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 
+	validatorv2 "github.com/go-kratos/kratos/contrib/middleware/validate/v2"
 	"github.com/go-kratos/kratos/v2/log"
 	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 	"github.com/go-kratos/kratos/v2/middleware/recovery"
 	"github.com/go-kratos/kratos/v2/middleware/selector"
+	"github.com/go-kratos/kratos/v2/middleware/tracing"
 	"github.com/go-kratos/kratos/v2/transport/http"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
@@ -43,6 +46,9 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 	opts := []http.ServerOption{
 		http.Middleware(
 			recovery.Recovery(),
+			tracing.Server(),
+			custommid.SafeLogging(logger),
+			validatorv2.ProtoValidate(),
 			selector.Server(
 				jwtMiddleware,
 				custommid.InjectClaims(),
@@ -65,11 +71,9 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 	mallv1.RegisterMallHTTPServer(srv, mall)
 	userv1.RegisterUserHTTPServer(srv, user)
 	orderv1.RegisterOrderHTTPServer(srv, order)
-	// 统一支付入口:原 WechatPayService / AliPayService 已经被收编到
-	// Payment service,这里只注册一个 PaymentHTTPServer。
+	// Payment service and callback routing are provider-neutral.
 	paymentv1.RegisterPaymentHTTPServer(srv, payment)
-	srv.Route("/").POST("/v1/pay/wechat/notify", payment.HandleWechatPayNotify)
-	srv.Route("/").POST("/v1/pay/alipay/notify", payment.HandleAlipayPayNotify)
+	srv.Route("/").POST("/v1/payments/{provider}/notify", payment.HandlePaymentNotify)
 	return srv
 }
 
@@ -80,7 +84,18 @@ func newWhiteListMatcher() selector.MatchFunc {
 		OperationUserRefreshToken: {},
 	}
 	return func(ctx context.Context, operation string) bool {
+		if request, ok := http.RequestFromServerContext(ctx); ok && request.Method == "POST" {
+			path := strings.TrimSuffix(request.URL.Path, "/")
+			if isPaymentCallbackPath(path) {
+				return false
+			}
+		}
 		_, ok := whiteList[operation]
 		return !ok // false = skip auth chain (whitelisted)
 	}
+}
+
+func isPaymentCallbackPath(path string) bool {
+	parts := strings.Split(path, "/")
+	return len(parts) == 5 && parts[1] == "v1" && parts[2] == "payments" && parts[3] != "" && parts[4] == "notify"
 }
