@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
 	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
@@ -16,6 +17,8 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var ErrShippingAddressNotFound = mallv1.ErrorShippingAddressNotFound("shipping address not found")
 
 type UserRepo interface {
 	CreateUser(ctx context.Context, nickname, phoneHash, phoneEncrypt, passwordHash string) (*User, error)

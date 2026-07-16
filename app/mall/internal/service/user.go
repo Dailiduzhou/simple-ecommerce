@@ -2,11 +2,9 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
-	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -45,11 +43,22 @@ func (s *UserService) Login(ctx context.Context, req *pb.LoginRequest) (*pb.Logi
 	if err != nil {
 		return nil, pb.ErrorUnauthorized("generate access token failed")
 	}
-	return &pb.LoginReply{Id: u.ID, Token: token}, nil
+	refreshToken, err := s.authUc.GenerateRefreshToken(u.ID, u.Role)
+	if err != nil {
+		return nil, pb.ErrorUnauthorized("generate refresh token failed")
+	}
+	return &pb.LoginReply{Id: u.ID, Token: token, RefreshToken: refreshToken}, nil
 }
 
 func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.UserInfo, error) {
-	u, err := s.uc.GetUser(ctx, req.Id)
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireResourceOwner(claims, req.Id); err != nil {
+		return nil, err
+	}
+	u, err := s.uc.GetUser(ctx, claims.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +75,14 @@ func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.
 }
 
 func (s *UserService) UpdateUser(ctx context.Context, req *pb.UpdateUserRequest) (*pb.UserInfo, error) {
-	u, err := s.uc.UpdateUser(ctx, req.Id, req.Nickname, req.RealName)
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireResourceOwner(claims, req.Id); err != nil {
+		return nil, err
+	}
+	u, err := s.uc.UpdateUser(ctx, claims.UserID, req.Nickname, req.RealName)
 	if err != nil {
 		return nil, err
 	}
@@ -82,16 +98,30 @@ func (s *UserService) UpdateUser(ctx context.Context, req *pb.UpdateUserRequest)
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, req *pb.DeleteUserRequest) (*pb.DeleteUserReply, error) {
-	err := s.uc.DeleteUser(ctx, req.Id)
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireResourceOwner(claims, req.Id); err != nil {
+		return nil, err
+	}
+	err = s.uc.DeleteUser(ctx, claims.UserID)
 	if err != nil {
 		s.log.WithContext(ctx).Errorf("Error deleting User %d", req.Id)
-		return nil, errors.InternalServer("DB FAILURE", fmt.Sprintf("Error deleting User %d", req.Id))
+		return nil, err
 	}
 	return &pb.DeleteUserReply{}, nil
 }
 
 func (s *UserService) CreateShippingAddress(ctx context.Context, req *pb.CreateShippingAddressRequest) (*pb.ShippingAddress, error) {
-	sa, err := s.shippingAddrUc.CreateShippingAddress(ctx, req.UserId, req.ReceiverName, req.ReceiverPhone, req.Province, req.City, req.District, req.DetailAddress, req.AddressTag, req.IsDefault)
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireResourceOwner(claims, req.UserId); err != nil {
+		return nil, err
+	}
+	sa, err := s.shippingAddrUc.CreateShippingAddress(ctx, claims.UserID, req.ReceiverName, req.ReceiverPhone, req.Province, req.City, req.District, req.DetailAddress, req.AddressTag, req.IsDefault)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +129,14 @@ func (s *UserService) CreateShippingAddress(ctx context.Context, req *pb.CreateS
 }
 
 func (s *UserService) ListShippingAddresses(ctx context.Context, req *pb.ListShippingAddressesRequest) (*pb.ListShippingAddressesReply, error) {
-	sas, err := s.shippingAddrUc.ListShippingAddressesByUser(ctx, req.UserId)
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireResourceOwner(claims, req.UserId); err != nil {
+		return nil, err
+	}
+	sas, err := s.shippingAddrUc.ListShippingAddressesByUser(ctx, claims.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +148,14 @@ func (s *UserService) ListShippingAddresses(ctx context.Context, req *pb.ListShi
 }
 
 func (s *UserService) UpdateShippingAddress(ctx context.Context, req *pb.UpdateShippingAddressRequest) (*pb.ShippingAddress, error) {
-	sa, err := s.shippingAddrUc.UpdateShippingAddress(ctx, req.Id, req.UserId, req.ReceiverName, req.ReceiverPhone, req.Province, req.City, req.District, req.DetailAddress, req.AddressTag)
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireResourceOwner(claims, req.UserId); err != nil {
+		return nil, err
+	}
+	sa, err := s.shippingAddrUc.UpdateShippingAddress(ctx, req.Id, claims.UserID, req.ReceiverName, req.ReceiverPhone, req.Province, req.City, req.District, req.DetailAddress, req.AddressTag)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +163,14 @@ func (s *UserService) UpdateShippingAddress(ctx context.Context, req *pb.UpdateS
 }
 
 func (s *UserService) SetDefaultShippingAddress(ctx context.Context, req *pb.SetDefaultShippingAddressRequest) (*pb.SetDefaultShippingAddressReply, error) {
-	err := s.shippingAddrUc.SetDefaultShippingAddress(ctx, req.Id, req.UserId)
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireResourceOwner(claims, req.UserId); err != nil {
+		return nil, err
+	}
+	err = s.shippingAddrUc.SetDefaultShippingAddress(ctx, req.Id, claims.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +178,14 @@ func (s *UserService) SetDefaultShippingAddress(ctx context.Context, req *pb.Set
 }
 
 func (s *UserService) DeleteShippingAddress(ctx context.Context, req *pb.DeleteShippingAddressRequest) (*pb.DeleteShippingAddressReply, error) {
-	err := s.shippingAddrUc.DeleteShippingAddress(ctx, req.Id, req.UserId)
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireResourceOwner(claims, req.UserId); err != nil {
+		return nil, err
+	}
+	err = s.shippingAddrUc.DeleteShippingAddress(ctx, req.Id, claims.UserID)
 	if err != nil {
 		return nil, err
 	}

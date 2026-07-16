@@ -172,6 +172,7 @@ func TestUserRepo_CreateUser_CachesByIDAndPhoneHash(t *testing.T) {
 		}).
 		Times(1).
 		Return(mockUser, nil)
+	mockQ.EXPECT().GetUserByPhoneHash(gomock.Any(), "hash3").Times(1).Return(mockUser, nil)
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewUserRepo(d, log.DefaultLogger)
@@ -205,7 +206,7 @@ func TestUserRepo_GetUserByPhoneHash_CacheHit(t *testing.T) {
 
 	mockQ.EXPECT().
 		GetUserByPhoneHash(gomock.Any(), "hash4").
-		Times(1).
+		Times(2).
 		Return(mockUser, nil)
 
 	d := newTestData(t, mockQ, mr)
@@ -272,6 +273,7 @@ func TestUserRepo_UpdateUser_RefreshesCaches(t *testing.T) {
 			PhoneHash: "hash5",
 			Role:      "user",
 		}, nil)
+	mockQ.EXPECT().GetUserByPhoneHash(gomock.Any(), "hash5").Times(1).Return(db.User{ID: 5, Nickname: "new", RealName: "real", PhoneHash: "hash5", Role: "user"}, nil)
 
 	u, err := repo.UpdateUser(context.Background(), 5, "new", "real")
 	require.NoError(t, err)
@@ -308,6 +310,10 @@ func TestUserRepo_DeleteUser_ClearsCaches(t *testing.T) {
 		Role:      "user",
 	})
 
+	mockQ.EXPECT().
+		GetUserByID(gomock.Any(), int64(6)).
+		Times(1).
+		Return(db.User{ID: 6, PhoneHash: "hash6"}, nil)
 	mockQ.EXPECT().
 		DeleteUser(gomock.Any(), int64(6)).
 		Times(1).
