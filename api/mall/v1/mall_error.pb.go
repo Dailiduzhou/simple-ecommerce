@@ -25,12 +25,13 @@ const (
 type ErrorReason int32
 
 const (
-	ErrorReason_PRODUCT_NOT_FOUND      ErrorReason = 0
-	ErrorReason_CATEGORY_NOT_FOUND     ErrorReason = 1
-	ErrorReason_EVENT_NOT_FOUND        ErrorReason = 2
-	ErrorReason_INSUFFICIENT_STOCK     ErrorReason = 3
-	ErrorReason_PRODUCT_STATUS_INVALID ErrorReason = 4
-	ErrorReason_CATEGORY_HAS_PRODUCTS  ErrorReason = 5
+	ErrorReason_PRODUCT_NOT_FOUND          ErrorReason = 0
+	ErrorReason_CATEGORY_NOT_FOUND         ErrorReason = 1
+	ErrorReason_EVENT_NOT_FOUND            ErrorReason = 2
+	ErrorReason_INSUFFICIENT_STOCK         ErrorReason = 3
+	ErrorReason_PRODUCT_STATUS_INVALID     ErrorReason = 4
+	ErrorReason_CATEGORY_HAS_PRODUCTS      ErrorReason = 5
+	ErrorReason_SHIPPING_ADDRESS_NOT_FOUND ErrorReason = 6
 )
 
 // Enum value maps for ErrorReason.
@@ -42,14 +43,16 @@ var (
 		3: "INSUFFICIENT_STOCK",
 		4: "PRODUCT_STATUS_INVALID",
 		5: "CATEGORY_HAS_PRODUCTS",
+		6: "SHIPPING_ADDRESS_NOT_FOUND",
 	}
 	ErrorReason_value = map[string]int32{
-		"PRODUCT_NOT_FOUND":      0,
-		"CATEGORY_NOT_FOUND":     1,
-		"EVENT_NOT_FOUND":        2,
-		"INSUFFICIENT_STOCK":     3,
-		"PRODUCT_STATUS_INVALID": 4,
-		"CATEGORY_HAS_PRODUCTS":  5,
+		"PRODUCT_NOT_FOUND":          0,
+		"CATEGORY_NOT_FOUND":         1,
+		"EVENT_NOT_FOUND":            2,
+		"INSUFFICIENT_STOCK":         3,
+		"PRODUCT_STATUS_INVALID":     4,
+		"CATEGORY_HAS_PRODUCTS":      5,
+		"SHIPPING_ADDRESS_NOT_FOUND": 6,
 	}
 )
 
@@ -84,14 +87,15 @@ var File_mall_v1_mall_error_proto protoreflect.FileDescriptor
 
 const file_mall_v1_mall_error_proto_rawDesc = "" +
 	"\n" +
-	"\x18mall/v1/mall_error.proto\x12\vapi.mall.v1\x1a\x13errors/errors.proto*\xca\x01\n" +
+	"\x18mall/v1/mall_error.proto\x12\vapi.mall.v1\x1a\x13errors/errors.proto*\xf0\x01\n" +
 	"\vErrorReason\x12\x1b\n" +
 	"\x11PRODUCT_NOT_FOUND\x10\x00\x1a\x04\xa8E\x94\x03\x12\x1c\n" +
 	"\x12CATEGORY_NOT_FOUND\x10\x01\x1a\x04\xa8E\x94\x03\x12\x19\n" +
 	"\x0fEVENT_NOT_FOUND\x10\x02\x1a\x04\xa8E\x94\x03\x12\x1c\n" +
 	"\x12INSUFFICIENT_STOCK\x10\x03\x1a\x04\xa8E\x99\x03\x12 \n" +
 	"\x16PRODUCT_STATUS_INVALID\x10\x04\x1a\x04\xa8E\x90\x03\x12\x1f\n" +
-	"\x15CATEGORY_HAS_PRODUCTS\x10\x05\x1a\x04\xa8E\x99\x03\x1a\x04\xa0E\xf4\x03BG\n" +
+	"\x15CATEGORY_HAS_PRODUCTS\x10\x05\x1a\x04\xa8E\x99\x03\x12$\n" +
+	"\x1aSHIPPING_ADDRESS_NOT_FOUND\x10\x06\x1a\x04\xa8E\x94\x03\x1a\x04\xa0E\xf4\x03BG\n" +
 	"\vapi.mall.v1P\x01Z6github.com/Dailiduzhou/simple-ecommerce/api/mall/v1;v1b\x06proto3"
 
 var (

@@ -82,3 +82,15 @@ func IsCategoryHasProducts(err error) bool {
 func ErrorCategoryHasProducts(format string, args ...interface{}) *errors.Error {
 	return errors.New(409, ErrorReason_CATEGORY_HAS_PRODUCTS.String(), fmt.Sprintf(format, args...))
 }
+
+func IsShippingAddressNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_SHIPPING_ADDRESS_NOT_FOUND.String() && e.Code == 404
+}
+
+func ErrorShippingAddressNotFound(format string, args ...interface{}) *errors.Error {
+	return errors.New(404, ErrorReason_SHIPPING_ADDRESS_NOT_FOUND.String(), fmt.Sprintf(format, args...))
+}
