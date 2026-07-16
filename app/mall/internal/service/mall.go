@@ -23,6 +23,9 @@ func NewMallService(productUc biz.ProductUsecase, categoryUc biz.CategoryUsecase
 }
 
 func (s *MallService) CreateProduct(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
 	p, err := s.productUc.CreateProduct(ctx, req.CategoryId, req.Name, req.Price, req.Discount, req.Stock, 1, req.CoverImage, mediaAssets, req.Description)
@@ -70,6 +73,9 @@ func (s *MallService) ListProducts(ctx context.Context, req *pb.ListProductsRequ
 }
 
 func (s *MallService) UpdateProduct(ctx context.Context, req *pb.UpdateProductRequest) (*pb.Product, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
 	p, err := s.productUc.UpdateProduct(ctx, req.Id, req.CategoryId, req.Name, req.Price, req.Discount, req.Stock, req.CoverImage, mediaAssets, req.Description)
@@ -83,6 +89,9 @@ func (s *MallService) UpdateProduct(ctx context.Context, req *pb.UpdateProductRe
 }
 
 func (s *MallService) UpdateProductStatus(ctx context.Context, req *pb.UpdateProductStatusRequest) (*pb.UpdateProductStatusReply, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	err := s.productUc.UpdateProductStatus(ctx, req.Id, req.Status)
 	if err != nil {
 		return nil, err
@@ -91,6 +100,9 @@ func (s *MallService) UpdateProductStatus(ctx context.Context, req *pb.UpdatePro
 }
 
 func (s *MallService) DeleteProduct(ctx context.Context, req *pb.DeleteProductRequest) (*pb.DeleteProductReply, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	err := s.productUc.DeleteProduct(ctx, req.Id)
 	if err != nil {
 		return nil, err
@@ -99,6 +111,9 @@ func (s *MallService) DeleteProduct(ctx context.Context, req *pb.DeleteProductRe
 }
 
 func (s *MallService) CreateCategory(ctx context.Context, req *pb.CreateCategoryRequest) (*pb.Category, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	c, err := s.categoryUc.CreateCategory(ctx, req.ParentId, req.Name, req.SortOrder)
 	if err != nil {
 		return nil, err
@@ -121,6 +136,9 @@ func (s *MallService) ListCategories(ctx context.Context, req *pb.ListCategories
 }
 
 func (s *MallService) UpdateCategory(ctx context.Context, req *pb.UpdateCategoryRequest) (*pb.Category, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	c, err := s.categoryUc.UpdateCategory(ctx, req.Id, req.Name, req.SortOrder)
 	if err != nil {
 		return nil, err
@@ -132,6 +150,9 @@ func (s *MallService) UpdateCategory(ctx context.Context, req *pb.UpdateCategory
 }
 
 func (s *MallService) DeleteCategory(ctx context.Context, req *pb.DeleteCategoryRequest) (*pb.DeleteCategoryReply, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.categoryUc.DeleteCategory(ctx, req.Id); err != nil {
 		return nil, err
 	}
@@ -139,6 +160,9 @@ func (s *MallService) DeleteCategory(ctx context.Context, req *pb.DeleteCategory
 }
 
 func (s *MallService) CreateEvent(ctx context.Context, req *pb.CreateEventRequest) (*pb.Event, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
 	e, err := s.eventUc.CreateEvent(
@@ -192,6 +216,9 @@ func (s *MallService) ListEvents(ctx context.Context, req *pb.ListEventsRequest)
 }
 
 func (s *MallService) UpdateEvent(ctx context.Context, req *pb.UpdateEventRequest) (*pb.Event, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
 	e, err := s.eventUc.UpdateEvent(
@@ -214,6 +241,9 @@ func (s *MallService) UpdateEvent(ctx context.Context, req *pb.UpdateEventReques
 }
 
 func (s *MallService) UpdateEventStatus(ctx context.Context, req *pb.UpdateEventStatusRequest) (*pb.UpdateEventStatusReply, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.eventUc.UpdateEventStatus(ctx, req.Id, req.Status); err != nil {
 		return nil, err
 	}
@@ -221,6 +251,9 @@ func (s *MallService) UpdateEventStatus(ctx context.Context, req *pb.UpdateEvent
 }
 
 func (s *MallService) DeleteEvent(ctx context.Context, req *pb.DeleteEventRequest) (*pb.DeleteEventReply, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
 	if err := s.eventUc.DeleteEvent(ctx, req.Id); err != nil {
 		return nil, err
 	}

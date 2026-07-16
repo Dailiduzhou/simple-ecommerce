@@ -98,7 +98,7 @@ func TestMallService_CreateCategory(t *testing.T) {
 		},
 	})
 
-	got, err := s.CreateCategory(context.Background(), &pb.CreateCategoryRequest{
+	got, err := s.CreateCategory(authenticatedPaymentContext(1, "admin"), &pb.CreateCategoryRequest{
 		ParentId:  7,
 		Name:      "phones",
 		SortOrder: 10,
@@ -108,6 +108,12 @@ func TestMallService_CreateCategory(t *testing.T) {
 	assert.Equal(t, int64(7), got.ParentId)
 	assert.Equal(t, "phones", got.Name)
 	assert.Equal(t, int32(10), got.SortOrder)
+}
+
+func TestMallService_WriteRequiresAdmin(t *testing.T) {
+	s := newTestMallService(&fakeCategoryRepo{})
+	_, err := s.CreateCategory(authenticatedPaymentContext(1, "user"), &pb.CreateCategoryRequest{Name: "blocked"})
+	require.Error(t, err)
 }
 
 func TestMallService_ListCategories(t *testing.T) {
@@ -125,7 +131,7 @@ func TestMallService_ListCategories(t *testing.T) {
 		},
 	})
 
-	got, err := s.ListCategories(context.Background(), &pb.ListCategoriesRequest{ParentId: 3})
+	got, err := s.ListCategories(authenticatedPaymentContext(1, "admin"), &pb.ListCategoriesRequest{ParentId: 3})
 	require.NoError(t, err)
 	require.Len(t, got.Categories, 2)
 	assert.Equal(t, int64(4), got.Categories[0].Id)
@@ -142,7 +148,7 @@ func TestMallService_UpdateCategory_NotFound(t *testing.T) {
 		},
 	})
 
-	got, err := s.UpdateCategory(context.Background(), &pb.UpdateCategoryRequest{
+	got, err := s.UpdateCategory(authenticatedPaymentContext(1, "admin"), &pb.UpdateCategoryRequest{
 		Id:        9,
 		Name:      "missing",
 		SortOrder: 1,
@@ -160,7 +166,7 @@ func TestMallService_DeleteCategory(t *testing.T) {
 		},
 	})
 
-	got, err := s.DeleteCategory(context.Background(), &pb.DeleteCategoryRequest{Id: 3})
+	got, err := s.DeleteCategory(authenticatedPaymentContext(1, "admin"), &pb.DeleteCategoryRequest{Id: 3})
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 }
@@ -173,7 +179,7 @@ func TestMallService_DeleteCategory_PropagatesError(t *testing.T) {
 		},
 	})
 
-	got, err := s.DeleteCategory(context.Background(), &pb.DeleteCategoryRequest{Id: 3})
+	got, err := s.DeleteCategory(authenticatedPaymentContext(1, "admin"), &pb.DeleteCategoryRequest{Id: 3})
 	assert.ErrorIs(t, err, wantErr)
 	assert.Nil(t, got)
 }
@@ -223,7 +229,7 @@ func TestMallService_CreateEvent(t *testing.T) {
 		},
 	})
 
-	got, err := s.CreateEvent(context.Background(), &pb.CreateEventRequest{
+	got, err := s.CreateEvent(authenticatedPaymentContext(1, "admin"), &pb.CreateEventRequest{
 		Name:        "launch",
 		CoverImage:  "https://cdn.test/cover.png",
 		MediaAssets: mediaAssets,
@@ -255,7 +261,7 @@ func TestMallService_GetEvent_NotFound(t *testing.T) {
 		},
 	})
 
-	got, err := s.GetEvent(context.Background(), &pb.GetEventRequest{Id: 404})
+	got, err := s.GetEvent(authenticatedPaymentContext(1, "admin"), &pb.GetEventRequest{Id: 404})
 	require.Error(t, err)
 	assert.Nil(t, got)
 	assert.True(t, pb.IsEventNotFound(err))
@@ -283,7 +289,7 @@ func TestMallService_ListEvents_DefaultPagination(t *testing.T) {
 		},
 	})
 
-	got, err := s.ListEvents(context.Background(), &pb.ListEventsRequest{Status: 1})
+	got, err := s.ListEvents(authenticatedPaymentContext(1, "admin"), &pb.ListEventsRequest{Status: 1})
 	require.NoError(t, err)
 	require.Len(t, got.Events, 1)
 	assert.Equal(t, int64(31), got.Events[0].Id)
@@ -303,7 +309,7 @@ func TestMallService_UpdateEvent_NotFound(t *testing.T) {
 		},
 	})
 
-	got, err := s.UpdateEvent(context.Background(), &pb.UpdateEventRequest{
+	got, err := s.UpdateEvent(authenticatedPaymentContext(1, "admin"), &pb.UpdateEventRequest{
 		Id:   99,
 		Name: "missing",
 	})
@@ -321,7 +327,7 @@ func TestMallService_UpdateEventStatus(t *testing.T) {
 		},
 	})
 
-	got, err := s.UpdateEventStatus(context.Background(), &pb.UpdateEventStatusRequest{Id: 21, Status: 2})
+	got, err := s.UpdateEventStatus(authenticatedPaymentContext(1, "admin"), &pb.UpdateEventStatusRequest{Id: 21, Status: 2})
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 }
@@ -335,7 +341,7 @@ func TestMallService_DeleteEvent_PropagatesError(t *testing.T) {
 		},
 	})
 
-	got, err := s.DeleteEvent(context.Background(), &pb.DeleteEventRequest{Id: 21})
+	got, err := s.DeleteEvent(authenticatedPaymentContext(1, "admin"), &pb.DeleteEventRequest{Id: 21})
 	assert.ErrorIs(t, err, wantErr)
 	assert.Nil(t, got)
 }
