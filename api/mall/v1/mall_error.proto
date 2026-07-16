@@ -17,4 +17,5 @@ enum ErrorReason {
   INSUFFICIENT_STOCK    = 3 [(errors.code) = 409];
   PRODUCT_STATUS_INVALID = 4 [(errors.code) = 400];
   CATEGORY_HAS_PRODUCTS = 5 [(errors.code) = 409];
+  SHIPPING_ADDRESS_NOT_FOUND = 6 [(errors.code) = 404];
 }

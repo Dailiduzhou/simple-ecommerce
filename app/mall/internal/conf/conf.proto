@@ -50,6 +50,7 @@ message Data {
     string addr = 2;
     google.protobuf.Duration read_timeout = 3;
     google.protobuf.Duration write_timeout = 4;
+    google.protobuf.Duration dial_timeout = 5;
   }
   Database database = 1;
   Redis redis = 2;
@@ -68,6 +69,7 @@ message Alipay {
   string app_cert_path = 4;
   string alipay_public_cert_path = 5;
   string alipay_root_cert_path = 6;
+  bool enabled = 7;
 }
 
 message Wechat {
@@ -75,6 +77,7 @@ message Wechat {
   string mch_id = 2;
   string api_key = 3;
   bool is_production = 4;
+  bool enabled = 5;
 }
 
 message CheckPayJob {
