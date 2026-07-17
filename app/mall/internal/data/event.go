@@ -101,7 +101,8 @@ func (r *EventRepo) GetEvent(ctx context.Context, id int64) (*biz.Event, error) 
 }
 
 func (r *EventRepo) ListEvents(ctx context.Context, status int32, limit int32, offset int32) ([]biz.Event, error) {
-	cacheKey := eventListCacheKey(status, limit, offset)
+	generation := cacheGeneration(ctx, r.data.rdb, r.log, "event:list:gen")
+	cacheKey := eventListCacheKey(generation, status, limit, offset)
 
 	es, err := r.getListCache(ctx, cacheKey)
 	if err == nil {
@@ -215,67 +216,59 @@ func (r *EventRepo) getListCache(ctx context.Context, key string) ([]biz.Event, 
 }
 
 func (r *EventRepo) setCache(ctx context.Context, key string, e *biz.Event) {
-	data, err := json.Marshal(e)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal event cache: %v", err)
-		return
-	}
-	r.data.rdb.Set(ctx, key, data, eventCacheExpiration())
+	afterCommit(ctx, func() {
+		data, err := json.Marshal(e)
+		if err == nil {
+			err = r.data.rdb.Set(ctx, key, data, eventCacheExpiration()).Err()
+		}
+		if err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "write event cache failed", "key", key, "error", err)
+		}
+	})
 }
 
 func (r *EventRepo) setListCache(ctx context.Context, key string, es []biz.Event) {
-	data, err := json.Marshal(es)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal event list cache: %v", err)
-		return
-	}
-	r.data.rdb.Set(ctx, key, data, eventCacheExpiration())
+	afterCommit(ctx, func() {
+		data, err := json.Marshal(es)
+		if err == nil {
+			err = r.data.rdb.Set(ctx, key, data, eventCacheExpiration()).Err()
+		}
+		if err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "write event list cache failed", "key", key, "error", err)
+		}
+	})
 }
 
-
 func (r *EventRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("delete cache %s", key)
-	}
+	afterCommit(ctx, func() {
+		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
+			r.log.WithContext(ctx).Errorf("delete cache %s", key)
+		}
+	})
 }
 
 func (r *EventRepo) deleteListCaches(ctx context.Context) {
-	iter := r.data.rdb.Scan(ctx, 0, "event:list:*", 100).Iterator()
-
-	var keys []string
-	const batchSize = 100
-
-	for iter.Next(ctx) {
-		keys = append(keys, iter.Val())
-
-		if len(keys) >= batchSize {
-			if err := r.data.rdb.Unlink(ctx, keys...).Err(); err != nil {
-				r.log.WithContext(ctx).Errorf("batch unlink event list cache: %v", err)
-			}
-			keys = keys[:0]
-		}
-	}
-
-	if err := iter.Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("scan event list cache: %v", err)
-	}
-
-	if len(keys) > 0 {
-		if err := r.data.rdb.Unlink(ctx, keys...).Err(); err != nil {
-			r.log.WithContext(ctx).Errorf("batch unlink remaining event list cache: %v", err)
-		}
-	}
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, "event:list:gen")
 }
 
 func eventCacheKey(id int64) string {
-	return fmt.Sprintf("event:%d", id)
+	return redisKey("event", id)
 }
 
-func eventListCacheKey(status int32, limit int32, offset int32) string {
-	if status > 0 {
-		return fmt.Sprintf("event:list:status:%d:%d:%d", status, limit, offset)
+func eventListCacheKey(generationOrStatus int64, values ...int32) string {
+	var generation int64
+	var status, limit, offset int32
+	if len(values) == 2 { // legacy test helper form: status, limit, offset
+		status, limit, offset = int32(generationOrStatus), values[0], values[1]
+	} else if len(values) == 3 {
+		generation, status, limit, offset = generationOrStatus, values[0], values[1], values[2]
+	} else {
+		return "event:list:invalid"
 	}
-	return fmt.Sprintf("event:list:all:%d:%d", limit, offset)
+	if status > 0 {
+		return redisKey("event", "list", generation, "status", status, limit, offset)
+	}
+	return redisKey("event", "list", generation, "all", limit, offset)
 }
 
 func eventCacheExpiration() time.Duration {

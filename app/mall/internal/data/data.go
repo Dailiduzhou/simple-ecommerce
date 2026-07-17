@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"os"
+	"time"
 
 	dbmigrations "github.com/Dailiduzhou/simple-ecommerce/app/mall/db"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
@@ -21,6 +22,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
 	"golang.org/x/sync/singleflight"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/google/wire"
@@ -28,7 +30,7 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewWechatPaymentAdapter, NewAlipayPaymentAdapter, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewTransaction, NewAlipayClient, NewSnowflakeIDGenerator,
+	NewPgxPool, NewRiverClient, NewPaymentRiverErrorHandler, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentNotificationRepo, NewTransaction, NewSnowflakeIDGenerator,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
@@ -38,6 +40,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.OrderRepo), new(*OrderRepo)),
 	wire.Bind(new(biz.PaymentRepo), new(*PaymentRepo)),
 	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
+	wire.Bind(new(biz.PaymentNotificationRepo), new(*PaymentNotificationRepo)),
 	wire.Bind(new(biz.IDGenerator), new(*snowflakeGenerator)),
 )
 
@@ -71,10 +74,21 @@ func NewData(c *conf.Data, pool *pgxpool.Pool, rdb *redis.Client) (*Data, func()
 }
 
 func NewRedisClient(c *conf.Data) (*redis.Client, error) {
+	if c == nil || c.Redis == nil || c.Redis.Addr == "" {
+		return nil, fmt.Errorf("redis address is required")
+	}
+	network := c.Redis.Network
+	if network == "" {
+		network = "tcp"
+	}
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     c.Redis.Addr,
-		Password: "",
-		DB:       0,
+		Network:      network,
+		Addr:         c.Redis.Addr,
+		Password:     "",
+		DB:           0,
+		DialTimeout:  durationOrDefault(c.Redis.DialTimeout, 5*time.Second),
+		ReadTimeout:  durationOrDefault(c.Redis.ReadTimeout, time.Second),
+		WriteTimeout: durationOrDefault(c.Redis.WriteTimeout, time.Second),
 	})
 
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
@@ -83,6 +97,13 @@ func NewRedisClient(c *conf.Data) (*redis.Client, error) {
 	}
 
 	return rdb, nil
+}
+
+func durationOrDefault(value *durationpb.Duration, fallback time.Duration) time.Duration {
+	if value == nil || value.AsDuration() <= 0 {
+		return fallback
+	}
+	return value.AsDuration()
 }
 
 func NewPgxPool(c *conf.Data) (*pgxpool.Pool, func(), error) {
@@ -98,7 +119,7 @@ func NewPgxPool(c *conf.Data) (*pgxpool.Pool, func(), error) {
 	return pool, cleanup, nil
 }
 
-func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers) (*river.Client[pgx.Tx], error) {
+func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers, errorHandler *PaymentRiverErrorHandler) (*river.Client[pgx.Tx], error) {
 	driver := riverpgxv5.New(pool)
 	migrator, err := rivermigrate.New(driver, nil)
 	if err != nil {
@@ -113,7 +134,8 @@ func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers) (*river.Client[p
 			river.QueueDefault: {MaxWorkers: 10},
 			"payments":         {MaxWorkers: 10},
 		},
-		Workers: workers,
+		Workers:      workers,
+		ErrorHandler: errorHandler,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create river client: %w", err)

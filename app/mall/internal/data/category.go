@@ -38,7 +38,7 @@ func (r *CategoryRepo) CreateCategory(ctx context.Context, parentID int64, name 
 		return nil, err
 	}
 	bizCategory := toBizCategory(c)
-	r.setCache(ctx, fmt.Sprintf("category:%d", bizCategory.ID), &bizCategory)
+	r.setCache(ctx, redisKey("category", bizCategory.ID), &bizCategory)
 	r.deleteListCache(ctx, parentID)
 	return &bizCategory, nil
 }
@@ -57,9 +57,9 @@ func (r *CategoryRepo) DeleteCategory(ctx context.Context, id int64) error {
 		return err
 	}
 
-	r.deleteCache(ctx, fmt.Sprintf("category:%d", id))
+	r.deleteCache(ctx, redisKey("category", id))
 	for i := range children {
-		r.deleteCache(ctx, fmt.Sprintf("category:%d", children[i].ID))
+		r.deleteCache(ctx, redisKey("category", children[i].ID))
 	}
 	r.deleteListCache(ctx, id)
 	r.deleteListCache(ctx, 0)
@@ -70,7 +70,7 @@ func (r *CategoryRepo) DeleteCategory(ctx context.Context, id int64) error {
 }
 
 func (r *CategoryRepo) GetCategory(ctx context.Context, id int64) (*biz.Category, error) {
-	cacheKey := fmt.Sprintf("category:%d", id)
+	cacheKey := redisKey("category", id)
 
 	c, err := r.getCache(ctx, cacheKey)
 	if err == nil {
@@ -184,8 +184,8 @@ func (r *CategoryRepo) UpdateCategory(ctx context.Context, id int64, name string
 	}
 
 	bizCategory := toBizCategory(c)
-	r.deleteCache(ctx, fmt.Sprintf("category:%d", id))
-	r.setCache(ctx, fmt.Sprintf("category:%d", id), &bizCategory)
+	r.deleteCache(ctx, redisKey("category", id))
+	r.setCache(ctx, redisKey("category", id), &bizCategory)
 	if oldCategory != nil {
 		r.deleteListCache(ctx, oldCategory.ParentID)
 	}
@@ -252,7 +252,7 @@ func (r *CategoryRepo) deleteListCache(ctx context.Context, parentID int64) {
 
 func categoryListCacheKey(parentID int64) string {
 	if parentID > 0 {
-		return fmt.Sprintf("category:list:%d", parentID)
+		return redisKey("category", "list", parentID)
 	}
 	return "category:list:top"
 }
