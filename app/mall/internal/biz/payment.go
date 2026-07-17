@@ -2,6 +2,9 @@ package biz
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -9,12 +12,82 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 )
 
-type PayChannel string
+const (
+	PaymentStatusCreating          = "creating"
+	PaymentStatusPending           = "pending"
+	PaymentStatusSuccess           = "success"
+	PaymentStatusRefunded          = "refunded"
+	PaymentStatusClosePending      = "close_pending"
+	PaymentStatusClosed            = "closed"
+	PaymentStatusReconcileRequired = "reconcile_required"
+)
+
+var (
+	ErrPaymentConflict            = errors.Conflict("PAYMENT_CONFLICT", "an active payment already exists")
+	ErrPaymentNotFound            = errors.NotFound("PAYMENT_NOT_FOUND", "payment not found")
+	ErrPaymentStateConflict       = errors.Conflict("PAYMENT_STATE_CONFLICT", "payment state transition conflicts with the current state")
+	ErrPaymentProviderUnavailable = errors.ServiceUnavailable("PAYMENT_PROVIDER_NOT_AVAILABLE", "payment provider is not available")
+)
+
+type PaymentMethod struct {
+	Provider string
+	Product  string
+}
+
+func (m PaymentMethod) Normalize() PaymentMethod {
+	return PaymentMethod{Provider: strings.ToLower(strings.TrimSpace(m.Provider)), Product: strings.ToLower(strings.TrimSpace(m.Product))}
+}
+
+func (m PaymentMethod) String() string {
+	m = m.Normalize()
+	if m.Provider == "" || m.Product == "" {
+		return ""
+	}
+	return m.Provider + ":" + m.Product
+}
+
+func ParsePaymentMethod(value string) (PaymentMethod, error) {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(value)), ":")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return PaymentMethod{}, errors.BadRequest("PAYMENT_METHOD_INVALID", "payment method must be provider:product")
+	}
+	return PaymentMethod{Provider: parts[0], Product: parts[1]}, nil
+}
+
+type PaymentCapabilities struct {
+	SupportsNotify bool
+	RequiresPoll   bool
+	SupportsClose  bool
+	SupportsRefund bool
+}
+
+type PaymentActionType string
 
 const (
-	Wechat PayChannel = "wechat"
-	Alipay PayChannel = "alipay"
+	PaymentActionRedirect PaymentActionType = "redirect"
+	PaymentActionForm     PaymentActionType = "form"
+	PaymentActionInvoke   PaymentActionType = "invoke"
 )
+
+type PaymentAction struct {
+	Type    PaymentActionType
+	Payload json.RawMessage
+}
+
+type PaymentPrepayRequest struct {
+	Method      PaymentMethod
+	OutTradeNo  string
+	Description string
+	Amount      int64
+	Currency    string
+	ClientIP    string
+	Extension   map[string]string
+}
+
+type PaymentPrepayResult struct {
+	ProviderReference string
+	Action            PaymentAction
+}
 
 type TradeState string
 
@@ -29,19 +102,15 @@ const (
 	TradeStatePayError    TradeState = "PAYERROR"
 )
 
-func (s TradeState) String() string {
-	return string(s)
-}
-
+func (s TradeState) String() string { return string(s) }
 func (s TradeState) IsTerminal() bool {
 	switch s {
-	case TradeStateSuccess, TradeStateRefund, TradeStateClosed, TradeStateRevoked, TradeStatePayError:
+	case TradeStateSuccess, TradeStateRefund, TradeStateClosed, TradeStateRevoked:
 		return true
 	default:
 		return false
 	}
 }
-
 func (s TradeState) IsPending() bool {
 	switch s {
 	case TradeStateNotPay, TradeStateUserPaying, TradeStateUnspecified:
@@ -51,134 +120,142 @@ func (s TradeState) IsPending() bool {
 	}
 }
 
-func NormalizePayChannel(channel string) string {
-	return strings.ToLower(strings.TrimSpace(channel))
-}
-
 func ParseTradeState(state string) TradeState {
 	switch strings.ToUpper(strings.TrimSpace(state)) {
-	case TradeStateSuccess.String():
+	case string(TradeStateSuccess):
 		return TradeStateSuccess
-	case TradeStateRefund.String():
+	case string(TradeStateRefund):
 		return TradeStateRefund
-	case TradeStateNotPay.String():
+	case string(TradeStateNotPay):
 		return TradeStateNotPay
-	case TradeStateClosed.String():
+	case string(TradeStateClosed):
 		return TradeStateClosed
-	case TradeStateRevoked.String():
+	case string(TradeStateRevoked):
 		return TradeStateRevoked
-	case TradeStateUserPaying.String():
+	case string(TradeStateUserPaying):
 		return TradeStateUserPaying
-	case TradeStatePayError.String():
+	case string(TradeStatePayError):
 		return TradeStatePayError
 	default:
 		return TradeStateUnspecified
 	}
 }
 
-type PaymentPrepayRequest struct {
-	Channel     string
-	OutTradeNo  string
-	Description string
-	TotalAmount int32
-	OpenID      string
-}
-
-type PaymentPrepayResult struct {
-	Channel    string
-	OutTradeNo string
-
-	PrepayID  string
-	AppID     string
-	TimeStamp string
-	NonceStr  string
-	Package   string
-	SignType  string
-	PaySign   string
-
-	CodeURL string
-	PayURL  string
-}
-
 type PaymentQueryRequest struct {
-	Channel       string
+	Method        PaymentMethod
 	OutTradeNo    string
 	TransactionID string
 }
 
 type PaymentQueryResult struct {
-	Channel        string
+	Method         PaymentMethod
 	OutTradeNo     string
 	TransactionID  string
 	TradeState     TradeState
 	TradeStateDesc string
 	RawTradeState  string
-	TotalAmount    int32
+	Amount         int64
+	Currency       string
 }
 
 type PaymentCloseRequest struct {
-	Channel       string
+	Method        PaymentMethod
 	OutTradeNo    string
 	TransactionID string
 }
 
 type PaymentCloseResult struct {
-	Channel       string
+	Method        PaymentMethod
 	OutTradeNo    string
 	TransactionID string
 	Success       bool
+	RawCode       string
+	RawSubCode    string
+}
 
-	// RawCode / RawSubCode 透传支付宝业务响应码,供上层做精细化分类
-	// (审计/告警/对账)。为空表示该次请求未到达业务层(transport/HTTP 错误)。
-	RawCode    string
-	RawSubCode string
+type PaymentNotification struct {
+	Provider        string
+	ProviderEventID string
+	OutTradeNo      string
+	TransactionID   string
+	Amount          int64
+	Currency        string
+	PayloadHash     string
+	VerifiedAt      time.Time
+}
+
+type PaymentNotificationAck struct {
+	StatusCode  int
+	ContentType string
+	Body        []byte
+}
+
+func DefaultPaymentNotificationAck() PaymentNotificationAck {
+	return PaymentNotificationAck{StatusCode: http.StatusBadRequest, ContentType: "text/plain; charset=utf-8", Body: []byte("unsupported provider")}
+}
+
+type PaymentNotificationAcknowledger interface {
+	NotificationAck(provider string, success bool) PaymentNotificationAck
 }
 
 type PaymentAdapter interface {
-	Channel() string
-	Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
-	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
-	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
+	Provider() string
+	Supports(method PaymentMethod) bool
+	Capabilities(method PaymentMethod) PaymentCapabilities
+	Prepay(context.Context, PaymentPrepayRequest) (*PaymentPrepayResult, error)
+	Query(context.Context, PaymentQueryRequest) (*PaymentQueryResult, error)
+	Close(context.Context, PaymentCloseRequest) (*PaymentCloseResult, error)
+	ParseAndVerifyNotification(*http.Request) (*PaymentNotification, error)
+	NotificationAck(success bool) PaymentNotificationAck
 }
 
 type PaymentGateway interface {
-	Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
-	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
-	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
+	Capabilities(PaymentMethod) (PaymentCapabilities, error)
+	Prepay(context.Context, PaymentPrepayRequest) (*PaymentPrepayResult, error)
+	Query(context.Context, PaymentQueryRequest) (*PaymentQueryResult, error)
+	Close(context.Context, PaymentCloseRequest) (*PaymentCloseResult, error)
+	ParseAndVerifyNotification(string, *http.Request) (*PaymentNotification, error)
+	NotificationAck(string, bool) (PaymentNotificationAck, error)
 }
 
 const CheckPayJobKind = "check_pay"
 
 type CheckPayArgs struct {
-	PaymentID           int64  `json:"payment_id"`
-	OrderID             int64  `json:"order_id"`
-	OutTradeNo          string `json:"out_trade_no" river:"unique"`
+	PaymentID           int64  `json:"payment_id" river:"unique"`
+	Provider            string `json:"provider" river:"unique"`
+	NotificationID      int64  `json:"notification_id"`
+	Trigger             string `json:"trigger"`
+	PollCount           int    `json:"poll_count"`
 	MaxPolls            int    `json:"max_polls"`
 	PollIntervalSeconds int    `json:"poll_interval_seconds"`
-	Source              string `json:"source"`
-	Channel             string `json:"channel"`
 }
 
-func (CheckPayArgs) Kind() string {
-	return CheckPayJobKind
+func (CheckPayArgs) Kind() string { return CheckPayJobKind }
+
+func NormalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
+	args.Provider = strings.ToLower(strings.TrimSpace(args.Provider))
+	if args.MaxPolls <= 0 {
+		args.MaxPolls = 5
+	}
+	if args.PollIntervalSeconds <= 0 {
+		args.PollIntervalSeconds = 30
+	}
+	if args.Trigger == "" {
+		args.Trigger = "api"
+	}
+	return args
 }
 
 type MQJob struct {
-	ID          int64
-	Kind        string
-	Queue       string
-	State       string
-	Attempt     int
-	MaxAttempts int
-	ArgsJSON    string
-	Tags        []string
-	CreatedAt   time.Time
-	ScheduledAt time.Time
-	AttemptedAt *time.Time
-	FinalizedAt *time.Time
-	Errors      []MQJobError
+	ID                       int64
+	Kind, Queue, State       string
+	Attempt, MaxAttempts     int
+	ArgsJSON                 string
+	Tags                     []string
+	CreatedAt, ScheduledAt   time.Time
+	AttemptedAt, FinalizedAt *time.Time
+	Errors                   []MQJobError
 }
-
 type MQJobError struct {
 	Attempt int
 	Error   string
@@ -186,50 +263,56 @@ type MQJobError struct {
 }
 
 type PaymentDO struct {
-	ID             int64
-	OrderID        int64
-	UserID         int64
-	MerchantID     int64
-	Amount         int32
-	Status         string
-	PayChannel     string
-	OutTradeNo     string
-	ThirdPartyTxID string
-	PaidAt         *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
-
-type PaymentRepo interface {
-	CreatePayment(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error)
-	GetPayment(ctx context.Context, id int64) (*PaymentDO, error)
-	GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error)
-	GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*PaymentDO, error)
-	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*PaymentDO, error)
-	ClosePayment(ctx context.Context, paymentID, orderID int64) error
-	ApplyPayQuery(ctx context.Context, args CheckPayArgs, result *PaymentQueryResult) error
-	MarkPayExpired(ctx context.Context, args CheckPayArgs) error
+	ID, OrderID, UserID, MerchantID                      int64
+	Amount                                               int64
+	Currency, Status, Method, OutTradeNo, ThirdPartyTxID string
+	Action                                               PaymentAction
+	PaidAt                                               *time.Time
+	CreatedAt, UpdatedAt                                 time.Time
 }
 
 type CreatePaymentArgs struct {
-	OrderID    int64
-	UserID     int64
-	MerchantID int64
-	Amount     int32
-	PayChannel string
-	OutTradeNo string // optional; server fills with a snowflake id if empty
+	OrderID, UserID, MerchantID  int64
+	Amount                       int64
+	Currency, Method, OutTradeNo string
+}
+
+type ReconciliationFailure struct {
+	PaymentID  int64
+	Provider   string
+	RiverJobID *int64
+	Attempt    int
+	LastError  string
+}
+
+type PaymentRepo interface {
+	CreatePayment(context.Context, CreatePaymentArgs) (*PaymentDO, error)
+	MarkPaymentPending(context.Context, int64, PaymentAction) (*PaymentDO, error)
+	GetPayment(context.Context, int64) (*PaymentDO, error)
+	GetPaymentByUser(context.Context, int64, int64) (*PaymentDO, error)
+	GetLatestPaymentByOrder(context.Context, int64) (*PaymentDO, error)
+	GetActivePaymentByOrderMethod(context.Context, int64, string) (*PaymentDO, error)
+	GetPaymentByOutTradeNo(context.Context, string) (*PaymentDO, error)
+	ApplyPayQuery(context.Context, CheckPayArgs, *PaymentQueryResult) error
+	MarkPayClosePending(context.Context, CheckPayArgs) error
+	MarkReconciliationRequired(context.Context, ReconciliationFailure) error
+	RecordReconciliationFailure(context.Context, ReconciliationFailure) error
+}
+
+type PaymentNotificationRepo interface {
+	PersistAndEnqueueNotification(context.Context, *PaymentNotification, CheckPayArgs) (bool, error)
 }
 
 type PaymentMQRepo interface {
-	EnqueueCheckPay(ctx context.Context, args CheckPayArgs, scheduledAt time.Time) (*MQJob, error)
-	EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, scheduledAt time.Time) (*MQJob, error)
-	GetMQJob(ctx context.Context, jobID int64) (*MQJob, error)
+	EnqueueCheckPay(context.Context, CheckPayArgs, time.Time) (*MQJob, error)
+	EnqueueCheckPayTx(context.Context, CheckPayArgs, time.Time) (*MQJob, error)
+	GetMQJob(context.Context, int64) (*MQJob, error)
 }
 
 type PaymentJobUsecase interface {
-	EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error)
-	EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error)
-	GetMQJob(ctx context.Context, jobID int64) (*MQJob, error)
+	EnqueueCheckPay(context.Context, CheckPayArgs, time.Duration) (*MQJob, error)
+	EnqueueCheckPayTx(context.Context, CheckPayArgs, time.Duration) (*MQJob, error)
+	GetMQJob(context.Context, int64) (*MQJob, error)
 }
 
 type paymentJobUsecase struct {
@@ -241,360 +324,306 @@ func NewPaymentJobUsecase(repo PaymentMQRepo, logger log.Logger) PaymentJobUseca
 	return &paymentJobUsecase{repo: repo, log: log.NewHelper(logger)}
 }
 
+func (uc *paymentJobUsecase) enqueue(ctx context.Context, args CheckPayArgs, delay time.Duration, tx bool) (*MQJob, error) {
+	args = NormalizeCheckPayArgs(args)
+	if args.PaymentID <= 0 {
+		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
+	}
+	if args.Provider == "" {
+		return nil, errors.BadRequest("PAYMENT_PROVIDER_REQUIRED", "payment provider is required")
+	}
+	var scheduledAt time.Time
+	if delay > 0 {
+		scheduledAt = time.Now().Add(delay)
+	}
+	var job *MQJob
+	var err error
+	if tx {
+		job, err = uc.repo.EnqueueCheckPayTx(ctx, args, scheduledAt)
+	} else {
+		job, err = uc.repo.EnqueueCheckPay(ctx, args, scheduledAt)
+	}
+	if err == nil {
+		uc.log.WithContext(ctx).Infow("msg", "enqueued payment reconciliation", "job_id", job.ID, "payment_id", args.PaymentID, "provider", args.Provider, "trigger", args.Trigger)
+	}
+	return job, err
+}
 func (uc *paymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
-	args = NormalizeCheckPayArgs(args)
-	if args.PaymentID <= 0 {
-		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
-	}
-	if args.OutTradeNo == "" {
-		return nil, errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
-	}
-	var scheduledAt time.Time
-	if delay > 0 {
-		scheduledAt = time.Now().Add(delay)
-	}
-	job, err := uc.repo.EnqueueCheckPay(ctx, args, scheduledAt)
-	if err != nil {
-		return nil, err
-	}
-	uc.log.WithContext(ctx).Infof("enqueued pay check job_id=%d out_trade_no=%s channel=%s", job.ID, args.OutTradeNo, args.Channel)
-	return job, nil
+	return uc.enqueue(ctx, args, delay, false)
 }
-
 func (uc *paymentJobUsecase) EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
-	args = NormalizeCheckPayArgs(args)
-	if args.PaymentID <= 0 {
-		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
-	}
-	if args.OutTradeNo == "" {
-		return nil, errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
-	}
-	var scheduledAt time.Time
-	if delay > 0 {
-		scheduledAt = time.Now().Add(delay)
-	}
-	job, err := uc.repo.EnqueueCheckPayTx(ctx, args, scheduledAt)
-	if err != nil {
-		return nil, err
-	}
-	uc.log.WithContext(ctx).Infof("enqueued pay check tx job_id=%d out_trade_no=%s channel=%s", job.ID, args.OutTradeNo, args.Channel)
-	return job, nil
+	return uc.enqueue(ctx, args, delay, true)
 }
-
-func (uc *paymentJobUsecase) GetMQJob(ctx context.Context, jobID int64) (*MQJob, error) {
-	if jobID <= 0 {
+func (uc *paymentJobUsecase) GetMQJob(ctx context.Context, id int64) (*MQJob, error) {
+	if id <= 0 {
 		return nil, errors.BadRequest("MQ_JOB_ID_REQUIRED", "job_id is required")
 	}
-	return uc.repo.GetMQJob(ctx, jobID)
+	return uc.repo.GetMQJob(ctx, id)
 }
 
-// NormalizeCheckPayArgs applies defaults for a check-pay job. It is also used
-// by the worker so that enqueue-time and run-time defaults stay consistent.
-func NormalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
-	if args.MaxPolls <= 0 {
-		args.MaxPolls = 5
-	}
-	if args.PollIntervalSeconds <= 0 {
-		args.PollIntervalSeconds = 30
-	}
-	if args.Source == "" {
-		args.Source = "api"
-	}
-	if args.Channel == "" {
-		args.Channel = string(Wechat)
-	}
-	return args
-}
-
-type PaymentUsecase interface {
-	CreatePayment(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*PaymentDO, error)
-	GetPayment(ctx context.Context, id int64) (*PaymentDO, error)
-	GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error)
-	Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
-	// PrepayForOrder 是统一支付 API 的入口:
-	// 1) 通过 OrderNo 反查订单;
-	// 2) 创建/复用支付流水;
-	// 3) 调用三方 prepay;
-	// 4) 返回 Payment + Prepay,service 层负责编码 action_type + payload。
-	PrepayForOrder(ctx context.Context, args PrepayForOrderArgs) (*PrepayForOrderResult, error)
-	// PrepayForOrderWithCheckJob 与 PrepayForOrder 相同,但在同一事务中额外
-	// 入队一个微信支付轮询任务,保证支付流水写入与 MQ 入队原子性。
-	// checkJob 中 PaymentID/OrderID/OutTradeNo 会被忽略,由 biz 层根据 prepay 结果填充。
-	PrepayForOrderWithCheckJob(ctx context.Context, args PrepayForOrderArgs, checkJob CheckPayArgs, delay time.Duration) (*PrepayForOrderResult, *MQJob, error)
-	// EnqueueWechatCheckJobByOutTradeNo 按商户订单号查询 payment 并在一个事务中
-	// 入队微信支付轮询任务,用于微信异步通知后主动查询支付结果。
-	// checkJob 中 PaymentID/OrderID/OutTradeNo 会被忽略,由 biz 层根据查询结果填充。
-	EnqueueWechatCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, checkJob CheckPayArgs) (*MQJob, error)
-	// EnqueueCheckJobByOutTradeNo 按商户订单号查询 payment 并在一个事务中
-	// 入队支付轮询任务,用于异步通知后主动查询支付结果。
-	// checkJob 中 Channel/PaymentID/OrderID/OutTradeNo 会被忽略,由 biz 层根据查询结果和传入的 channel 填充。
-	EnqueueCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, channel string, checkJob CheckPayArgs) (*MQJob, error)
-	QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error)
-	CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error)
-}
-
-// PrepayForOrderArgs 统一支付入口入参。
-// Channel 必须是 NormalizePayChannel 后的值(wechat / alipay),
-// 渠道细分子类型(JSAPI / NATIVE / WAP / APP)由 service 层在编码 payload 时
-// 区分,不在 biz 层体现。
 type PrepayForOrderArgs struct {
 	OrderNo     string
-	Channel     string
+	UserID      int64
+	Method      PaymentMethod
 	ClientIP    string
-	ExtraParams map[string]string
+	Extension   map[string]string
 	Description string
-	TotalAmount int32
 }
-
-// PrepayForOrderResult 统一支付入口出参。
-// Payment 是创建/复用的支付流水,Prepay 是三方 prepay 返回的原始结果。
-// service 层根据 channel 编码成前端可用的 action_type + payload JSON。
 type PrepayForOrderResult struct {
 	Payment *PaymentDO
 	Prepay  *PaymentPrepayResult
 }
 
+type PaymentUsecase interface {
+	PrepayForOrder(context.Context, PrepayForOrderArgs) (*PrepayForOrderResult, error)
+	GetPayment(context.Context, int64, int64) (*PaymentDO, error)
+	GetPaymentByOrder(context.Context, int64, int64) (*PaymentDO, error)
+	QueryPayment(context.Context, string, int64) (*PaymentQueryResult, error)
+	ClosePayment(context.Context, string, int64) (*PaymentCloseResult, error)
+	CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*MQJob, error)
+	HandleNotification(context.Context, string, *http.Request) error
+}
+
 type paymentUsecase struct {
-	gateway     PaymentGateway
-	paymentRepo PaymentRepo
-	orderRepo   OrderRepo
-	paymentJobs PaymentJobUsecase
-	tx          TxManager
-	idGen       IDGenerator
-	log         *log.Helper
+	gateway          PaymentGateway
+	paymentRepo      PaymentRepo
+	notificationRepo PaymentNotificationRepo
+	orderRepo        OrderRepo
+	paymentJobs      PaymentJobUsecase
+	tx               TxManager
+	idGen            IDGenerator
+	log              *log.Helper
 }
 
-func NewPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, orderRepo OrderRepo, paymentJobs PaymentJobUsecase, tx TxManager, idGen IDGenerator, logger log.Logger) PaymentUsecase {
-	return &paymentUsecase{
-		gateway:     gateway,
-		paymentRepo: paymentRepo,
-		orderRepo:   orderRepo,
-		paymentJobs: paymentJobs,
-		tx:          tx,
-		idGen:       idGen,
-		log:         log.NewHelper(logger),
-	}
+func NewPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, notificationRepo PaymentNotificationRepo, orderRepo OrderRepo, paymentJobs PaymentJobUsecase, tx TxManager, idGen IDGenerator, logger log.Logger) PaymentUsecase {
+	return &paymentUsecase{gateway: gateway, paymentRepo: paymentRepo, notificationRepo: notificationRepo, orderRepo: orderRepo, paymentJobs: paymentJobs, tx: tx, idGen: idGen, log: log.NewHelper(logger)}
 }
 
-func (uc *paymentUsecase) CreatePayment(ctx context.Context, orderID, userID, merchantID int64, payChannel string) (*PaymentDO, error) {
-	order, err := uc.orderRepo.GetOrder(ctx, orderID)
-	if err != nil {
-		return nil, err
-	}
-	channel := NormalizePayChannel(payChannel)
-	if channel == "" {
-		channel = string(Alipay)
-	}
-
-	outTradeNo, err := uc.resolveOutTradeNo(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-
-	payment, err := uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
-		OrderID:    orderID,
-		UserID:     userID,
-		MerchantID: merchantID,
-		Amount:     order.TotalAmount,
-		PayChannel: channel,
-		OutTradeNo: outTradeNo,
-	})
-	if err != nil {
-		return nil, err
-	}
-	uc.log.WithContext(ctx).Infof("using payment_id=%d order_id=%d channel=%s out_trade_no=%s", payment.ID, orderID, channel, payment.OutTradeNo)
-	return payment, nil
-}
-
-func (uc *paymentUsecase) resolveOutTradeNo(_ context.Context, supplied string) (string, error) {
-	if supplied != "" {
-		if err := validateOutTradeNo(supplied); err != nil {
-			return "", err
-		}
-		return supplied, nil
-	}
-	return uc.idGen.GenerateString(), nil
-}
-
-// validateOutTradeNo enforces: required, ≤ 64 chars, charset [A-Za-z0-9_-].
-// Wechat allows 32 chars, Alipay 64; 64 is the upper bound across both.
-// 字符集限制防止注入特殊字符到第三方支付系统的 URL/表单字段中。
-func validateOutTradeNo(s string) error {
-	if s == "" {
-		return errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
-	}
-	if len(s) > 64 {
-		return errors.BadRequest("OUT_TRADE_NO_TOO_LONG", "out_trade_no must be ≤ 64 chars")
-	}
-	for _, r := range s {
-		switch {
-		case r >= 'A' && r <= 'Z':
-		case r >= 'a' && r <= 'z':
-		case r >= '0' && r <= '9':
-		case r == '_' || r == '-':
-		default:
-			return errors.BadRequest("OUT_TRADE_NO_INVALID_CHARSET", "out_trade_no must match [A-Za-z0-9_-]")
-		}
-	}
-	return nil
-}
-
-// ErrPaymentConflict is returned when a CreatePayment insert collides on
-// idx_payments_active_out_trade_no_channel. Translated to ALREADY_EXISTS / 409.
-var ErrPaymentConflict = errors.Conflict("PAYMENT_OUT_TRADE_NO_CONFLICT",
-	"a payment with this out_trade_no already exists for this channel")
-
-func (uc *paymentUsecase) GetPayment(ctx context.Context, id int64) (*PaymentDO, error) {
-	return uc.paymentRepo.GetPayment(ctx, id)
-}
-
-// PrepayForOrder 实现统一支付入口:order_no -> payment -> prepay。
-// 复用 CreatePayment 的幂等逻辑(同 active payment+channel 复用),
-// 内部再调 gateway.Prepay。service 层在拿到结果后编码 action_type / payload。
 func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrderArgs) (*PrepayForOrderResult, error) {
-	// 1) 通过商户订单号反查订单。
+	method := args.Method.Normalize()
+	if method.String() == "" {
+		return nil, errors.BadRequest("PAYMENT_METHOD_REQUIRED", "payment method is required")
+	}
 	order, err := uc.orderRepo.GetOrderByOrderNo(ctx, args.OrderNo)
 	if err != nil {
 		return nil, err
 	}
+	if args.UserID <= 0 || order.UserID != args.UserID {
+		return nil, ErrOrderNotFound
+	}
+	if order.Status != OrderStatusPendingPayment {
+		return nil, errors.Conflict("ORDER_NOT_PAYABLE", "order is not awaiting payment")
+	}
 
-	// 2) 创建或复用支付流水。CreatePayment 内部会再调一次 GetOrder
-	// (用 int64 PK),这里多一次往返是可接受的——复用幂等 + 复用业务校验。
-	// 商户号不在订单上(由调用方提供),统一支付入口没有该上下文,
-	// 传 0;payments.merchant_id 列允许为 0。
-	payment, err := uc.CreatePayment(ctx, order.ID, order.UserID, 0, args.Channel)
-	if err != nil {
+	methodKey := method.String()
+	payment, err := uc.paymentRepo.GetActivePaymentByOrderMethod(ctx, order.ID, methodKey)
+	if err != nil && !errors.Is(err, ErrPaymentNotFound) {
 		return nil, err
 	}
-
-	// 3) 调三方 prepay。从 extra_params 抽取渠道特有字段(openid 等)。
-	openID := ""
-	if args.ExtraParams != nil {
-		openID = args.ExtraParams["openid"]
+	if payment == nil {
+		outTradeNo := uc.idGen.GenerateString()
+		if err := validateOutTradeNo(outTradeNo); err != nil {
+			return nil, err
+		}
+		payment, err = uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
+			OrderID: order.ID, UserID: order.UserID, Amount: order.TotalAmount,
+			Currency: order.Currency, Method: methodKey, OutTradeNo: outTradeNo,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
-	prepay, err := uc.Prepay(ctx, PaymentPrepayRequest{
-		Channel:     args.Channel,
-		OutTradeNo:  payment.OutTradeNo,
-		Description: args.Description,
-		TotalAmount: args.TotalAmount,
-		OpenID:      openID,
+	if payment.Status == PaymentStatusPending && payment.Action.Type != "" {
+		return &PrepayForOrderResult{Payment: payment, Prepay: &PaymentPrepayResult{ProviderReference: payment.ThirdPartyTxID, Action: payment.Action}}, nil
+	}
+	description := strings.TrimSpace(args.Description)
+	if description == "" {
+		description = fmt.Sprintf("Order %s", order.OutTradeNo)
+	}
+	prepay, err := uc.gateway.Prepay(ctx, PaymentPrepayRequest{
+		Method: method, OutTradeNo: payment.OutTradeNo, Description: description,
+		Amount: order.TotalAmount, Currency: order.Currency, ClientIP: args.ClientIP, Extension: args.Extension,
 	})
 	if err != nil {
 		return nil, err
 	}
 
+	capabilities, err := uc.gateway.Capabilities(method)
+	if err != nil {
+		return nil, err
+	}
+	err = uc.tx.InTx(ctx, func(ctx context.Context) error {
+		activated, err := uc.paymentRepo.MarkPaymentPending(ctx, payment.ID, prepay.Action)
+		if err != nil {
+			return err
+		}
+		payment = activated
+		if capabilities.RequiresPoll && uc.paymentJobs != nil {
+			_, err = uc.paymentJobs.EnqueueCheckPayTx(ctx, CheckPayArgs{
+				PaymentID: payment.ID, Provider: method.Provider, Trigger: "prepay", MaxPolls: 30, PollIntervalSeconds: 10,
+			}, 5*time.Second)
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &PrepayForOrderResult{Payment: payment, Prepay: prepay}, nil
 }
 
-func (uc *paymentUsecase) PrepayForOrderWithCheckJob(ctx context.Context, args PrepayForOrderArgs, checkJob CheckPayArgs, delay time.Duration) (*PrepayForOrderResult, *MQJob, error) {
-	var result *PrepayForOrderResult
-	var job *MQJob
-	err := uc.tx.InTx(ctx, func(ctx context.Context) error {
-		r, err := uc.PrepayForOrder(ctx, args)
-		if err != nil {
-			return err
-		}
-		result = r
-		if args.Channel != string(Wechat) || uc.paymentJobs == nil {
-			return nil
-		}
-		checkJob.PaymentID = r.Payment.ID
-		checkJob.OrderID = r.Payment.OrderID
-		checkJob.OutTradeNo = r.Payment.OutTradeNo
-		checkJob.Channel = string(Wechat)
-		j, err := uc.paymentJobs.EnqueueCheckPayTx(ctx, checkJob, delay)
-		if err != nil {
-			return err
-		}
-		job = j
-		return nil
-	})
-	return result, job, err
+func (uc *paymentUsecase) GetPayment(ctx context.Context, id, userID int64) (*PaymentDO, error) {
+	return uc.paymentRepo.GetPaymentByUser(ctx, id, userID)
 }
 
-func (uc *paymentUsecase) EnqueueWechatCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, checkJob CheckPayArgs) (*MQJob, error) {
-	return uc.EnqueueCheckJobByOutTradeNo(ctx, outTradeNo, string(Wechat), checkJob)
-}
-
-func (uc *paymentUsecase) EnqueueCheckJobByOutTradeNo(ctx context.Context, outTradeNo string, channel string, checkJob CheckPayArgs) (*MQJob, error) {
-	if outTradeNo == "" {
-		return nil, errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
+func (uc *paymentUsecase) GetPaymentByOrder(ctx context.Context, orderID, userID int64) (*PaymentDO, error) {
+	order, err := uc.orderRepo.GetOrderByUser(ctx, orderID, userID)
+	if err != nil {
+		return nil, err
 	}
+	return uc.paymentRepo.GetLatestPaymentByOrder(ctx, order.ID)
+}
+
+func (uc *paymentUsecase) QueryPayment(ctx context.Context, outTradeNo string, userID int64) (*PaymentQueryResult, error) {
+	payment, err := uc.authorizedByOutTradeNo(ctx, outTradeNo, userID)
+	if err != nil {
+		return nil, err
+	}
+	method, err := ParsePaymentMethod(payment.Method)
+	if err != nil {
+		return nil, err
+	}
+	result, err := uc.gateway.Query(ctx, PaymentQueryRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+	if err != nil {
+		return nil, err
+	}
+	if result.TradeState.IsTerminal() {
+		err = uc.paymentRepo.ApplyPayQuery(ctx, CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "api_query"}, result)
+	}
+	return result, err
+}
+
+func (uc *paymentUsecase) ClosePayment(ctx context.Context, outTradeNo string, userID int64) (*PaymentCloseResult, error) {
+	payment, err := uc.authorizedByOutTradeNo(ctx, outTradeNo, userID)
+	if err != nil {
+		return nil, err
+	}
+	method, err := ParsePaymentMethod(payment.Method)
+	if err != nil {
+		return nil, err
+	}
+	capabilities, err := uc.gateway.Capabilities(method)
+	if err != nil {
+		return nil, err
+	}
+	if !capabilities.SupportsClose {
+		return nil, errors.New(501, "PAYMENT_CLOSE_NOT_SUPPORTED", "provider does not support close")
+	}
+	if payment.Status == PaymentStatusClosed {
+		return &PaymentCloseResult{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID, Success: true}, nil
+	}
+	if payment.Status != PaymentStatusPending && payment.Status != PaymentStatusClosePending {
+		return nil, ErrPaymentStateConflict
+	}
+	if uc.paymentJobs == nil {
+		return nil, errors.ServiceUnavailable("PAYMENT_MQ_NOT_CONFIGURED", "payment mq is required for reliable close")
+	}
+	closeArgs := CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "api_close", MaxPolls: 1, PollIntervalSeconds: 1}
+	if err := uc.tx.InTx(ctx, func(ctx context.Context) error {
+		if err := uc.paymentRepo.MarkPayClosePending(ctx, closeArgs); err != nil {
+			return err
+		}
+		_, err := uc.paymentJobs.EnqueueCheckPayTx(ctx, closeArgs, 0)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	result, err := uc.gateway.Close(ctx, PaymentCloseRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+	if err != nil {
+		return nil, err
+	}
+	if result.Success {
+		err = uc.paymentRepo.ApplyPayQuery(ctx, CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "api_close"}, &PaymentQueryResult{
+			Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: result.TransactionID,
+			TradeState: TradeStateClosed, Amount: payment.Amount, Currency: payment.Currency,
+		})
+	}
+	return result, err
+}
+
+func (uc *paymentUsecase) HandleNotification(ctx context.Context, provider string, request *http.Request) error {
+	if uc.notificationRepo == nil {
+		return errors.ServiceUnavailable("PAYMENT_CALLBACK_STORE_UNAVAILABLE", "payment callback store is unavailable")
+	}
+	notification, err := uc.gateway.ParseAndVerifyNotification(provider, request)
+	if err != nil {
+		return err
+	}
+	payment, err := uc.paymentRepo.GetPaymentByOutTradeNo(ctx, notification.OutTradeNo)
+	if err != nil {
+		return err
+	}
+	method, err := ParsePaymentMethod(payment.Method)
+	if err != nil {
+		return err
+	}
+	if method.Provider != strings.ToLower(notification.Provider) {
+		return errors.BadRequest("PAYMENT_NOTIFICATION_PROVIDER_MISMATCH", "notification provider does not match payment")
+	}
+	_, err = uc.notificationRepo.PersistAndEnqueueNotification(ctx, notification, CheckPayArgs{
+		PaymentID: payment.ID, Provider: method.Provider, Trigger: "callback", MaxPolls: 30, PollIntervalSeconds: 10,
+	})
+	return err
+}
+
+func (uc *paymentUsecase) NotificationAck(provider string, success bool) PaymentNotificationAck {
+	ack, err := uc.gateway.NotificationAck(provider, success)
+	if err != nil {
+		return DefaultPaymentNotificationAck()
+	}
+	return ack
+}
+
+func (uc *paymentUsecase) CreateCheckJob(ctx context.Context, paymentID int64, maxPolls int, pollInterval time.Duration, delay time.Duration, trigger string) (*MQJob, error) {
 	if uc.paymentJobs == nil {
 		return nil, errors.ServiceUnavailable("PAYMENT_MQ_NOT_CONFIGURED", "payment mq is not configured")
 	}
-	var job *MQJob
-	err := uc.tx.InTx(ctx, func(ctx context.Context) error {
-		payment, err := uc.paymentRepo.GetPaymentByOutTradeNo(ctx, outTradeNo)
-		if err != nil {
-			return err
-		}
-		checkJob.PaymentID = payment.ID
-		checkJob.OrderID = payment.OrderID
-		checkJob.OutTradeNo = payment.OutTradeNo
-		checkJob.Channel = channel
-		j, err := uc.paymentJobs.EnqueueCheckPayTx(ctx, checkJob, 0)
-		if err != nil {
-			return err
-		}
-		job = j
-		return nil
-	})
-	return job, err
-}
-
-func (uc *paymentUsecase) GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error) {
-	return uc.paymentRepo.GetPaymentByOrder(ctx, orderID)
-}
-
-func (uc *paymentUsecase) Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
-	if uc.gateway == nil {
-		return nil, errors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
-	}
-	req.Channel = NormalizePayChannel(req.Channel)
-	if req.Channel == "" {
-		req.Channel = string(Wechat)
-	}
-	return uc.gateway.Prepay(ctx, req)
-}
-
-func (uc *paymentUsecase) QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error) {
-	if uc.gateway == nil {
-		return nil, errors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
-	}
-	req.Channel = NormalizePayChannel(req.Channel)
-	if req.Channel == "" {
-		req.Channel = string(Wechat)
-	}
-	return uc.gateway.QueryOrder(ctx, req)
-}
-
-func (uc *paymentUsecase) CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error) {
-	if uc.gateway == nil {
-		return nil, errors.ServiceUnavailable("PAYMENT_GATEWAY_NOT_CONFIGURED", "payment gateway is not configured")
-	}
-	req.Channel = NormalizePayChannel(req.Channel)
-	if req.Channel == "" {
-		req.Channel = string(Wechat)
-	}
-
-	payment, err := uc.paymentRepo.GetPaymentByOutTradeNo(ctx, req.OutTradeNo)
+	payment, err := uc.paymentRepo.GetPayment(ctx, paymentID)
 	if err != nil {
 		return nil, err
 	}
-
-	result, err := uc.gateway.CloseOrder(ctx, req)
+	method, err := ParsePaymentMethod(payment.Method)
 	if err != nil {
 		return nil, err
 	}
+	return uc.paymentJobs.EnqueueCheckPay(ctx, CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: trigger, MaxPolls: maxPolls, PollIntervalSeconds: int(pollInterval.Seconds())}, delay)
+}
 
-	if result.Success {
-		if err := uc.tx.InTx(ctx, func(ctx context.Context) error {
-			return uc.paymentRepo.ClosePayment(ctx, payment.ID, payment.OrderID)
-		}); err != nil {
-			uc.log.WithContext(ctx).Errorf("close payment local sync failed payment_id=%d out_trade_no=%s: %v", payment.ID, req.OutTradeNo, err)
-		}
+func (uc *paymentUsecase) authorizedByOutTradeNo(ctx context.Context, outTradeNo string, userID int64) (*PaymentDO, error) {
+	if outTradeNo == "" || userID <= 0 {
+		return nil, ErrPaymentNotFound
 	}
+	payment, err := uc.paymentRepo.GetPaymentByOutTradeNo(ctx, outTradeNo)
+	if err != nil {
+		return nil, err
+	}
+	if payment == nil || payment.UserID != userID {
+		return nil, ErrPaymentNotFound
+	}
+	return payment, nil
+}
 
-	return result, nil
+func validateOutTradeNo(value string) error {
+	if value == "" {
+		return errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
+	}
+	if len(value) > 64 {
+		return errors.BadRequest("OUT_TRADE_NO_TOO_LONG", "out_trade_no must be at most 64 characters")
+	}
+	for _, r := range value {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return errors.BadRequest("OUT_TRADE_NO_INVALID", "out_trade_no contains invalid characters")
+	}
+	return nil
 }

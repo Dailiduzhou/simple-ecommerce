@@ -1,24 +1,30 @@
 package data
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
-	mrand "math/rand"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-pay/gopay"
+	"github.com/go-pay/gopay/alipay"
 	alipayv3 "github.com/go-pay/gopay/alipay/v3"
-	gopaywechat "github.com/go-pay/gopay/wechat"
+	"github.com/go-pay/gopay/wechat"
 	"github.com/go-pay/util"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -29,218 +35,251 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// EnvAlipayNotifyURL is the env var consulted for the payment-channel
-// async-notify URL (the `notify_url` sent to alipay and wechat).
-//
-// 对应 .env.example 中的 ALIPAY_NOTIFY_URL 形如
-//
-//	http://domain.example/v1/pay/alipay/notify
-//
-// 服务端需要把 v1/pay/wechat/notify 同样挂在同一域名下(alipay/wechat 共用
-// 同一通知域名,通过路径区分渠道),所以两个适配器都从同一个 env 变量读取。
-//
-// notify_url 是服务端配置,不能接受来自请求方(前端/RPC)的覆盖 — 第三方支付
-// 平台会按此 URL 回跳,如果被任意指定,攻击者可以把它指向自己控制的地址
-// 接收支付结果,导致订单状态被外部篡改。
-const EnvAlipayNotifyURL = "ALIPAY_NOTIFY_URL"
+const (
+	EnvPaymentCallbackBaseURL = "PAYMENT_CALLBACK_BASE_URL"
+	EnvAlipayNotifyURL        = "ALIPAY_NOTIFY_URL"
+	EnvWechatNotifyURL        = "WECHAT_NOTIFY_URL"
+	maxNotificationBody       = 1 << 20
+)
 
-// notifyURLFromEnv 读取 EnvAlipayNotifyURL;为空时返回空串,由适配器决定
-// 是否透传给三方(空值意味着不发送 notify_url 字段)。
-func notifyURLFromEnv() string {
+func notifyURLFromEnv(provider string) string {
+	if base := strings.TrimRight(os.Getenv(EnvPaymentCallbackBaseURL), "/"); base != "" {
+		return base + "/v1/payments/" + provider + "/notify"
+	}
+	if provider == "wechat" {
+		return os.Getenv(EnvWechatNotifyURL)
+	}
 	return os.Getenv(EnvAlipayNotifyURL)
 }
 
 var (
-	_ biz.PaymentAdapter = (*WechatPaymentAdapter)(nil)
-	_ biz.PaymentAdapter = (*AlipayPaymentAdapter)(nil)
-	_ biz.PaymentRepo    = (*PaymentRepo)(nil)
-	_ biz.PaymentMQRepo  = (*PaymentMQRepo)(nil)
+	_ biz.PaymentAdapter          = (*WechatPaymentAdapter)(nil)
+	_ biz.PaymentAdapter          = (*AlipayPaymentAdapter)(nil)
+	_ biz.PaymentRepo             = (*PaymentRepo)(nil)
+	_ biz.PaymentMQRepo           = (*PaymentMQRepo)(nil)
+	_ biz.PaymentNotificationRepo = (*PaymentNotificationRepo)(nil)
 )
 
 type WechatPaymentAdapter struct {
-	client    *gopaywechat.Client
-	notifyURL string
-	log       *log.Helper
+	client            *wechat.Client
+	apiKey, notifyURL string
+	log               *log.Helper
 }
 
 func NewWechatPaymentAdapter(c *conf.Payment, logger log.Logger) *WechatPaymentAdapter {
-	var client *gopaywechat.Client
-	if c != nil && c.Wechat != nil && c.Wechat.ApiKey != "" {
-		client = gopaywechat.NewClient(c.Wechat.AppId, c.Wechat.MchId, c.Wechat.ApiKey, c.Wechat.IsProduction)
+	adapter := &WechatPaymentAdapter{notifyURL: notifyURLFromEnv("wechat"), log: log.NewHelper(logger)}
+	if c != nil && c.Wechat != nil && c.Wechat.AppId != "" && c.Wechat.MchId != "" && c.Wechat.ApiKey != "" {
+		adapter.apiKey = c.Wechat.ApiKey
+		adapter.client = wechat.NewClient(c.Wechat.AppId, c.Wechat.MchId, c.Wechat.ApiKey, c.Wechat.IsProduction)
 	}
-	return &WechatPaymentAdapter{
-		client:    client,
-		notifyURL: notifyURLFromEnv(),
-		log:       log.NewHelper(logger),
-	}
+	return adapter
 }
 
-func (a *WechatPaymentAdapter) Channel() string {
-	return string(biz.Wechat)
+func (a *WechatPaymentAdapter) Provider() string { return "wechat" }
+func (a *WechatPaymentAdapter) NotificationAck(success bool) biz.PaymentNotificationAck {
+	body := "<xml><return_code><![CDATA[FAIL]]></return_code><return_msg><![CDATA[RETRY]]></return_msg></xml>"
+	if success {
+		body = "<xml><return_code><![CDATA[SUCCESS]]></return_code><return_msg><![CDATA[OK]]></return_msg></xml>"
+	}
+	return biz.PaymentNotificationAck{StatusCode: http.StatusOK, ContentType: "application/xml; charset=utf-8", Body: []byte(body)}
+}
+func (a *WechatPaymentAdapter) Supports(method biz.PaymentMethod) bool {
+	method = method.Normalize()
+	return method.Provider == a.Provider() && (method.Product == "jsapi" || method.Product == "native" || method.Product == "app")
+}
+func (a *WechatPaymentAdapter) Capabilities(biz.PaymentMethod) biz.PaymentCapabilities {
+	return biz.PaymentCapabilities{SupportsNotify: true, RequiresPoll: true, SupportsClose: true}
 }
 
 func (a *WechatPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 	if a.client == nil {
-		a.log.WithContext(ctx).Warn("wechat payment adapter is not configured")
-		return nil, wechatPayNotConfigured()
+		return nil, paymentProviderNotConfigured("wechat")
 	}
-
-	nonceStr := util.RandomString(32)
-	signType := gopaywechat.SignType_MD5
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	tradeType := ""
+	switch req.Method.Product {
+	case "jsapi":
+		tradeType = wechat.TradeType_JsApi
+	case "native":
+		tradeType = wechat.TradeType_Native
+	case "app":
+		tradeType = wechat.TradeType_App
+	default:
+		return nil, biz.ErrPaymentProviderUnavailable
+	}
+	nonce := util.RandomString(32)
+	signType := wechat.SignType_MD5
 	body := make(gopay.BodyMap)
-	body.Set("nonce_str", nonceStr).
-		Set("body", req.Description).
-		Set("out_trade_no", req.OutTradeNo).
-		Set("total_fee", req.TotalAmount).
-		Set("spbill_create_ip", "127.0.0.1").
-		Set("trade_type", gopaywechat.TradeType_JsApi).
-		Set("sign_type", signType).
-		Set("openid", req.OpenID).
-		Set("notify_url", a.notifyURL)
-
-	wxRsp, err := a.client.UnifiedOrder(ctx, body)
+	body.Set("nonce_str", nonce).Set("body", req.Description).Set("out_trade_no", req.OutTradeNo).
+		Set("total_fee", req.Amount).Set("spbill_create_ip", req.ClientIP).Set("trade_type", tradeType).Set("sign_type", signType)
+	if req.Method.Product == "jsapi" {
+		body.Set("openid", req.Extension["openid"])
+	}
+	if a.notifyURL != "" {
+		body.Set("notify_url", a.notifyURL)
+	}
+	response, err := a.client.UnifiedOrder(ctx, body)
 	if err != nil {
 		return nil, err
 	}
-
-	timeStamp := strconv.FormatInt(time.Now().Unix(), 10)
-	pkg := "prepay_id=" + wxRsp.PrepayId
-	return &biz.PaymentPrepayResult{
-		Channel:    string(biz.Wechat),
-		OutTradeNo: req.OutTradeNo,
-		PrepayID:   wxRsp.PrepayId,
-		AppID:      a.client.AppId,
-		TimeStamp:  timeStamp,
-		NonceStr:   wxRsp.NonceStr,
-		Package:    pkg,
-		SignType:   signType,
-		PaySign:    gopaywechat.GetJsapiPaySign(a.client.AppId, wxRsp.NonceStr, pkg, signType, timeStamp, a.client.ApiKey),
-		CodeURL:    wxRsp.CodeUrl,
-	}, nil
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	var action biz.PaymentAction
+	switch req.Method.Product {
+	case "native":
+		action = paymentAction(biz.PaymentActionRedirect, map[string]string{"url": response.CodeUrl})
+	case "app":
+		action = paymentAction(biz.PaymentActionInvoke, map[string]string{
+			"appId": a.client.AppId, "partnerId": a.client.MchId, "prepayId": response.PrepayId,
+			"nonceStr": response.NonceStr, "timeStamp": timestamp,
+			"sign": wechat.GetAppPaySign(a.client.AppId, a.client.MchId, response.NonceStr, response.PrepayId, signType, timestamp, a.client.ApiKey),
+		})
+	default:
+		pkg := "prepay_id=" + response.PrepayId
+		action = paymentAction(biz.PaymentActionInvoke, map[string]string{
+			"appId": a.client.AppId, "timeStamp": timestamp, "nonceStr": response.NonceStr,
+			"package": pkg, "signType": signType,
+			"paySign": wechat.GetJsapiPaySign(a.client.AppId, response.NonceStr, pkg, signType, timestamp, a.client.ApiKey),
+		})
+	}
+	return &biz.PaymentPrepayResult{ProviderReference: response.PrepayId, Action: action}, nil
 }
 
-func (a *WechatPaymentAdapter) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+func (a *WechatPaymentAdapter) Query(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
 	if a.client == nil {
-		a.log.WithContext(ctx).Warnf("wechat payment adapter is not configured, out_trade_no=%s", req.OutTradeNo)
-		return nil, wechatPayNotConfigured()
+		return nil, paymentProviderNotConfigured("wechat")
 	}
-
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	body := make(gopay.BodyMap)
-	body.Set("nonce_str", util.RandomString(32)).
-		Set("sign_type", gopaywechat.SignType_MD5)
+	body.Set("nonce_str", util.RandomString(32)).Set("sign_type", wechat.SignType_MD5)
 	if req.OutTradeNo != "" {
 		body.Set("out_trade_no", req.OutTradeNo)
 	}
 	if req.TransactionID != "" {
 		body.Set("transaction_id", req.TransactionID)
 	}
-
-	wxRsp, _, err := a.client.QueryOrder(ctx, body)
+	response, _, err := a.client.QueryOrder(ctx, body)
 	if err != nil {
 		return nil, err
 	}
-	totalAmount, _ := strconv.Atoi(wxRsp.TotalFee)
-	return &biz.PaymentQueryResult{
-		Channel:        string(biz.Wechat),
-		OutTradeNo:     wxRsp.OutTradeNo,
-		TransactionID:  wxRsp.TransactionId,
-		TradeState:     biz.ParseTradeState(wxRsp.TradeState),
-		TradeStateDesc: wxRsp.TradeStateDesc,
-		RawTradeState:  wxRsp.TradeState,
-		TotalAmount:    int32(totalAmount),
-	}, nil
+	amount, err := strconv.ParseInt(response.TotalFee, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse wechat total fee: %w", err)
+	}
+	return &biz.PaymentQueryResult{Method: req.Method, OutTradeNo: response.OutTradeNo, TransactionID: response.TransactionId,
+		TradeState: biz.ParseTradeState(response.TradeState), TradeStateDesc: response.TradeStateDesc,
+		RawTradeState: response.TradeState, Amount: amount, Currency: biz.DefaultCurrency}, nil
 }
 
-func (a *WechatPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+func (a *WechatPaymentAdapter) Close(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
 	if a.client == nil {
-		a.log.WithContext(ctx).Warnf("wechat payment adapter is not configured, out_trade_no=%s", req.OutTradeNo)
-		return nil, wechatPayNotConfigured()
+		return nil, paymentProviderNotConfigured("wechat")
 	}
-
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	body := make(gopay.BodyMap)
-	body.Set("nonce_str", util.RandomString(32)).
-		Set("out_trade_no", req.OutTradeNo)
-	wxRsp, err := a.client.CloseOrder(ctx, body)
+	body.Set("nonce_str", util.RandomString(32)).Set("out_trade_no", req.OutTradeNo)
+	response, err := a.client.CloseOrder(ctx, body)
 	if err != nil {
 		return nil, err
 	}
+	return &biz.PaymentCloseResult{Method: req.Method, OutTradeNo: req.OutTradeNo, Success: response.ReturnCode == "SUCCESS" && response.ResultCode == "SUCCESS"}, nil
+}
 
-	return &biz.PaymentCloseResult{
-		Channel:    string(biz.Wechat),
-		OutTradeNo: req.OutTradeNo,
-		Success:    wxRsp.ReturnCode == "SUCCESS" && wxRsp.ResultCode == "SUCCESS",
-	}, nil
+func (a *WechatPaymentAdapter) ParseAndVerifyNotification(request *http.Request) (*biz.PaymentNotification, error) {
+	if a.apiKey == "" {
+		return nil, errors.ServiceUnavailable("PAYMENT_SIGNATURE_CONFIGURATION_MISSING", "wechat signature configuration is missing")
+	}
+	body, err := boundedRequestBody(request)
+	if err != nil {
+		return nil, errors.BadRequest("PAYMENT_NOTIFICATION_BODY_INVALID", err.Error())
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	notify, err := wechat.ParseNotify(request)
+	if err != nil {
+		return nil, errors.BadRequest("PAYMENT_NOTIFICATION_PARSE_FAILED", err.Error())
+	}
+	signType := notify.SignType
+	if signType == "" {
+		signType = wechat.SignType_MD5
+	}
+	valid, err := wechat.VerifySign(a.apiKey, signType, notify)
+	if err != nil || !valid {
+		return nil, errors.BadRequest("PAYMENT_NOTIFICATION_SIGNATURE_INVALID", "wechat notification signature is invalid")
+	}
+	amount, err := strconv.ParseInt(notify.TotalFee, 10, 64)
+	if err != nil {
+		return nil, errors.BadRequest("PAYMENT_NOTIFICATION_AMOUNT_INVALID", "wechat total_fee is invalid")
+	}
+	return &biz.PaymentNotification{Provider: a.Provider(), ProviderEventID: notify.TransactionId, OutTradeNo: notify.OutTradeNo,
+		TransactionID: notify.TransactionId, Amount: amount, Currency: biz.DefaultCurrency,
+		PayloadHash: sha256Hex(body), VerifiedAt: time.Now().UTC()}, nil
 }
 
 type AlipayPaymentAdapter struct {
-	client         *alipayv3.ClientV3
-	closeRequester alipayCloseRequester
-	notifyURL      string
-	log            *log.Helper
+	client                    *alipayv3.ClientV3
+	closeRequester            alipayCloseRequester
+	notifyURL, publicCertPath string
+	log                       *log.Helper
 }
 
 func NewAlipayPaymentAdapter(client *alipayv3.ClientV3, logger log.Logger) *AlipayPaymentAdapter {
-	return &AlipayPaymentAdapter{
-		client:         client,
-		closeRequester: &defaultAlipayCloseRequester{client: client},
-		notifyURL:      notifyURLFromEnv(),
-		log:            log.NewHelper(logger),
+	return &AlipayPaymentAdapter{client: client, closeRequester: &defaultAlipayCloseRequester{client: client}, notifyURL: notifyURLFromEnv("alipay"), log: log.NewHelper(logger)}
+}
+func newAlipayPaymentAdapterForTest(client *alipayv3.ClientV3, requester alipayCloseRequester, logger log.Logger) *AlipayPaymentAdapter {
+	return &AlipayPaymentAdapter{client: client, closeRequester: requester, notifyURL: notifyURLFromEnv("alipay"), log: log.NewHelper(logger)}
+}
+func (a *AlipayPaymentAdapter) Provider() string { return "alipay" }
+func (a *AlipayPaymentAdapter) NotificationAck(success bool) biz.PaymentNotificationAck {
+	body := "fail"
+	if success {
+		body = "success"
 	}
+	return biz.PaymentNotificationAck{StatusCode: http.StatusOK, ContentType: "text/plain; charset=utf-8", Body: []byte(body)}
 }
-
-// newAlipayPaymentAdapterForTest 仅供测试用,允许注入自定义 closeRequester。
-// 命名以下划线开头以暗示包外不直接使用;实际测试放在同 package 可直接调。
-func newAlipayPaymentAdapterForTest(client *alipayv3.ClientV3, cr alipayCloseRequester, logger log.Logger) *AlipayPaymentAdapter {
-	return &AlipayPaymentAdapter{
-		client:         client,
-		closeRequester: cr,
-		notifyURL:      notifyURLFromEnv(),
-		log:            log.NewHelper(logger),
-	}
+func (a *AlipayPaymentAdapter) Supports(method biz.PaymentMethod) bool {
+	method = method.Normalize()
+	return method.Provider == a.Provider() && (method.Product == "wap" || method.Product == "app")
 }
-
-func (a *AlipayPaymentAdapter) Channel() string {
-	return string(biz.Alipay)
+func (a *AlipayPaymentAdapter) Capabilities(biz.PaymentMethod) biz.PaymentCapabilities {
+	return biz.PaymentCapabilities{SupportsNotify: true, RequiresPoll: false, SupportsClose: true}
 }
-
 func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 	if a.client == nil {
-		a.log.WithContext(ctx).Warn("alipay payment adapter is not configured")
-		return nil, alipayNotConfigured()
+		return nil, paymentProviderNotConfigured("alipay")
 	}
-
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	body := make(gopay.BodyMap)
-	body.Set("subject", req.Description).
-		Set("out_trade_no", req.OutTradeNo).
-		Set("total_amount", fenToYuan(req.TotalAmount))
+	body.Set("subject", req.Description).Set("out_trade_no", req.OutTradeNo).Set("total_amount", fenToYuan(req.Amount))
 	if a.notifyURL != "" {
 		body.Set("notify_url", a.notifyURL)
 	}
-
-	// 统一走手机网站支付(WAP),返回跳转 URL;service 层在 WAP/APP 两个
-	// 子渠道上都是用 URL_REDIRECT + code_url 消费,这里把 URL 放进 CodeURL
-	// 字段统一返回。TradeWapPay 内部会自动加 product_code=FAST_INSTANT_TRADE_PAY。
-	payURL, err := a.client.TradeWapPay(ctx, body)
+	var payload string
+	var actionType biz.PaymentActionType
+	var err error
+	switch req.Method.Product {
+	case "wap":
+		payload, err = a.client.TradeWapPay(ctx, body)
+		actionType = biz.PaymentActionRedirect
+	case "app":
+		payload, err = a.client.TradeAppPay(ctx, body)
+		actionType = biz.PaymentActionInvoke
+	default:
+		return nil, biz.ErrPaymentProviderUnavailable
+	}
 	if err != nil {
 		return nil, err
 	}
-
-	return &biz.PaymentPrepayResult{
-		Channel:    string(biz.Alipay),
-		OutTradeNo: req.OutTradeNo,
-		PayURL:     payURL,
-	}, nil
+	return &biz.PaymentPrepayResult{Action: paymentAction(actionType, map[string]string{"payload": payload})}, nil
 }
-
-func (a *AlipayPaymentAdapter) QueryOrder(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+func (a *AlipayPaymentAdapter) Query(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
 	if a.client == nil {
-		a.log.WithContext(ctx).Warnf("alipay payment adapter is not configured, out_trade_no=%s", req.OutTradeNo)
-		return nil, alipayNotConfigured()
+		return nil, paymentProviderNotConfigured("alipay")
 	}
-	if req.OutTradeNo == "" && req.TransactionID == "" {
-		return nil, alipayOrderIDRequired()
-	}
-
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	body := make(gopay.BodyMap)
 	if req.OutTradeNo != "" {
 		body.Set("out_trade_no", req.OutTradeNo)
@@ -248,34 +287,24 @@ func (a *AlipayPaymentAdapter) QueryOrder(ctx context.Context, req biz.PaymentQu
 	if req.TransactionID != "" {
 		body.Set("trade_no", req.TransactionID)
 	}
-
-	aliRsp, err := a.client.TradeQuery(ctx, body)
+	response, err := a.client.TradeQuery(ctx, body)
 	if err != nil {
 		return nil, err
 	}
-
-	totalAmount, _ := yuanToFen(aliRsp.TotalAmount)
-	state, stateDesc := mapAlipayTradeState(aliRsp.TradeStatus)
-	return &biz.PaymentQueryResult{
-		Channel:        string(biz.Alipay),
-		OutTradeNo:     aliRsp.OutTradeNo,
-		TransactionID:  aliRsp.TradeNo,
-		TradeState:     state,
-		TradeStateDesc: stateDesc,
-		RawTradeState:  aliRsp.TradeStatus,
-		TotalAmount:    totalAmount,
-	}, nil
+	amount, err := yuanToFen(response.TotalAmount)
+	if err != nil {
+		return nil, err
+	}
+	state, description := mapAlipayTradeState(response.TradeStatus)
+	return &biz.PaymentQueryResult{Method: req.Method, OutTradeNo: response.OutTradeNo, TransactionID: response.TradeNo,
+		TradeState: state, TradeStateDesc: description, RawTradeState: response.TradeStatus, Amount: amount, Currency: biz.DefaultCurrency}, nil
 }
-
-func (a *AlipayPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
-	if a.client == nil {
-		a.log.WithContext(ctx).Warnf("alipay payment adapter is not configured, out_trade_no=%s", req.OutTradeNo)
-		return nil, alipayNotConfigured()
+func (a *AlipayPaymentAdapter) Close(ctx context.Context, req biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
+	if a.client == nil || a.closeRequester == nil {
+		return nil, paymentProviderNotConfigured("alipay")
 	}
-	if req.OutTradeNo == "" && req.TransactionID == "" {
-		return nil, alipayOrderIDRequired()
-	}
-
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	body := make(gopay.BodyMap)
 	if req.OutTradeNo != "" {
 		body.Set("out_trade_no", req.OutTradeNo)
@@ -283,498 +312,461 @@ func (a *AlipayPaymentAdapter) CloseOrder(ctx context.Context, req biz.PaymentCl
 	if req.TransactionID != "" {
 		body.Set("trade_no", req.TransactionID)
 	}
-
-	var rsp alipayCloseRsp
-	res, err := a.closeRequester.DoAliPayAPISelfV3(ctx, alipayv3.MethodPost, alipayTradeClosePath, body, &rsp)
+	var response alipayCloseRsp
+	httpResponse, err := a.closeRequester.DoAliPayAPISelfV3(ctx, alipayv3.MethodPost, alipayTradeClosePath, body, &response)
 	if err != nil {
-		a.log.WithContext(ctx).Errorf("alipay trade close transport error out_trade_no=%s err=%v",
-			req.OutTradeNo, err)
 		return nil, err
 	}
-	if res.StatusCode != http.StatusOK {
-		a.log.WithContext(ctx).Errorf("alipay trade close http %d out_trade_no=%s code=%s msg=%s",
-			res.StatusCode, req.OutTradeNo, rsp.Code, rsp.ErrResponse.Message)
-		return &biz.PaymentCloseResult{
-			Channel:    string(biz.Alipay),
-			OutTradeNo: req.OutTradeNo,
-			RawCode:    rsp.Code,
-		}, fmt.Errorf("alipay trade close http %d: %s", res.StatusCode, rsp.ErrResponse.Message)
+	result := &biz.PaymentCloseResult{Method: req.Method, OutTradeNo: orEmpty(response.OutTradeNo, req.OutTradeNo), TransactionID: orEmpty(response.TradeNo, req.TransactionID), RawCode: response.Code, RawSubCode: response.SubCode}
+	if httpResponse.StatusCode != http.StatusOK {
+		return result, fmt.Errorf("alipay close returned HTTP %d", httpResponse.StatusCode)
 	}
-
-	if rsp.Code == alipaySuccessCode {
-		return &biz.PaymentCloseResult{
-			Channel:       string(biz.Alipay),
-			OutTradeNo:    rsp.OutTradeNo,
-			TransactionID: rsp.TradeNo,
-			Success:       true,
-			RawCode:       rsp.Code,
-		}, nil
+	if response.Code == alipaySuccessCode {
+		result.Success = true
+		return result, nil
 	}
-
-	if _, ok := alipaySubCodeAlreadyClosed[rsp.SubCode]; ok {
-		a.log.WithContext(ctx).Infof("alipay trade close idempotent success sub_code=%s out_trade_no=%s",
-			rsp.SubCode, req.OutTradeNo)
-		return &biz.PaymentCloseResult{
-			Channel:       string(biz.Alipay),
-			OutTradeNo:    orEmpty(rsp.OutTradeNo, req.OutTradeNo),
-			TransactionID: orEmpty(rsp.TradeNo, req.TransactionID),
-			Success:       true,
-			RawCode:       rsp.Code,
-			RawSubCode:    rsp.SubCode,
-		}, nil
+	if _, ok := alipaySubCodeAlreadyClosed[response.SubCode]; ok {
+		result.Success = true
+		return result, nil
 	}
-
-	a.log.WithContext(ctx).Errorf("alipay trade close rejected out_trade_no=%s code=%s sub_code=%s msg=%s",
-		req.OutTradeNo, rsp.Code, rsp.SubCode, rsp.SubMsg)
-	return &biz.PaymentCloseResult{
-		Channel:    string(biz.Alipay),
-		OutTradeNo: req.OutTradeNo,
-		Success:    false,
-		RawCode:    rsp.Code,
-		RawSubCode: rsp.SubCode,
-	}, fmt.Errorf("alipay trade close rejected: sub_code=%s", rsp.SubCode)
+	return result, fmt.Errorf("alipay close rejected: %s", response.SubCode)
+}
+func (a *AlipayPaymentAdapter) ParseAndVerifyNotification(request *http.Request) (*biz.PaymentNotification, error) {
+	if a.publicCertPath == "" {
+		return nil, errors.ServiceUnavailable("PAYMENT_SIGNATURE_CONFIGURATION_MISSING", "alipay signature configuration is missing")
+	}
+	body, err := boundedRequestBody(request)
+	if err != nil {
+		return nil, errors.BadRequest("PAYMENT_NOTIFICATION_BODY_INVALID", err.Error())
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	notify, err := alipay.ParseNotifyToBodyMap(request)
+	if err != nil {
+		return nil, errors.BadRequest("PAYMENT_NOTIFICATION_PARSE_FAILED", err.Error())
+	}
+	valid, err := alipay.VerifySignWithCert(a.publicCertPath, notify)
+	if err != nil || !valid {
+		return nil, errors.BadRequest("PAYMENT_NOTIFICATION_SIGNATURE_INVALID", "alipay notification signature is invalid")
+	}
+	amount, err := yuanToFen(notify.GetString("total_amount"))
+	if err != nil {
+		return nil, errors.BadRequest("PAYMENT_NOTIFICATION_AMOUNT_INVALID", "alipay total_amount is invalid")
+	}
+	return &biz.PaymentNotification{Provider: a.Provider(), ProviderEventID: notify.GetString("notify_id"), OutTradeNo: notify.GetString("out_trade_no"),
+		TransactionID: notify.GetString("trade_no"), Amount: amount, Currency: biz.DefaultCurrency,
+		PayloadHash: sha256Hex(body), VerifiedAt: time.Now().UTC()}, nil
 }
 
-func orEmpty(a, b string) string {
-	if a != "" {
-		return a
+func paymentAction(actionType biz.PaymentActionType, payload any) biz.PaymentAction {
+	encoded, _ := json.Marshal(payload)
+	return biz.PaymentAction{Type: actionType, Payload: encoded}
+}
+func boundedRequestBody(request *http.Request) ([]byte, error) {
+	if request == nil || request.Body == nil {
+		return nil, fmt.Errorf("request body is required")
 	}
-	return b
+	body, err := io.ReadAll(io.LimitReader(request.Body, maxNotificationBody+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxNotificationBody {
+		return nil, fmt.Errorf("request body exceeds %d bytes", maxNotificationBody)
+	}
+	return body, nil
+}
+func sha256Hex(value []byte) string {
+	digest := sha256.Sum256(value)
+	return hex.EncodeToString(digest[:])
 }
 
 type PaymentRepo struct {
 	data *Data
-	log  *log.Helper
 	tx   biz.TxManager
+	log  *log.Helper
 }
 
 func NewPaymentRepo(data *Data, tx biz.TxManager, logger log.Logger) *PaymentRepo {
 	return &PaymentRepo{data: data, tx: tx, log: log.NewHelper(logger)}
 }
 
-func (r *PaymentRepo) getCache(ctx context.Context, key string) (*biz.PaymentDO, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var p biz.PaymentDO
-	if err := json.Unmarshal(val, &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
-}
-
-func (r *PaymentRepo) setCache(ctx context.Context, key string, p *biz.PaymentDO) {
-	afterCommit(ctx, func() {
-		data, err := json.Marshal(p)
-		if err != nil {
-			r.log.WithContext(ctx).Errorf("marshal payment cache: %v", err)
-			return
-		}
-		jitter := time.Duration(mrand.Intn(10)) * time.Minute
-		exp := jitter + 10*time.Minute
-		r.data.rdb.Set(ctx, key, data, exp)
-	})
-}
-
-func (r *PaymentRepo) deleteCache(ctx context.Context, key string) {
-	afterCommit(ctx, func() {
-		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-			r.log.WithContext(ctx).Errorf("delete cache %s: %v", key, err)
-			return
-		}
-	})
-}
-
-func (r *PaymentRepo) invalidatePaymentCaches(ctx context.Context, payment db.Payment) {
-	r.deleteCache(ctx, fmt.Sprintf("payment:%d", payment.ID))
-	r.deleteCache(ctx, fmt.Sprintf("payment:order:%d", payment.OrderID))
-	r.deleteCache(ctx, fmt.Sprintf("payment:order:%d:active:%s", payment.OrderID, payment.PayChannel))
-	if payment.OutTradeNo.Valid && payment.OutTradeNo.String != "" {
-		r.deleteCache(ctx, fmt.Sprintf("payment:out_trade_no:%s", payment.OutTradeNo.String))
-	}
-}
-
-func (r *PaymentRepo) invalidateOrderCaches(ctx context.Context, q db.Querier, orderID int64) error {
-	if orderID <= 0 {
-		return nil
-	}
-	order, err := q.GetOrder(ctx, orderID)
-	if err != nil {
-		return err
-	}
-	r.deleteCache(ctx, fmt.Sprintf("order:%d", orderID))
-	if order.OutTradeNo.Valid && order.OutTradeNo.String != "" {
-		r.deleteCache(ctx, fmt.Sprintf("order:no:%s", order.OutTradeNo.String))
-	}
-	r.deleteCache(ctx, fmt.Sprintf("order:user:%d:%d", orderID, order.UserID))
-	r.deleteCache(ctx, fmt.Sprintf("order:user:ongoing:%d", order.UserID))
-	return nil
-}
-
 func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
-	amount := decimal.NewFromInt(int64(args.Amount))
-	payment, err := querierFromContext(ctx, r.data.q).CreatePaymentWithOutTradeNo(ctx, db.CreatePaymentWithOutTradeNoParams{
-		OrderID:    args.OrderID,
-		UserID:     args.UserID,
-		MerchantID: args.MerchantID,
-		Amount:     amount,
-		Status:     "pending",
-		PayChannel: args.PayChannel,
-		OutTradeNo: pgtype.Text{String: args.OutTradeNo, Valid: args.OutTradeNo != ""},
+	var row db.Payment
+	err := r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		order, err := q.GetOrderForUpdate(ctx, args.OrderID)
+		if err != nil {
+			if stderrors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrOrderNotFound
+			}
+			return err
+		}
+		if order.UserID != args.UserID || order.Status != biz.OrderStatusPendingPayment ||
+			order.TotalAmountMinor != args.Amount || order.Currency != args.Currency {
+			return biz.ErrPaymentConflict
+		}
+		row, err = q.CreatePaymentWithOutTradeNo(ctx, db.CreatePaymentWithOutTradeNoParams{
+			OrderID: args.OrderID, UserID: args.UserID, MerchantID: args.MerchantID, AmountMinor: args.Amount,
+			Currency: args.Currency, Status: biz.PaymentStatusCreating, PayChannel: args.Method,
+			OutTradeNo: pgtype.Text{String: args.OutTradeNo, Valid: args.OutTradeNo != ""},
+		})
+		return err
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			if pgErr.ConstraintName == "idx_payments_active_order_channel" {
-				existing, getErr := r.GetActivePaymentByOrderChannel(ctx, args.OrderID, args.PayChannel)
-				if getErr != nil {
-					return nil, getErr
-				}
-				if existing != nil {
-					return existing, nil
-				}
+		if stderrors.As(err, &pgErr) && pgErr.Code == "23505" {
+			existing, getErr := r.GetActivePaymentByOrderMethod(ctx, args.OrderID, args.Method)
+			if getErr == nil {
+				return existing, nil
 			}
 			return nil, biz.ErrPaymentConflict
 		}
 		return nil, err
 	}
-	p := toBizPaymentDO(payment)
-	r.setCache(ctx, fmt.Sprintf("payment:%d", p.ID), p)
-	if p.OutTradeNo != "" {
-		r.setCache(ctx, fmt.Sprintf("payment:out_trade_no:%s", p.OutTradeNo), p)
-	}
-	r.setCache(ctx, fmt.Sprintf("payment:order:%d:active:%s", p.OrderID, p.PayChannel), p)
-	return p, nil
-}
-
-func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
-	cacheKey := fmt.Sprintf("payment:%d", id)
-
-	p, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return p, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get payment cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:payment:%d", id)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		p, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return p, nil
-		}
-		payment, err := querierFromContext(ctx, r.data.q).GetPayment(ctx, id)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.PaymentDO)(nil), nil
-			}
-			return nil, err
-		}
-		bizP := toBizPaymentDO(payment)
-		r.setCache(ctx, cacheKey, bizP)
-		return bizP, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return val.(*biz.PaymentDO), nil
-}
-
-func (r *PaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
-	cacheKey := fmt.Sprintf("payment:order:%d", orderID)
-
-	p, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return p, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get payment by order cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:payment:order:%d", orderID)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		p, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return p, nil
-		}
-		payment, err := querierFromContext(ctx, r.data.q).GetPaymentByOrder(ctx, orderID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.PaymentDO)(nil), nil
-			}
-			return nil, err
-		}
-		bizP := toBizPaymentDO(payment)
-		r.setCache(ctx, cacheKey, bizP)
-		return bizP, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return val.(*biz.PaymentDO), nil
-}
-
-func (r *PaymentRepo) GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*biz.PaymentDO, error) {
-	cacheKey := fmt.Sprintf("payment:order:%d:active:%s", orderID, channel)
-
-	p, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return p, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get active payment by order channel cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:payment:order:%d:active:%s", orderID, channel)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		p, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return p, nil
-		}
-		payment, err := querierFromContext(ctx, r.data.q).GetActivePaymentByOrderChannel(ctx, db.GetActivePaymentByOrderChannelParams{
-			OrderID:    orderID,
-			PayChannel: channel,
-		})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.PaymentDO)(nil), nil
-			}
-			return nil, err
-		}
-		bizP := toBizPaymentDO(payment)
-		r.setCache(ctx, cacheKey, bizP)
-		return bizP, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return val.(*biz.PaymentDO), nil
-}
-
-func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*biz.PaymentDO, error) {
-	cacheKey := fmt.Sprintf("payment:out_trade_no:%s", outTradeNo)
-
-	p, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return p, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get payment by out_trade_no cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:payment:out_trade_no:%s", outTradeNo)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		p, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return p, nil
-		}
-		payment, err := querierFromContext(ctx, r.data.q).GetPaymentByOutTradeNo(ctx, pgtype.Text{String: outTradeNo, Valid: outTradeNo != ""})
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.PaymentDO)(nil), nil
-			}
-			return nil, err
-		}
-		bizP := toBizPaymentDO(payment)
-		r.setCache(ctx, cacheKey, bizP)
-		return bizP, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return val.(*biz.PaymentDO), nil
-}
-
-func (r *PaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64) error {
-	q := querierFromContext(ctx, r.data.q)
-	payment, err := q.GetPayment(ctx, paymentID)
-	if err != nil {
-		return err
-	}
-
-	if err := q.UpdatePaymentFailed(ctx, paymentID); err != nil {
-		return err
-	}
-
-	oid := orderID
-	if oid <= 0 {
-		oid = payment.OrderID
-	}
-	if oid > 0 {
-		if err := q.CancelOrder(ctx, oid); err != nil {
-			return err
-		}
-	}
-
-	r.invalidatePaymentCaches(ctx, payment)
-	if oid > 0 {
-		if err := r.invalidateOrderCaches(ctx, q, oid); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
-	return r.tx.InTx(ctx, func(ctx context.Context) error {
-		q := querierFromContext(ctx, nil)
-		if q == nil {
-			return fmt.Errorf("missing transaction querier in context")
-		}
-
-		switch result.TradeState {
-		case biz.TradeStateSuccess:
-			payment, orderID, err := r.applySuccess(ctx, q, args, result.TransactionID)
-			if err != nil {
-				return err
-			}
-			if err := finalizeOrder(ctx, q, orderID, true); err != nil {
-				return err
-			}
-			r.invalidatePaymentCaches(ctx, payment)
-			return r.invalidateOrderCaches(ctx, q, orderID)
-		case biz.TradeStateRefund:
-			payment, err := r.applyRefund(ctx, q, args)
-			if err != nil {
-				return err
-			}
-			r.invalidatePaymentCaches(ctx, payment)
-			return nil
-		case biz.TradeStateClosed, biz.TradeStateRevoked, biz.TradeStatePayError:
-			payment, orderID, err := r.applyFailed(ctx, q, args)
-			if err != nil {
-				return err
-			}
-			if err := finalizeOrder(ctx, q, orderID, false); err != nil {
-				return err
-			}
-			r.invalidatePaymentCaches(ctx, payment)
-			return r.invalidateOrderCaches(ctx, q, orderID)
-		default:
-			return fmt.Errorf("wechat pay state %s is not terminal", result.TradeState.String())
-		}
-	})
-}
-
-func (r *PaymentRepo) MarkPayExpired(ctx context.Context, args biz.CheckPayArgs) error {
-	return r.tx.InTx(ctx, func(ctx context.Context) error {
-		q := querierFromContext(ctx, nil)
-		if q == nil {
-			return fmt.Errorf("missing transaction querier in context")
-		}
-		payment, orderID, err := r.applyFailed(ctx, q, args)
-		if err != nil {
-			return err
-		}
-		if err := finalizeOrder(ctx, q, orderID, false); err != nil {
-			return err
-		}
-		r.invalidatePaymentCaches(ctx, payment)
-		return r.invalidateOrderCaches(ctx, q, orderID)
-	})
-}
-
-func (r *PaymentRepo) applySuccess(ctx context.Context, q db.Querier, args biz.CheckPayArgs, txID string) (db.Payment, int64, error) {
-	payment, err := q.UpdatePaymentSuccess(ctx, db.UpdatePaymentSuccessParams{
-		ID: args.PaymentID,
-		ThirdPartyTxID: pgtype.Text{
-			String: txID,
-			Valid:  txID != "",
-		},
-	})
-	if err != nil {
-		return db.Payment{}, 0, err
-	}
-	orderID := args.OrderID
-	if orderID <= 0 {
-		orderID = payment.OrderID
-	}
-	return payment, orderID, nil
-}
-
-func (r *PaymentRepo) applyRefund(ctx context.Context, q db.Querier, args biz.CheckPayArgs) (db.Payment, error) {
-	if err := q.UpdatePaymentRefunded(ctx, args.PaymentID); err != nil {
-		return db.Payment{}, err
-	}
-	payment, err := q.GetPayment(ctx, args.PaymentID)
-	if err != nil {
-		return db.Payment{}, err
-	}
+	payment := toBizPayment(row)
+	r.cachePayment(ctx, payment)
 	return payment, nil
 }
 
-func (r *PaymentRepo) applyFailed(ctx context.Context, q db.Querier, args biz.CheckPayArgs) (db.Payment, int64, error) {
-	if err := q.UpdatePaymentFailed(ctx, args.PaymentID); err != nil {
-		return db.Payment{}, 0, err
-	}
-	payment, err := q.GetPayment(ctx, args.PaymentID)
+func (r *PaymentRepo) MarkPaymentPending(ctx context.Context, id int64, action biz.PaymentAction) (*biz.PaymentDO, error) {
+	row, err := querierFromContext(ctx, r.data.q).MarkPaymentPending(ctx, db.MarkPaymentPendingParams{ID: id, ActionType: pgtype.Text{String: string(action.Type), Valid: action.Type != ""}, ActionPayload: action.Payload})
 	if err != nil {
-		return db.Payment{}, 0, err
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			current, loadErr := r.GetPayment(ctx, id)
+			if loadErr == nil && current.Status == biz.PaymentStatusPending {
+				return current, nil
+			}
+			return nil, biz.ErrPaymentStateConflict
+		}
+		return nil, err
 	}
-	orderID := args.OrderID
-	if orderID <= 0 {
-		orderID = payment.OrderID
-	}
-	return payment, orderID, nil
+	payment := toBizPayment(row)
+	r.invalidatePayment(ctx, row)
+	r.cachePayment(ctx, payment)
+	return payment, nil
 }
 
-func finalizeOrder(ctx context.Context, q db.Querier, orderID int64, success bool) error {
-	if orderID <= 0 {
+func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
+	return r.getPayment(ctx, redisKey("payment", id), func() (db.Payment, error) { return querierFromContext(ctx, r.data.q).GetPayment(ctx, id) })
+}
+func (r *PaymentRepo) GetPaymentByUser(ctx context.Context, id, userID int64) (*biz.PaymentDO, error) {
+	payment, err := r.GetPayment(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if payment.UserID != userID {
+		return nil, biz.ErrPaymentNotFound
+	}
+	return payment, nil
+}
+func (r *PaymentRepo) GetLatestPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
+	return r.getPayment(ctx, redisKey("payment", "order", orderID), func() (db.Payment, error) {
+		return querierFromContext(ctx, r.data.q).GetLatestPaymentByOrder(ctx, orderID)
+	})
+}
+func (r *PaymentRepo) GetActivePaymentByOrderMethod(ctx context.Context, orderID int64, method string) (*biz.PaymentDO, error) {
+	return r.getPayment(ctx, redisKey("payment", "order", orderID, "active", method), func() (db.Payment, error) {
+		return querierFromContext(ctx, r.data.q).GetActivePaymentByOrderChannel(ctx, db.GetActivePaymentByOrderChannelParams{OrderID: orderID, PayChannel: method})
+	})
+}
+func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*biz.PaymentDO, error) {
+	return r.getPayment(ctx, redisKey("payment", "out_trade_no", outTradeNo), func() (db.Payment, error) {
+		return querierFromContext(ctx, r.data.q).GetPaymentByOutTradeNo(ctx, pgtype.Text{String: outTradeNo, Valid: outTradeNo != ""})
+	})
+}
+func (r *PaymentRepo) getPayment(ctx context.Context, key string, load func() (db.Payment, error)) (*biz.PaymentDO, error) {
+	if cached, err := r.getCache(ctx, key); err == nil {
+		return cached, nil
+	} else if !stderrors.Is(err, redis.Nil) {
+		r.log.WithContext(ctx).Errorw("msg", "read payment cache failed", "key", key, "error", err)
+	}
+	value, err, _ := r.data.sg.Do("sf:"+key, func() (any, error) {
+		if cached, err := r.getCache(ctx, key); err == nil {
+			return cached, nil
+		}
+		row, err := load()
+		if err != nil {
+			if stderrors.Is(err, pgx.ErrNoRows) {
+				return nil, biz.ErrPaymentNotFound
+			}
+			return nil, err
+		}
+		payment := toBizPayment(row)
+		r.setCache(ctx, key, payment)
+		return payment, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return value.(*biz.PaymentDO), nil
+}
+
+func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
+	var changed db.Payment
+	var fromStatus, provider, event string
+	err := r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		snapshot, err := q.GetPayment(ctx, args.PaymentID)
+		if err != nil {
+			return err
+		}
+		order, err := q.GetOrderForUpdate(ctx, snapshot.OrderID)
+		if err != nil {
+			return err
+		}
+		payment, err := q.GetPaymentForUpdate(ctx, args.PaymentID)
+		if err != nil {
+			return err
+		}
+		method, parseErr := biz.ParsePaymentMethod(payment.PayChannel)
+		if parseErr != nil {
+			return parseErr
+		}
+		if mismatch := validateProviderResult(payment, method, result); mismatch != "" {
+			provider, fromStatus, event = method.Provider, payment.Status, "provider_mismatch"
+			if mismatch == "amount mismatch" {
+				observability.PaymentAmountMismatch(ctx, method.Provider)
+			}
+			observability.PaymentReconcileRequired(ctx, method.Provider)
+			changed, err = q.MarkPaymentReconcileRequired(ctx, payment.ID)
+			if err != nil && !stderrors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+			if recordErr := createReconciliationFailure(ctx, q, biz.ReconciliationFailure{PaymentID: payment.ID, Provider: method.Provider, Attempt: max(1, args.PollCount), LastError: mismatch}); recordErr != nil {
+				return recordErr
+			}
+			r.log.WithContext(ctx).Errorw("msg", "payment provider result mismatch", "event", "payment_reconcile_required", "payment_id", payment.ID, "provider", method.Provider, "reason", mismatch)
+			return markNotificationProcessed(ctx, q, args.NotificationID)
+		}
+		switch result.TradeState {
+		case biz.TradeStateSuccess:
+			provider, fromStatus, event = method.Provider, payment.Status, "provider_success"
+			if result.TransactionID == "" {
+				return errors.BadRequest("PAYMENT_TRANSACTION_ID_REQUIRED", "successful payment requires transaction id")
+			}
+			if payment.Status == biz.PaymentStatusSuccess && payment.ThirdPartyTxID.String == result.TransactionID {
+				return markNotificationProcessed(ctx, q, args.NotificationID)
+			}
+			if payment.Status != biz.PaymentStatusPending {
+				observability.PaymentConflict(ctx, method.Provider)
+				observability.PaymentReconcileRequired(ctx, method.Provider)
+				changed, err = q.MarkPaymentReconcileRequired(ctx, payment.ID)
+				if err != nil && !stderrors.Is(err, pgx.ErrNoRows) {
+					return err
+				}
+				if err := createReconciliationFailure(ctx, q, biz.ReconciliationFailure{PaymentID: payment.ID, Provider: method.Provider, Attempt: max(1, args.PollCount), LastError: "late success for payment state " + payment.Status}); err != nil {
+					return err
+				}
+				return markNotificationProcessed(ctx, q, args.NotificationID)
+			}
+			changed, err = q.MarkPaymentSuccess(ctx, db.MarkPaymentSuccessParams{ID: payment.ID, ThirdPartyTxID: pgtype.Text{String: result.TransactionID, Valid: true}})
+			if err != nil {
+				return paymentStateAfterCAS(ctx, q, payment.ID, biz.PaymentStatusSuccess)
+			}
+			if _, err = q.MarkOrderPaid(ctx, payment.OrderID); err != nil {
+				if !stderrors.Is(err, pgx.ErrNoRows) {
+					return err
+				}
+				order, loadErr := q.GetOrder(ctx, payment.OrderID)
+				if loadErr != nil {
+					return loadErr
+				}
+				if order.Status != biz.OrderStatusPaid && order.Status != biz.OrderStatusShipped && order.Status != biz.OrderStatusCompleted {
+					observability.PaymentConflict(ctx, method.Provider)
+					observability.PaymentReconcileRequired(ctx, method.Provider)
+					changed, err = q.MarkPaymentReconcileRequired(ctx, payment.ID)
+					if err != nil && !stderrors.Is(err, pgx.ErrNoRows) {
+						return err
+					}
+					if err := createReconciliationFailure(ctx, q, biz.ReconciliationFailure{PaymentID: payment.ID, Provider: method.Provider, Attempt: max(1, args.PollCount), LastError: "payment succeeded for order state " + order.Status}); err != nil {
+						return err
+					}
+				}
+			}
+		case biz.TradeStateClosed, biz.TradeStateRevoked:
+			provider, fromStatus, event = method.Provider, payment.Status, "provider_closed"
+			if payment.Status == biz.PaymentStatusClosed {
+				return markNotificationProcessed(ctx, q, args.NotificationID)
+			}
+			changed, err = q.MarkPaymentClosed(ctx, payment.ID)
+			if err != nil {
+				return paymentStateAfterCAS(ctx, q, payment.ID, biz.PaymentStatusClosed)
+			}
+			if order.Status == biz.OrderStatusPendingPayment {
+				if _, err := q.MarkOrderCancelling(ctx, order.ID); err != nil {
+					return err
+				}
+				if err := q.RestoreOrderItemStock(ctx, order.ID); err != nil {
+					return err
+				}
+				if _, err := q.MarkOrderCancelled(ctx, order.ID); err != nil {
+					return err
+				}
+			}
+		case biz.TradeStateRefund:
+			provider, fromStatus, event = method.Provider, payment.Status, "provider_refund"
+			if payment.Status == biz.PaymentStatusRefunded {
+				return markNotificationProcessed(ctx, q, args.NotificationID)
+			}
+			if payment.Status != biz.PaymentStatusSuccess {
+				return biz.ErrPaymentStateConflict
+			}
+			if err := q.UpdatePaymentRefunded(ctx, payment.ID); err != nil {
+				return err
+			}
+			changed = payment
+			changed.Status = biz.PaymentStatusRefunded
+		default:
+			return fmt.Errorf("payment state %s is not terminal", result.TradeState)
+		}
+		return markNotificationProcessed(ctx, q, args.NotificationID)
+	})
+	if err == nil && changed.ID > 0 {
+		observability.PaymentTransition(ctx, fromStatus, changed.Status, event, provider)
+		r.invalidatePayment(ctx, changed)
+		r.invalidateOrder(ctx, changed.OrderID)
+	}
+	return err
+}
+
+func validateProviderResult(payment db.Payment, method biz.PaymentMethod, result *biz.PaymentQueryResult) string {
+	if result == nil {
+		return "empty provider result"
+	}
+	if result.OutTradeNo != payment.OutTradeNo.String {
+		return "out_trade_no mismatch"
+	}
+	if result.Method.Normalize().String() != method.String() {
+		return "payment method mismatch"
+	}
+	if result.Amount != payment.AmountMinor {
+		return "amount mismatch"
+	}
+	if strings.ToUpper(result.Currency) != payment.Currency {
+		return "currency mismatch"
+	}
+	return ""
+}
+func paymentStateAfterCAS(ctx context.Context, q db.Querier, id int64, desired string) error {
+	current, err := q.GetPayment(ctx, id)
+	if err != nil {
+		return err
+	}
+	if current.Status == desired {
 		return nil
 	}
-	if success {
-		return q.CompleteOrder(ctx, orderID)
+	return biz.ErrPaymentStateConflict
+}
+func markNotificationProcessed(ctx context.Context, q db.Querier, id int64) error {
+	if id <= 0 {
+		return nil
 	}
-	return q.CancelOrder(ctx, orderID)
+	return q.MarkPaymentNotificationProcessed(ctx, id)
 }
 
-func toBizPaymentDO(p db.Payment) *biz.PaymentDO {
-	d := &biz.PaymentDO{
-		ID:             p.ID,
-		OrderID:        p.OrderID,
-		UserID:         p.UserID,
-		MerchantID:     p.MerchantID,
-		Amount:         int32(p.Amount.IntPart()),
-		Status:         p.Status,
-		PayChannel:     p.PayChannel,
-		OutTradeNo:     p.OutTradeNo.String,
-		ThirdPartyTxID: p.ThirdPartyTxID.String,
-		CreatedAt:      p.CreatedAt.Time,
-		UpdatedAt:      p.UpdatedAt.Time,
+func (r *PaymentRepo) MarkPayClosePending(ctx context.Context, args biz.CheckPayArgs) error {
+	row, err := querierFromContext(ctx, r.data.q).MarkPaymentClosePending(ctx, args.PaymentID)
+	if err != nil {
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return paymentStateAfterCAS(ctx, querierFromContext(ctx, r.data.q), args.PaymentID, biz.PaymentStatusClosePending)
+		}
+		return err
 	}
-	if p.PaidAt.Valid {
-		t := p.PaidAt.Time
-		d.PaidAt = &t
+	r.invalidatePayment(ctx, row)
+	return nil
+}
+func (r *PaymentRepo) MarkReconciliationRequired(ctx context.Context, failure biz.ReconciliationFailure) error {
+	return r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		row, err := q.MarkPaymentReconcileRequired(ctx, failure.PaymentID)
+		if err != nil && !stderrors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if row.ID > 0 {
+			r.invalidatePayment(ctx, row)
+		}
+		return createReconciliationFailure(ctx, q, failure)
+	})
+}
+func (r *PaymentRepo) RecordReconciliationFailure(ctx context.Context, failure biz.ReconciliationFailure) error {
+	return createReconciliationFailure(ctx, querierFromContext(ctx, r.data.q), failure)
+}
+func createReconciliationFailure(ctx context.Context, q db.Querier, failure biz.ReconciliationFailure) error {
+	jobID := pgtype.Int8{}
+	if failure.RiverJobID != nil {
+		jobID = pgtype.Int8{Int64: *failure.RiverJobID, Valid: true}
 	}
-	return d
+	_, err := q.CreatePaymentReconciliationFailure(ctx, db.CreatePaymentReconciliationFailureParams{PaymentID: failure.PaymentID, Provider: failure.Provider, RiverJobID: jobID, Attempt: int32(max(1, failure.Attempt)), LastError: failure.LastError})
+	return err
 }
 
-func wechatPayNotConfigured() error {
-	return errors.ServiceUnavailable("WECHAT_PAY_NOT_CONFIGURED", "wechat pay adapter is not configured")
+func (r *PaymentRepo) getCache(ctx context.Context, key string) (*biz.PaymentDO, error) {
+	value, err := r.data.rdb.Get(ctx, key).Bytes()
+	if err != nil {
+		return nil, err
+	}
+	var payment biz.PaymentDO
+	if err := json.Unmarshal(value, &payment); err != nil {
+		return nil, err
+	}
+	return &payment, nil
+}
+func (r *PaymentRepo) setCache(ctx context.Context, key string, payment *biz.PaymentDO) {
+	afterCommit(ctx, func() {
+		value, err := json.Marshal(payment)
+		if err == nil {
+			err = r.data.rdb.Set(ctx, key, value, 15*time.Minute).Err()
+		}
+		if err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "write payment cache failed", "key", key, "error", err)
+		}
+	})
+}
+func (r *PaymentRepo) cachePayment(ctx context.Context, payment *biz.PaymentDO) {
+	r.setCache(ctx, redisKey("payment", payment.ID), payment)
+	r.setCache(ctx, redisKey("payment", "out_trade_no", payment.OutTradeNo), payment)
+	r.setCache(ctx, redisKey("payment", "order", payment.OrderID), payment)
+	r.setCache(ctx, redisKey("payment", "order", payment.OrderID, "active", payment.Method), payment)
+}
+func (r *PaymentRepo) invalidatePayment(ctx context.Context, payment db.Payment) {
+	r.deleteCache(ctx, redisKey("payment", payment.ID))
+	r.deleteCache(ctx, redisKey("payment", "order", payment.OrderID))
+	r.deleteCache(ctx, redisKey("payment", "order", payment.OrderID, "active", payment.PayChannel))
+	if payment.OutTradeNo.Valid {
+		r.deleteCache(ctx, redisKey("payment", "out_trade_no", payment.OutTradeNo.String))
+	}
+}
+func (r *PaymentRepo) invalidateOrder(ctx context.Context, orderID int64) {
+	order, err := querierFromContext(ctx, r.data.q).GetOrder(ctx, orderID)
+	if err != nil {
+		return
+	}
+	r.deleteCache(ctx, redisKey("order", orderID))
+	r.deleteCache(ctx, redisKey("order", "user", orderID, order.UserID))
+	if order.OutTradeNo.Valid {
+		r.deleteCache(ctx, redisKey("order", "no", order.OutTradeNo.String))
+	}
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("order", "user", order.UserID, "gen"))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("order", "user", "ongoing", order.UserID, "gen"))
+}
+func (r *PaymentRepo) deleteCache(ctx context.Context, key string) {
+	afterCommit(ctx, func() {
+		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "delete cache failed", "key", key, "error", err)
+		}
+	})
 }
 
-func alipayNotConfigured() error {
-	return errors.ServiceUnavailable("ALIPAY_NOT_CONFIGURED", "alipay adapter is not configured")
-}
-
-// alipayOrderIDRequired 用于 Query/Close 这类需要定位一笔已有交易的请求。
-// 支付宝 openapi 在这两类接口上只接受 out_trade_no(商户订单号)和 trade_no
-// (支付宝交易号)二选一,都不传会被底层库直接拒掉;这里前置成本项目的 kratos
-// 错误,既给出稳定 reason 码,也避免把 v3 库的英文 raw error 漏到上游。
-func alipayOrderIDRequired() error {
-	return errors.BadRequest("ALIPAY_ORDER_ID_REQUIRED",
-		"alipay query/close requires out_trade_no or trade_no (merchant order number or alipay transaction number)")
+func toBizPayment(row db.Payment) *biz.PaymentDO {
+	payment := &biz.PaymentDO{ID: row.ID, OrderID: row.OrderID, UserID: row.UserID, MerchantID: row.MerchantID, Amount: row.AmountMinor, Currency: row.Currency, Status: row.Status, Method: row.PayChannel, OutTradeNo: row.OutTradeNo.String, ThirdPartyTxID: row.ThirdPartyTxID.String, CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time}
+	if row.ActionType.Valid {
+		payment.Action.Type = biz.PaymentActionType(row.ActionType.String)
+		payment.Action.Payload = append(json.RawMessage(nil), row.ActionPayload...)
+	}
+	if row.PaidAt.Valid {
+		paidAt := row.PaidAt.Time
+		payment.PaidAt = &paidAt
+	}
+	return payment
 }
 
 type PaymentMQRepo struct {
@@ -785,134 +777,118 @@ type PaymentMQRepo struct {
 func NewPaymentMQRepo(client *river.Client[pgx.Tx], logger log.Logger) *PaymentMQRepo {
 	return &PaymentMQRepo{client: client, log: log.NewHelper(logger)}
 }
-
-func (r *PaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
+func (r *PaymentMQRepo) insert(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time, tx pgx.Tx) (*biz.MQJob, error) {
 	opts := r.checkPayInsertOpts(args, scheduledAt)
-	result, err := r.client.Insert(ctx, args, opts)
+	var result *rivertype.JobInsertResult
+	var err error
+	if tx == nil {
+		result, err = r.client.Insert(ctx, args, opts)
+	} else {
+		result, err = r.client.InsertTx(ctx, tx, args, opts)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if result.UniqueSkippedAsDuplicate {
-		r.log.WithContext(ctx).Infof("skipped duplicate river job kind=%s job_id=%d", args.Kind(), result.Job.ID)
+		r.log.WithContext(ctx).Infow("msg", "deduplicated active reconciliation job", "job_id", result.Job.ID, "payment_id", args.PaymentID)
 	}
 	return toBizMQJob(result.Job), nil
 }
-
-func (r *PaymentMQRepo) EnqueueCheckPayTx(ctx context.Context, args biz.CheckPayArgs, scheduledAt time.Time) (*biz.MQJob, error) {
+func (r *PaymentMQRepo) EnqueueCheckPay(ctx context.Context, args biz.CheckPayArgs, at time.Time) (*biz.MQJob, error) {
+	return r.insert(ctx, args, at, nil)
+}
+func (r *PaymentMQRepo) EnqueueCheckPayTx(ctx context.Context, args biz.CheckPayArgs, at time.Time) (*biz.MQJob, error) {
 	tx := pgTxFromContext(ctx)
 	if tx == nil {
-		return nil, fmt.Errorf("missing transaction in context")
+		return nil, fmt.Errorf("missing transaction")
 	}
-	opts := r.checkPayInsertOpts(args, scheduledAt)
-	result, err := r.client.InsertTx(ctx, tx, args, opts)
-	if err != nil {
-		return nil, err
-	}
-	if result.UniqueSkippedAsDuplicate {
-		r.log.WithContext(ctx).Infof("skipped duplicate river tx job kind=%s job_id=%d", args.Kind(), result.Job.ID)
-	}
-	return toBizMQJob(result.Job), nil
+	return r.insert(ctx, args, at, tx)
 }
-
-func (r *PaymentMQRepo) checkPayInsertOpts(args biz.CheckPayArgs, scheduledAt time.Time) *river.InsertOpts {
-	opts := &river.InsertOpts{
-		MaxAttempts: args.MaxPolls,
-		Queue:       "payments",
-		Tags: []string{
-			fmt.Sprintf("pay-channel-%s", args.Channel),
-			fmt.Sprintf("payment-%d", args.PaymentID),
-		},
-		// Uniqueness is enforced by kind + queue + OutTradeNo only, because
-		// CheckPayArgs.OutTradeNo carries the `river:"unique"` struct tag.
-		// Re-enqueues with different MaxPolls/PollIntervalSeconds for the
-		// same OutTradeNo are therefore deduplicated. Duplicate writes are
-		// also guarded by idx_payments_active_out_trade_no_channel and
-		// idx_payments_third_party_tx_id_channel (migration 000007).
-		UniqueOpts: river.UniqueOpts{
-			ByArgs:  true,
-			ByQueue: true,
-		},
-	}
-	if !scheduledAt.IsZero() {
-		opts.ScheduledAt = scheduledAt
+func (r *PaymentMQRepo) checkPayInsertOpts(args biz.CheckPayArgs, at time.Time) *river.InsertOpts {
+	opts := &river.InsertOpts{MaxAttempts: 8, Queue: "payments", Tags: []string{fmt.Sprintf("provider-%s", args.Provider), fmt.Sprintf("payment-%d", args.PaymentID)}, UniqueOpts: river.UniqueOpts{ByArgs: true, ByQueue: true, ByState: []rivertype.JobState{rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRunning, rivertype.JobStateRetryable, rivertype.JobStateScheduled}}}
+	if !at.IsZero() {
+		opts.ScheduledAt = at
 	}
 	return opts
 }
-
-func (r *PaymentMQRepo) GetMQJob(ctx context.Context, jobID int64) (*biz.MQJob, error) {
-	job, err := r.client.JobGet(ctx, jobID)
+func (r *PaymentMQRepo) GetMQJob(ctx context.Context, id int64) (*biz.MQJob, error) {
+	row, err := r.client.JobGet(ctx, id)
+	if stderrors.Is(err, rivertype.ErrNotFound) {
+		return nil, errors.NotFound("MQ_JOB_NOT_FOUND", "mq job not found")
+	}
 	if err != nil {
-		if stderrors.Is(err, rivertype.ErrNotFound) {
-			return nil, errors.NotFound("MQ_JOB_NOT_FOUND", "mq job not found")
-		}
 		return nil, err
 	}
-	return toBizMQJob(job), nil
+	return toBizMQJob(row), nil
 }
-
 func toBizMQJob(row *rivertype.JobRow) *biz.MQJob {
 	if row == nil {
 		return nil
 	}
-	errors := make([]biz.MQJobError, len(row.Errors))
-	for i, err := range row.Errors {
-		errors[i] = biz.MQJobError{
-			Attempt: err.Attempt,
-			Error:   err.Error,
-			At:      err.At,
+	result := &biz.MQJob{ID: row.ID, Kind: row.Kind, Queue: row.Queue, State: string(row.State), Attempt: row.Attempt, MaxAttempts: row.MaxAttempts, ArgsJSON: string(row.EncodedArgs), Tags: row.Tags, CreatedAt: row.CreatedAt, ScheduledAt: row.ScheduledAt, AttemptedAt: row.AttemptedAt, FinalizedAt: row.FinalizedAt, Errors: make([]biz.MQJobError, len(row.Errors))}
+	for i, item := range row.Errors {
+		result.Errors[i] = biz.MQJobError{Attempt: item.Attempt, Error: item.Error, At: item.At}
+	}
+	return result
+}
+
+type PaymentNotificationRepo struct {
+	tx   biz.TxManager
+	jobs biz.PaymentMQRepo
+}
+
+func NewPaymentNotificationRepo(tx biz.TxManager, jobs biz.PaymentMQRepo) *PaymentNotificationRepo {
+	return &PaymentNotificationRepo{tx: tx, jobs: jobs}
+}
+func (r *PaymentNotificationRepo) PersistAndEnqueueNotification(ctx context.Context, notification *biz.PaymentNotification, args biz.CheckPayArgs) (bool, error) {
+	duplicate := false
+	err := r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		row, err := q.CreatePaymentNotification(ctx, db.CreatePaymentNotificationParams{Provider: notification.Provider, ProviderEventID: pgtype.Text{String: notification.ProviderEventID, Valid: notification.ProviderEventID != ""}, OutTradeNo: notification.OutTradeNo, PayloadHash: notification.PayloadHash, VerifiedAt: pgtype.Timestamptz{Time: notification.VerifiedAt, Valid: true}})
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			duplicate = true
+			return nil
 		}
-	}
-	return &biz.MQJob{
-		ID:          row.ID,
-		Kind:        row.Kind,
-		Queue:       row.Queue,
-		State:       string(row.State),
-		Attempt:     row.Attempt,
-		MaxAttempts: row.MaxAttempts,
-		ArgsJSON:    string(row.EncodedArgs),
-		Tags:        row.Tags,
-		CreatedAt:   row.CreatedAt,
-		ScheduledAt: row.ScheduledAt,
-		AttemptedAt: row.AttemptedAt,
-		FinalizedAt: row.FinalizedAt,
-		Errors:      errors,
-	}
+		if err != nil {
+			return err
+		}
+		args.NotificationID = row.ID
+		_, err = r.jobs.EnqueueCheckPayTx(ctx, args, time.Time{})
+		return err
+	})
+	return duplicate, err
 }
 
-func fenToYuan(amount int32) string {
-	return strconv.FormatFloat(float64(amount)/100, 'f', 2, 64)
+func paymentProviderNotConfigured(provider string) error {
+	return errors.ServiceUnavailable("PAYMENT_PROVIDER_NOT_AVAILABLE", provider+" payment provider is not configured")
 }
-
-func yuanToFen(amount string) (int32, error) {
-	value, err := strconv.ParseFloat(amount, 64)
+func fenToYuan(amount int64) string { return decimal.NewFromInt(amount).Shift(-2).StringFixed(2) }
+func yuanToFen(value string) (int64, error) {
+	amount, err := decimal.NewFromString(value)
 	if err != nil {
 		return 0, err
 	}
-	return int32(value * 100), nil
-}
-
-// mapAlipayTradeState 把支付宝查单响应的 trade_status 字符串映射到内部
-// biz.TradeState。支付宝 openapi 文档定义的 4 个终态/中间态:
-//
-//	WAIT_BUYER_PAY  交易创建,等待买家付款
-//	TRADE_CLOSED    未付款交易超时关闭,或支付完成后全额退款
-//	TRADE_SUCCESS   交易支付成功(可退款)
-//	TRADE_FINISHED  交易结束,不可退款
-//
-// TRADE_FINISHED 与 TRADE_SUCCESS 都归到 TradeStateSuccess:对于商户来
-// 说"已付"是同一个语义,退款窗口的差异不体现在我们当前的 biz 状态机
-// 里(TradeStateRefund 已经覆盖了"已退款"这一终态)。
-func mapAlipayTradeState(status string) (biz.TradeState, string) {
-	switch status {
-	case "WAIT_BUYER_PAY":
-		return biz.TradeStateNotPay, status
-	case "TRADE_CLOSED":
-		return biz.TradeStateClosed, status
-	case "TRADE_SUCCESS":
-		return biz.TradeStateSuccess, status
-	case "TRADE_FINISHED":
-		return biz.TradeStateSuccess, status
-	default:
-		return biz.TradeStateUnspecified, status
+	minor := amount.Shift(2)
+	if !minor.Equal(minor.Truncate(0)) {
+		return 0, fmt.Errorf("amount has sub-minor precision")
 	}
+	return minor.IntPart(), nil
+}
+func mapAlipayTradeState(state string) (biz.TradeState, string) {
+	switch strings.ToUpper(state) {
+	case "TRADE_SUCCESS", "TRADE_FINISHED":
+		return biz.TradeStateSuccess, state
+	case "WAIT_BUYER_PAY":
+		return biz.TradeStateNotPay, state
+	case "TRADE_CLOSED":
+		return biz.TradeStateClosed, state
+	default:
+		return biz.TradeStateUnspecified, state
+	}
+}
+func orEmpty(primary, fallback string) string {
+	if primary != "" {
+		return primary
+	}
+	return fallback
 }

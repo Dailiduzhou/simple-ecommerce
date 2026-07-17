@@ -2,444 +2,208 @@ package biz
 
 import (
 	"context"
+	"encoding/json"
 	stderrors "errors"
-	"fmt"
-	"sync/atomic"
+	"net/http"
 	"testing"
 	"time"
 
-	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
-	"github.com/jackc/pgx/v5"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type fakePaymentRepo struct {
-	getActive              func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error)
-	create                 func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error)
-	getPaymentByOutTradeNo func(ctx context.Context, outTradeNo string) (*PaymentDO, error)
+type paymentTestGateway struct {
+	prepayReq    PaymentPrepayRequest
+	prepayResult *PaymentPrepayResult
+	closeResult  *PaymentCloseResult
+	capabilities PaymentCapabilities
+	txActive     *bool
 }
 
-func (r *fakePaymentRepo) CreatePayment(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
-	return r.create(ctx, args)
+func (g *paymentTestGateway) Capabilities(PaymentMethod) (PaymentCapabilities, error) {
+	return g.capabilities, nil
 }
-
-func (r *fakePaymentRepo) GetPayment(ctx context.Context, id int64) (*PaymentDO, error) {
-	return nil, nil
-}
-
-func (r *fakePaymentRepo) GetPaymentByOrder(ctx context.Context, orderID int64) (*PaymentDO, error) {
-	return nil, nil
-}
-
-func (r *fakePaymentRepo) GetActivePaymentByOrderChannel(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
-	return r.getActive(ctx, orderID, channel)
-}
-
-func (r *fakePaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*PaymentDO, error) {
-	if r.getPaymentByOutTradeNo != nil {
-		return r.getPaymentByOutTradeNo(ctx, outTradeNo)
+func (g *paymentTestGateway) Prepay(_ context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
+	if g.txActive != nil && *g.txActive {
+		panic("provider call executed in database transaction")
 	}
+	g.prepayReq = req
+	return g.prepayResult, nil
+}
+func (g *paymentTestGateway) Query(context.Context, PaymentQueryRequest) (*PaymentQueryResult, error) {
 	return nil, nil
 }
+func (g *paymentTestGateway) Close(context.Context, PaymentCloseRequest) (*PaymentCloseResult, error) {
+	if g.txActive != nil && *g.txActive {
+		panic("provider close executed in database transaction")
+	}
+	return g.closeResult, nil
+}
+func (g *paymentTestGateway) ParseAndVerifyNotification(string, *http.Request) (*PaymentNotification, error) {
+	return nil, nil
+}
+func (g *paymentTestGateway) NotificationAck(string, bool) (PaymentNotificationAck, error) {
+	return DefaultPaymentNotificationAck(), nil
+}
 
-func (r *fakePaymentRepo) ClosePayment(ctx context.Context, paymentID, orderID int64) error {
+type paymentTestRepo struct {
+	payment       *PaymentDO
+	created       CreatePaymentArgs
+	pendingAction PaymentAction
+	closePending  bool
+	applied       bool
+}
+
+func (r *paymentTestRepo) CreatePayment(_ context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
+	r.created = args
+	r.payment = &PaymentDO{ID: 7, OrderID: args.OrderID, UserID: args.UserID, Amount: args.Amount, Currency: args.Currency, Method: args.Method, OutTradeNo: args.OutTradeNo, Status: PaymentStatusCreating}
+	return r.payment, nil
+}
+func (r *paymentTestRepo) MarkPaymentPending(_ context.Context, _ int64, action PaymentAction) (*PaymentDO, error) {
+	r.pendingAction = action
+	r.payment.Status = PaymentStatusPending
+	r.payment.Action = action
+	return r.payment, nil
+}
+func (r *paymentTestRepo) GetPayment(context.Context, int64) (*PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *paymentTestRepo) GetPaymentByUser(context.Context, int64, int64) (*PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *paymentTestRepo) GetLatestPaymentByOrder(context.Context, int64) (*PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *paymentTestRepo) GetActivePaymentByOrderMethod(context.Context, int64, string) (*PaymentDO, error) {
+	return nil, ErrPaymentNotFound
+}
+func (r *paymentTestRepo) GetPaymentByOutTradeNo(context.Context, string) (*PaymentDO, error) {
+	return r.payment, nil
+}
+func (r *paymentTestRepo) ApplyPayQuery(context.Context, CheckPayArgs, *PaymentQueryResult) error {
+	r.applied = true
+	return nil
+}
+func (r *paymentTestRepo) MarkPayClosePending(context.Context, CheckPayArgs) error {
+	r.closePending = true
+	return nil
+}
+func (r *paymentTestRepo) MarkReconciliationRequired(context.Context, ReconciliationFailure) error {
+	return nil
+}
+func (r *paymentTestRepo) RecordReconciliationFailure(context.Context, ReconciliationFailure) error {
 	return nil
 }
 
-func (r *fakePaymentRepo) ApplyPayQuery(ctx context.Context, args CheckPayArgs, result *PaymentQueryResult) error {
-	return nil
-}
+type orderTestRepo struct{ order Order }
 
-func (r *fakePaymentRepo) MarkPayExpired(ctx context.Context, args CheckPayArgs) error {
-	return nil
-}
-
-type fakeOrderRepo struct {
-	getOrder func(ctx context.Context, id int64) (Order, error)
-}
-
-func (r *fakeOrderRepo) GetOrder(ctx context.Context, id int64) (Order, error) {
-	return r.getOrder(ctx, id)
-}
-
-func (r *fakeOrderRepo) GetOrderByOrderNo(ctx context.Context, orderNo string) (Order, error) {
+func (r *orderTestRepo) CreateOrder(context.Context, CreateOrderArgs) (Order, error) {
 	return Order{}, nil
 }
-
-func (r *fakeOrderRepo) CancelOrder(ctx context.Context, id int64) error { return nil }
-func (r *fakeOrderRepo) CompleteOrder(ctx context.Context, id int64) error {
-	return nil
+func (r *orderTestRepo) GetOrder(context.Context, int64) (Order, error) { return r.order, nil }
+func (r *orderTestRepo) GetOrderByOrderNo(context.Context, string) (Order, error) {
+	return r.order, nil
 }
-func (r *fakeOrderRepo) CreateOrder(ctx context.Context, userID, addressID int64, amount int32) (Order, error) {
-	return Order{}, nil
+func (r *orderTestRepo) GetOrderByUser(context.Context, int64, int64) (Order, error) {
+	return r.order, nil
 }
-func (r *fakeOrderRepo) GetOrderByUser(ctx context.Context, id, userID int64) (Order, error) {
-	return Order{}, nil
-}
-func (r *fakeOrderRepo) HasOngoingOrders(ctx context.Context, userID int64) (bool, error) {
-	return false, nil
-}
-func (r *fakeOrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error) {
+func (r *orderTestRepo) HasOngoingOrders(context.Context, int64) (bool, error) { return false, nil }
+func (r *orderTestRepo) ListOngoingOrdersByUser(context.Context, int64) ([]Order, error) {
 	return nil, nil
 }
-func (r *fakeOrderRepo) ListOrdersByUser(ctx context.Context, userID int64, limit, offset int32) ([]Order, error) {
+func (r *orderTestRepo) ListOrdersByUser(context.Context, int64, int32, int32) ([]Order, error) {
 	return nil, nil
 }
-func (r *fakeOrderRepo) UpdateOrderStatus(ctx context.Context, id int64, status string) (Order, error) {
-	return Order{}, nil
-}
+func (r *orderTestRepo) CountOrdersByUser(context.Context, int64) (int64, error) { return 0, nil }
+func (r *orderTestRepo) CancelOrderByUser(context.Context, int64, int64) error   { return nil }
 
-type fakeIDGenerator struct {
-	counter  atomic.Int64
-	prefix   string
-	generate func() string
-}
+type paymentTestTx struct{ active bool }
 
-func (g *fakeIDGenerator) GenerateString() string {
-	if g.generate != nil {
-		return g.generate()
-	}
-	return g.prefix + itoa(g.counter.Add(1))
-}
-
-func (g *fakeIDGenerator) GenerateOrderNo32(prefix string) string {
-	if g.generate != nil {
-		return g.generate()
-	}
-	return fmt.Sprintf("%-2s%014d%016d", prefix, g.counter.Add(1), g.counter.Add(1))
-}
-
-func (g *fakeIDGenerator) GenerateOrderNo64(prefix string, userID int64) string {
-	if g.generate != nil {
-		return g.generate()
-	}
-	return fmt.Sprintf("%-4s%014d%08d%019d%019d", prefix, g.counter.Add(1), userID, g.counter.Add(1), g.counter.Add(1))
-}
-
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	buf := make([]byte, 0, 20)
-	for n > 0 {
-		buf = append([]byte{byte('0' + n%10)}, buf...)
-		n /= 10
-	}
-	return string(buf)
-}
-
-func newPaymentUsecase(repo *fakePaymentRepo, orderRepo *fakeOrderRepo, gen IDGenerator) PaymentUsecase {
-	return NewPaymentUsecase(nil, repo, orderRepo, nil, nil, gen, log.DefaultLogger)
-}
-
-func TestCreatePayment_GeneratesOutTradeNo(t *testing.T) {
-	orderRepo := &fakeOrderRepo{
-		getOrder: func(ctx context.Context, id int64) (Order, error) {
-			return Order{ID: 10, TotalAmount: 9900}, nil
-		},
-	}
-	repo := &fakePaymentRepo{
-		getActive: func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
-			return nil, pgx.ErrNoRows
-		},
-		create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
-			assert.Equal(t, int64(10), args.OrderID)
-			assert.Equal(t, "wechat", args.PayChannel)
-			assert.Equal(t, int32(9900), args.Amount)
-			assert.NotEmpty(t, args.OutTradeNo, "out_trade_no should be generated")
-			return &PaymentDO{ID: 1, OrderID: args.OrderID, PayChannel: args.PayChannel, OutTradeNo: args.OutTradeNo, Status: "pending"}, nil
-		},
-	}
-	gen := &fakeIDGenerator{prefix: "snow-"}
-	uc := newPaymentUsecase(repo, orderRepo, gen)
-
-	got, err := uc.CreatePayment(context.Background(), 10, 1, 2, "wechat")
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), got.ID)
-	assert.Equal(t, "snow-1", got.OutTradeNo)
-}
-
-func TestCreatePayment_ReusesExistingActiveAfterConflict(t *testing.T) {
-	orderRepo := &fakeOrderRepo{
-		getOrder: func(ctx context.Context, id int64) (Order, error) {
-			return Order{ID: 10, TotalAmount: 9900}, nil
-		},
-	}
-	repo := &fakePaymentRepo{
-		create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
-			return &PaymentDO{ID: 99, OrderID: 10, PayChannel: args.PayChannel, OutTradeNo: "existing", Status: "pending"}, nil
-		},
-	}
-	gen := &fakeIDGenerator{prefix: "snow-"}
-	uc := newPaymentUsecase(repo, orderRepo, gen)
-
-	got, err := uc.CreatePayment(context.Background(), 10, 1, 2, "wechat")
-	require.NoError(t, err)
-	assert.Equal(t, int64(99), got.ID)
-	assert.Equal(t, "existing", got.OutTradeNo)
-}
-
-func TestCreatePayment_AllowsRetryAfterFailed(t *testing.T) {
-	orderRepo := &fakeOrderRepo{
-		getOrder: func(ctx context.Context, id int64) (Order, error) {
-			return Order{ID: 10, TotalAmount: 9900}, nil
-		},
-	}
-	repo := &fakePaymentRepo{
-		getActive: func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
-			return nil, pgx.ErrNoRows
-		},
-		create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
-			return &PaymentDO{ID: 100, OrderID: args.OrderID, OutTradeNo: args.OutTradeNo, PayChannel: args.PayChannel, Status: "pending"}, nil
-		},
-	}
-	gen := &fakeIDGenerator{prefix: "snow-"}
-	uc := newPaymentUsecase(repo, orderRepo, gen)
-
-	got, err := uc.CreatePayment(context.Background(), 10, 1, 2, "alipay")
-	require.NoError(t, err)
-	assert.Equal(t, int64(100), got.ID)
-	assert.Equal(t, "alipay", got.PayChannel)
-}
-
-func TestCreatePayment_PropagatesRepoError(t *testing.T) {
-	wantErr := stderrors.New("db down")
-	orderRepo := &fakeOrderRepo{
-		getOrder: func(ctx context.Context, id int64) (Order, error) {
-			return Order{ID: 10, TotalAmount: 9900}, nil
-		},
-	}
-	repo := &fakePaymentRepo{
-		getActive: func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
-			return nil, pgx.ErrNoRows
-		},
-		create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
-			return nil, wantErr
-		},
-	}
-	gen := &fakeIDGenerator{prefix: "snow-"}
-	uc := newPaymentUsecase(repo, orderRepo, gen)
-
-	_, err := uc.CreatePayment(context.Background(), 10, 1, 2, "wechat")
-	assert.ErrorIs(t, err, wantErr)
-}
-
-func TestResolveOutTradeNo_RejectsInvalidSupplied(t *testing.T) {
-	uc := &paymentUsecase{
-		idGen: &fakeIDGenerator{prefix: "snow-"},
-		log:   log.NewHelper(log.DefaultLogger),
-	}
-
-	cases := []struct {
-		name    string
-		input   string
-		wantErr string
-	}{
-		{"too long", "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz012345", "OUT_TRADE_NO_TOO_LONG"},
-		{"bad char space", "abc 123", "OUT_TRADE_NO_INVALID_CHARSET"},
-		{"bad char dot", "abc.123", "OUT_TRADE_NO_INVALID_CHARSET"},
-		{"bad char slash", "abc/123", "OUT_TRADE_NO_INVALID_CHARSET"},
-		{"bad char unicode", "abc中文", "OUT_TRADE_NO_INVALID_CHARSET"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := uc.resolveOutTradeNo(context.Background(), tc.input)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.wantErr)
-		})
-	}
-}
-
-func TestResolveOutTradeNo_AcceptsValidSupplied(t *testing.T) {
-	uc := &paymentUsecase{
-		idGen: &fakeIDGenerator{prefix: "snow-"},
-		log:   log.NewHelper(log.DefaultLogger),
-	}
-	got, err := uc.resolveOutTradeNo(context.Background(), "client_123-abc")
-	require.NoError(t, err)
-	assert.Equal(t, "client_123-abc", got)
-}
-
-func TestResolveOutTradeNo_GeneratesWhenEmpty(t *testing.T) {
-	uc := &paymentUsecase{
-		idGen: &fakeIDGenerator{prefix: "snow-"},
-		log:   log.NewHelper(log.DefaultLogger),
-	}
-	got, err := uc.resolveOutTradeNo(context.Background(), "")
-	require.NoError(t, err)
-	assert.Equal(t, "snow-1", got)
-}
-
-type fakeTxManager struct {
-	inTx func(ctx context.Context, fn func(ctx context.Context) error) error
-}
-
-func (m *fakeTxManager) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	if m.inTx != nil {
-		return m.inTx(ctx, fn)
-	}
+func (t *paymentTestTx) InTx(ctx context.Context, fn func(context.Context) error) error {
+	t.active = true
+	defer func() { t.active = false }()
 	return fn(ctx)
 }
 
-type fakePaymentJobUsecase struct {
-	enqueueInTx func(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error)
+type paymentTestJobs struct {
+	tx       *paymentTestTx
+	enqueued bool
+	args     CheckPayArgs
 }
 
-func (u *fakePaymentJobUsecase) EnqueueCheckPay(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
-	return nil, nil
+func (j *paymentTestJobs) EnqueueCheckPay(context.Context, CheckPayArgs, time.Duration) (*MQJob, error) {
+	return nil, stderrors.New("non-transactional enqueue is forbidden in this test")
 }
-
-func (u *fakePaymentJobUsecase) EnqueueCheckPayTx(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
-	if u.enqueueInTx != nil {
-		return u.enqueueInTx(ctx, args, delay)
+func (j *paymentTestJobs) EnqueueCheckPayTx(_ context.Context, args CheckPayArgs, _ time.Duration) (*MQJob, error) {
+	if j.tx == nil || !j.tx.active {
+		return nil, stderrors.New("enqueue did not run in transaction")
 	}
-	return nil, nil
+	j.enqueued, j.args = true, args
+	return &MQJob{ID: 1}, nil
 }
+func (j *paymentTestJobs) GetMQJob(context.Context, int64) (*MQJob, error) { return nil, nil }
 
-func (u *fakePaymentJobUsecase) GetMQJob(ctx context.Context, jobID int64) (*MQJob, error) {
-	return nil, nil
-}
+type paymentTestID struct{}
 
-type fakePaymentGateway struct {
-	prepay func(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error)
-}
+func (paymentTestID) GenerateString() string                 { return "payment_99" }
+func (paymentTestID) GenerateOrderNo32(string) string        { return "payment_99" }
+func (paymentTestID) GenerateOrderNo64(string, int64) string { return "payment_99" }
 
-func (g *fakePaymentGateway) Prepay(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
-	if g.prepay != nil {
-		return g.prepay(ctx, req)
-	}
-	return &PaymentPrepayResult{}, nil
-}
+func TestPrepayForOrder_UsesDatabaseAmountAndCallsProviderOutsideTransaction(t *testing.T) {
+	tx := &paymentTestTx{}
+	actionPayload := json.RawMessage(`{"url":"https://pay.example"}`)
+	gateway := &paymentTestGateway{txActive: &tx.active, prepayResult: &PaymentPrepayResult{Action: PaymentAction{Type: PaymentActionRedirect, Payload: actionPayload}}}
+	repo := &paymentTestRepo{}
+	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 10000, Currency: "CNY", Status: OrderStatusPendingPayment, OutTradeNo: "order_5"}}
+	uc := NewPaymentUsecase(gateway, repo, nil, orders, nil, tx, paymentTestID{}, log.DefaultLogger)
 
-func (g *fakePaymentGateway) QueryOrder(ctx context.Context, req PaymentQueryRequest) (*PaymentQueryResult, error) {
-	return nil, nil
-}
-
-func (g *fakePaymentGateway) CloseOrder(ctx context.Context, req PaymentCloseRequest) (*PaymentCloseResult, error) {
-	return nil, nil
-}
-
-func TestPaymentUsecase_PrepayForOrderWithCheckJob_WechatEnqueuesJob(t *testing.T) {
-	var gotCheckJob CheckPayArgs
-	var gotDelay time.Duration
-
-	uc := &paymentUsecase{
-		gateway: &fakePaymentGateway{prepay: func(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
-			assert.NotEmpty(t, req.OutTradeNo)
-			return &PaymentPrepayResult{OutTradeNo: req.OutTradeNo}, nil
-		}},
-		paymentRepo: &fakePaymentRepo{
-			getActive: func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
-				return nil, pgx.ErrNoRows
-			},
-			create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
-				return &PaymentDO{ID: 101, OrderID: 1001, OutTradeNo: args.OutTradeNo, PayChannel: args.PayChannel, Status: "pending"}, nil
-			},
-			getPaymentByOutTradeNo: func(ctx context.Context, outTradeNo string) (*PaymentDO, error) {
-				return nil, nil
-			},
-		},
-		orderRepo: &fakeOrderRepo{getOrder: func(ctx context.Context, id int64) (Order, error) {
-			return Order{ID: 1001, UserID: 7, TotalAmount: 9900}, nil
-		}},
-		paymentJobs: &fakePaymentJobUsecase{enqueueInTx: func(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
-			gotCheckJob = args
-			gotDelay = delay
-			return &MQJob{ID: 202, Kind: CheckPayJobKind, Queue: "payments"}, nil
-		}},
-		tx:    &fakeTxManager{},
-		idGen: &fakeIDGenerator{prefix: "snow-"},
-		log:   log.NewHelper(log.DefaultLogger),
-	}
-
-	res, job, err := uc.PrepayForOrderWithCheckJob(context.Background(), PrepayForOrderArgs{
-		OrderNo: "merchant-order-1",
-		Channel: string(Wechat),
-	}, CheckPayArgs{Source: "prepay_auto", MaxPolls: 30, PollIntervalSeconds: 10}, 2*time.Second)
-
+	result, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{OrderNo: "order_5", UserID: 42, Method: PaymentMethod{Provider: "alipay", Product: "wap"}})
 	require.NoError(t, err)
-	require.NotNil(t, res)
-	require.NotNil(t, job)
-	assert.Equal(t, int64(101), gotCheckJob.PaymentID)
-	assert.Equal(t, int64(1001), gotCheckJob.OrderID)
-	assert.Equal(t, "snow-1", gotCheckJob.OutTradeNo)
-	assert.Equal(t, string(Wechat), gotCheckJob.Channel)
-	assert.Equal(t, "prepay_auto", gotCheckJob.Source)
-	assert.Equal(t, 2*time.Second, gotDelay)
+	require.Equal(t, int64(10000), gateway.prepayReq.Amount)
+	require.Equal(t, int64(10000), repo.created.Amount)
+	require.Equal(t, "CNY", gateway.prepayReq.Currency)
+	require.Equal(t, "Order order_5", gateway.prepayReq.Description)
+	require.Equal(t, PaymentActionRedirect, result.Prepay.Action.Type)
 }
 
-func TestPaymentUsecase_PrepayForOrderWithCheckJob_AlipaySkipsJob(t *testing.T) {
-	uc := &paymentUsecase{
-		gateway: &fakePaymentGateway{prepay: func(ctx context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
-			return &PaymentPrepayResult{OutTradeNo: req.OutTradeNo}, nil
-		}},
-		paymentRepo: &fakePaymentRepo{
-			getActive: func(ctx context.Context, orderID int64, channel string) (*PaymentDO, error) {
-				return nil, pgx.ErrNoRows
-			},
-			create: func(ctx context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
-				return &PaymentDO{ID: 101, OrderID: 1001, OutTradeNo: args.OutTradeNo, PayChannel: args.PayChannel, Status: "pending"}, nil
-			},
-			getPaymentByOutTradeNo: func(ctx context.Context, outTradeNo string) (*PaymentDO, error) {
-				return nil, nil
-			},
-		},
-		orderRepo: &fakeOrderRepo{getOrder: func(ctx context.Context, id int64) (Order, error) {
-			return Order{ID: 1001, UserID: 7, TotalAmount: 9900}, nil
-		}},
-		paymentJobs: &fakePaymentJobUsecase{enqueueInTx: func(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
-			t.Fatalf("should not enqueue job for alipay")
-			return nil, nil
-		}},
-		tx:    &fakeTxManager{},
-		idGen: &fakeIDGenerator{prefix: "snow-"},
-		log:   log.NewHelper(log.DefaultLogger),
+func TestClosePayment_PersistsIntentAndJobBeforeProviderCall(t *testing.T) {
+	tx := &paymentTestTx{}
+	payment := &PaymentDO{ID: 7, OrderID: 5, UserID: 42, Amount: 10000, Currency: "CNY", Method: "newpay:app", OutTradeNo: "payment_7", Status: PaymentStatusPending}
+	repo := &paymentTestRepo{payment: payment}
+	jobs := &paymentTestJobs{tx: tx}
+	gateway := &paymentTestGateway{
+		txActive: &tx.active, capabilities: PaymentCapabilities{SupportsClose: true},
+		closeResult: &PaymentCloseResult{Method: PaymentMethod{Provider: "newpay", Product: "app"}, OutTradeNo: payment.OutTradeNo, Success: true},
 	}
-
-	res, job, err := uc.PrepayForOrderWithCheckJob(context.Background(), PrepayForOrderArgs{
-		OrderNo: "merchant-order-1",
-		Channel: string(Alipay),
-	}, CheckPayArgs{Source: "prepay_auto"}, 0)
-
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, jobs, tx, paymentTestID{}, log.DefaultLogger)
+	result, err := uc.ClosePayment(context.Background(), payment.OutTradeNo, payment.UserID)
 	require.NoError(t, err)
-	require.NotNil(t, res)
-	assert.Nil(t, job)
+	require.True(t, result.Success)
+	require.True(t, repo.closePending)
+	require.True(t, jobs.enqueued)
+	require.Equal(t, 1, jobs.args.MaxPolls)
+	require.True(t, repo.applied)
 }
 
-func TestPaymentUsecase_EnqueueWechatCheckJobByOutTradeNo(t *testing.T) {
-	var gotCheckJob CheckPayArgs
-	uc := &paymentUsecase{
-		paymentRepo: &fakePaymentRepo{
-			getPaymentByOutTradeNo: func(ctx context.Context, outTradeNo string) (*PaymentDO, error) {
-				assert.Equal(t, "otn-notify", outTradeNo)
-				return &PaymentDO{ID: 303, OrderID: 3003, OutTradeNo: outTradeNo, PayChannel: string(Wechat), Status: "pending"}, nil
-			},
-		},
-		paymentJobs: &fakePaymentJobUsecase{enqueueInTx: func(ctx context.Context, args CheckPayArgs, delay time.Duration) (*MQJob, error) {
-			gotCheckJob = args
-			assert.Equal(t, time.Duration(0), delay)
-			return &MQJob{ID: 404, Kind: CheckPayJobKind, Queue: "payments"}, nil
-		}},
-		tx:  &fakeTxManager{},
-		log: log.NewHelper(log.DefaultLogger),
-	}
-
-	job, err := uc.EnqueueWechatCheckJobByOutTradeNo(context.Background(), "otn-notify", CheckPayArgs{Source: "wechat_notify", MaxPolls: 30, PollIntervalSeconds: 10})
-
-	require.NoError(t, err)
-	require.NotNil(t, job)
-	assert.Equal(t, int64(303), gotCheckJob.PaymentID)
-	assert.Equal(t, int64(3003), gotCheckJob.OrderID)
-	assert.Equal(t, "otn-notify", gotCheckJob.OutTradeNo)
-	assert.Equal(t, string(Wechat), gotCheckJob.Channel)
-	assert.Equal(t, "wechat_notify", gotCheckJob.Source)
-}
-
-func TestPaymentUsecase_EnqueueWechatCheckJobByOutTradeNo_RejectsEmptyOutTradeNo(t *testing.T) {
-	uc := &paymentUsecase{tx: &fakeTxManager{}}
-	_, err := uc.EnqueueWechatCheckJobByOutTradeNo(context.Background(), "", CheckPayArgs{})
+func TestPrepayForOrder_RejectsDifferentOwner(t *testing.T) {
+	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 10000, Currency: "CNY", Status: OrderStatusPendingPayment}}
+	uc := NewPaymentUsecase(&paymentTestGateway{}, &paymentTestRepo{}, nil, orders, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	_, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{OrderNo: "order_5", UserID: 7, Method: PaymentMethod{Provider: "alipay", Product: "wap"}})
 	require.Error(t, err)
-	assert.Equal(t, "OUT_TRADE_NO_REQUIRED", err.(*errors.Error).Reason)
 }
+
+func TestPaymentMethodRequiresProviderAndProduct(t *testing.T) {
+	method, err := ParsePaymentMethod(" WeChat:JSAPI ")
+	require.NoError(t, err)
+	require.Equal(t, "wechat:jsapi", method.String())
+	_, err = ParsePaymentMethod("wechat")
+	require.Error(t, err)
+}
+
+func TestPaymentGatewayWithoutProvidersReturnsAvailabilityError(t *testing.T) {
+	gateway := NewPaymentGateway(nil)
+	_, err := gateway.Prepay(context.Background(), PaymentPrepayRequest{Method: PaymentMethod{Provider: "alipay", Product: "wap"}})
+	require.ErrorIs(t, err, ErrPaymentProviderUnavailable)
+}
+
+var _ = time.Second
