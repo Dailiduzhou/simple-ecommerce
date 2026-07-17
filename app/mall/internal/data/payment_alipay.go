@@ -17,9 +17,9 @@ const alipaySuccessCode = "10000"
 
 // alipaySubCodeAlreadyClosed 是"订单已经是终态(已关/已付)"的业务错误码白名单,
 // 关单接口在这些情况下应当幂等视为成功,避免重复关单。
-//  - ACQ.TRADE_STATUS_ERROR:   订单状态不允许关闭(已支付/已关闭)
-//  - ACQ.TRADE_ALREADY_CLOSED: 显式已关闭(部分版本)
-//  - ACQ.REASON_TRADE_CLOSED:  兼容老版本
+//   - ACQ.TRADE_STATUS_ERROR:   订单状态不允许关闭(已支付/已关闭)
+//   - ACQ.TRADE_ALREADY_CLOSED: 显式已关闭(部分版本)
+//   - ACQ.REASON_TRADE_CLOSED:  兼容老版本
 var alipaySubCodeAlreadyClosed = map[string]struct{}{
 	"ACQ.TRADE_STATUS_ERROR":   {},
 	"ACQ.TRADE_ALREADY_CLOSED": {},
