@@ -33,22 +33,21 @@ func TestEmbeddedMigrationsAvailable(t *testing.T) {
 	entries, err := fs.ReadDir(dbmigrations.FS, "migrations")
 	require.NoError(t, err)
 
-	names := make(map[string]bool, len(entries))
+	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		require.False(t, entry.IsDir())
-		names[entry.Name()] = true
+		names = append(names, entry.Name())
 	}
 
-	assert.True(t, names["000001_init_schema.up.sql"])
-	assert.True(t, names["000001_init_schema.down.sql"])
-	assert.True(t, names["000002_add_category_sort_order.up.sql"])
-	assert.True(t, names["000002_add_category_sort_order.down.sql"])
+	assert.ElementsMatch(t, []string{
+		"000001_init_schema.up.sql",
+		"000001_init_schema.down.sql",
+	}, names)
 
 	initSchema, err := fs.ReadFile(dbmigrations.FS, "migrations/000001_init_schema.up.sql")
 	require.NoError(t, err)
 	assert.Contains(t, string(initSchema), "CREATE TABLE users")
-
-	sortOrderMigration, err := fs.ReadFile(dbmigrations.FS, "migrations/000002_add_category_sort_order.up.sql")
-	require.NoError(t, err)
-	assert.Contains(t, string(sortOrderMigration), "ALTER TABLE categories")
+	assert.Contains(t, string(initSchema), "sort_order INTEGER")
+	assert.Contains(t, string(initSchema), "CREATE TABLE payment_notifications")
+	assert.Contains(t, string(initSchema), "CREATE TABLE payment_reconciliation_failures")
 }

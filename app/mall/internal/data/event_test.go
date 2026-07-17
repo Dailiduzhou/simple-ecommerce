@@ -226,8 +226,9 @@ func TestEventRepo_CreateEvent_CachesDetailAndInvalidatesListCache(t *testing.T)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), cached.ID)
 	assert.Equal(t, "created", cached.Name)
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
+	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
 }
 
 func TestEventRepo_UpdateEvent_RefreshesDetailAndInvalidatesListCache(t *testing.T) {
@@ -275,7 +276,8 @@ func TestEventRepo_UpdateEvent_RefreshesDetailAndInvalidatesListCache(t *testing
 	cached, err := repo.GetEvent(context.Background(), 6)
 	require.NoError(t, err)
 	assert.Equal(t, "updated", cached.Name)
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
+	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
+	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
 }
 
 func TestEventRepo_UpdateEvent_NotFound(t *testing.T) {
@@ -315,8 +317,9 @@ func TestEventRepo_UpdateEventStatus_ClearsCaches(t *testing.T) {
 	err := repo.UpdateEventStatus(context.Background(), 7, 2)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventCacheKey(7)).Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
+	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
 }
 
 func TestEventRepo_DeleteEvent_ClearsCaches(t *testing.T) {
@@ -338,6 +341,7 @@ func TestEventRepo_DeleteEvent_ClearsCaches(t *testing.T) {
 	err := repo.DeleteEvent(context.Background(), 8)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventCacheKey(8)).Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
+	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
 }
