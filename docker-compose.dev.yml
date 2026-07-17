@@ -33,6 +33,26 @@ services:
       - "16686:16686"
       - "4317:4317"
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.132.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      - jaeger
+    volumes:
+      - ./deploy/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "9464:9464"
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    depends_on:
+      - otel-collector
+    volumes:
+      - ./deploy/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/payment-alerts.yaml:/etc/prometheus/payment-alerts.yaml:ro
+    ports:
+      - "9090:9090"
+
   loki:
     image: grafana/loki:2.9.0
     command: -config.file=/etc/loki/local-config.yaml
@@ -76,10 +96,15 @@ services:
         condition: service_healthy
       jaeger:
         condition: service_started
+      otel-collector:
+        condition: service_started
       loki:
         condition: service_started
     environment:
-      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET}
+      AUTH_REFRESH_TOKEN_SECRET: ${AUTH_REFRESH_TOKEN_SECRET:?set AUTH_REFRESH_TOKEN_SECRET}
+      AUTH_PHONE_SECRET: ${AUTH_PHONE_SECRET:?set AUTH_PHONE_SECRET}
       ALIPAY_APP_CERT_PATH: /data/certs/appPublicCert.crt
       ALIPAY_PUBLIC_KEY_PATH: /data/certs/alipayPublicCert.crt
       ALIPAY_ROOT_KEY_PATH: /data/certs/alipayRootCert.crt
