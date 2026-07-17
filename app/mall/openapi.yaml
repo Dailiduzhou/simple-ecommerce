@@ -1,0 +1,1489 @@
+# Generated with protoc-gen-openapi
+# https://github.com/google/gnostic/tree/master/cmd/protoc-gen-openapi
+
+openapi: 3.0.3
+info:
+    title: ""
+    version: 0.0.1
+paths:
+    /v1/categories:
+        get:
+            tags:
+                - Mall
+            operationId: Mall_ListCategories
+            parameters:
+                - name: parentId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.ListCategoriesReply'
+        post:
+            tags:
+                - Mall
+            description: Categories
+            operationId: Mall_CreateCategory
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.CreateCategoryRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.Category'
+    /v1/categories/{id}:
+        put:
+            tags:
+                - Mall
+            operationId: Mall_UpdateCategory
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.UpdateCategoryRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.Category'
+        delete:
+            tags:
+                - Mall
+            operationId: Mall_DeleteCategory
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.DeleteCategoryReply'
+    /v1/events:
+        get:
+            tags:
+                - Mall
+            operationId: Mall_ListEvents
+            parameters:
+                - name: status
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: page
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.ListEventsReply'
+        post:
+            tags:
+                - Mall
+            description: Events
+            operationId: Mall_CreateEvent
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.CreateEventRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.Event'
+    /v1/events/{id}:
+        get:
+            tags:
+                - Mall
+            operationId: Mall_GetEvent
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.Event'
+        put:
+            tags:
+                - Mall
+            operationId: Mall_UpdateEvent
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.UpdateEventRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.Event'
+        delete:
+            tags:
+                - Mall
+            operationId: Mall_DeleteEvent
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.DeleteEventReply'
+    /v1/events/{id}/status:
+        patch:
+            tags:
+                - Mall
+            operationId: Mall_UpdateEventStatus
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.UpdateEventStatusRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.UpdateEventStatusReply'
+    /v1/orders:
+        post:
+            tags:
+                - Order
+            operationId: Order_CreateOrder
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.order.v1.CreateOrderRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.order.v1.OrderInfo'
+    /v1/orders/{id}:
+        get:
+            tags:
+                - Order
+            operationId: Order_GetOrder
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: userId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.order.v1.OrderInfo'
+    /v1/orders/{id}/cancel:
+        post:
+            tags:
+                - Order
+            operationId: Order_CancelOrder
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.order.v1.CancelOrderRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.order.v1.CancelOrderReply'
+    /v1/orders/{orderId}/payment:
+        get:
+            tags:
+                - Payment
+            operationId: Payment_GetPaymentByOrder
+            parameters:
+                - name: orderId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.PaymentInfo'
+    /v1/payments:
+        post:
+            tags:
+                - Payment
+            description: |-
+                统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
+                 同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
+                 + AliPayService.Prepay 三个 RPC。
+            operationId: Payment_CreatePayment
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.payment.v1.CreatePaymentReq'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.CreatePaymentReply'
+    /v1/payments/lookup:
+        get:
+            tags:
+                - Payment
+            description: 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+            operationId: Payment_QueryPayment
+            parameters:
+                - name: outTradeNo
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.QueryPaymentReply'
+    /v1/payments/lookup/close:
+        post:
+            tags:
+                - Payment
+            description: 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+            operationId: Payment_ClosePayment
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.payment.v1.ClosePaymentReq'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.ClosePaymentReply'
+    /v1/payments/mq/jobs/{jobId}:
+        get:
+            tags:
+                - Payment
+            operationId: Payment_GetMQJob
+            parameters:
+                - name: jobId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.MQJobInfo'
+    /v1/payments/{id}:
+        get:
+            tags:
+                - Payment
+            operationId: Payment_GetPayment
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.PaymentInfo'
+    /v1/payments/{id}/refund:
+        post:
+            tags:
+                - Payment
+            description: 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
+            operationId: Payment_RefundPayment
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.payment.v1.RefundPaymentRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.RefundPaymentReply'
+    /v1/payments/{paymentId}/checks:
+        post:
+            tags:
+                - Payment
+            operationId: Payment_CreatePaymentCheckJob
+            parameters:
+                - name: paymentId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.payment.v1.CreatePaymentCheckJobRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.MQJobInfo'
+    /v1/products:
+        get:
+            tags:
+                - Mall
+            operationId: Mall_ListProducts
+            parameters:
+                - name: categoryId
+                  in: query
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: page
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.ListProductsReply'
+        post:
+            tags:
+                - Mall
+            description: Products
+            operationId: Mall_CreateProduct
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.CreateProductRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.Product'
+    /v1/products/{id}:
+        get:
+            tags:
+                - Mall
+            operationId: Mall_GetProduct
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.Product'
+        put:
+            tags:
+                - Mall
+            operationId: Mall_UpdateProduct
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.UpdateProductRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.Product'
+        delete:
+            tags:
+                - Mall
+            operationId: Mall_DeleteProduct
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.DeleteProductReply'
+    /v1/products/{id}/status:
+        patch:
+            tags:
+                - Mall
+            operationId: Mall_UpdateProductStatus
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.UpdateProductStatusRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.UpdateProductStatusReply'
+    /v1/users/login:
+        post:
+            tags:
+                - User
+            operationId: User_Login
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.LoginRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.LoginReply'
+    /v1/users/refresh:
+        post:
+            tags:
+                - User
+            operationId: User_RefreshToken
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.RefreshRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.RefreshReply'
+    /v1/users/register:
+        post:
+            tags:
+                - User
+            operationId: User_Register
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.RegisterRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.RegisterReply'
+    /v1/users/{id}:
+        get:
+            tags:
+                - User
+            operationId: User_GetUser
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.UserInfo'
+        put:
+            tags:
+                - User
+            operationId: User_UpdateUser
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.UpdateUserRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.UserInfo'
+        delete:
+            tags:
+                - User
+            operationId: User_DeleteUser
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.DeleteUserReply'
+    /v1/users/{userId}/addresses:
+        get:
+            tags:
+                - User
+            operationId: User_ListShippingAddresses
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.ListShippingAddressesReply'
+        post:
+            tags:
+                - User
+            description: Shipping Addresses
+            operationId: User_CreateShippingAddress
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.CreateShippingAddressRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.ShippingAddress'
+    /v1/users/{userId}/addresses/{id}:
+        put:
+            tags:
+                - User
+            operationId: User_UpdateShippingAddress
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.UpdateShippingAddressRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.ShippingAddress'
+        delete:
+            tags:
+                - User
+            operationId: User_DeleteShippingAddress
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.DeleteShippingAddressReply'
+    /v1/users/{userId}/addresses/{id}/default:
+        post:
+            tags:
+                - User
+            operationId: User_SetDefaultShippingAddress
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.SetDefaultShippingAddressRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.SetDefaultShippingAddressReply'
+    /v1/users/{userId}/orders:
+        get:
+            tags:
+                - Order
+            operationId: Order_ListOrders
+            parameters:
+                - name: userId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: ongoing
+                  in: query
+                  schema:
+                    type: boolean
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: page
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.order.v1.ListOrdersReply'
+components:
+    schemas:
+        api.mall.v1.Category:
+            type: object
+            properties:
+                id:
+                    type: string
+                parentId:
+                    type: string
+                name:
+                    type: string
+                sortOrder:
+                    type: integer
+                    format: int32
+        api.mall.v1.CreateCategoryRequest:
+            type: object
+            properties:
+                parentId:
+                    type: string
+                name:
+                    type: string
+                sortOrder:
+                    type: integer
+                    format: int32
+        api.mall.v1.CreateEventRequest:
+            type: object
+            properties:
+                name:
+                    type: string
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.MediaInfo'
+                description:
+                    type: string
+                startAt:
+                    type: string
+                    format: date-time
+                endAt:
+                    type: string
+                    format: date-time
+        api.mall.v1.CreateProductRequest:
+            type: object
+            properties:
+                categoryId:
+                    type: string
+                name:
+                    type: string
+                price:
+                    type: string
+                discount:
+                    type: string
+                stock:
+                    type: integer
+                    format: int32
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.MediaInfo'
+                description:
+                    type: string
+        api.mall.v1.DeleteCategoryReply:
+            type: object
+            properties: {}
+        api.mall.v1.DeleteEventReply:
+            type: object
+            properties: {}
+        api.mall.v1.DeleteProductReply:
+            type: object
+            properties: {}
+        api.mall.v1.Event:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                status:
+                    type: integer
+                    format: int32
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.MediaInfo'
+                description:
+                    type: string
+                startAt:
+                    type: string
+                    format: date-time
+                endAt:
+                    type: string
+                    format: date-time
+                createdAt:
+                    type: string
+                    format: date-time
+        api.mall.v1.ListCategoriesReply:
+            type: object
+            properties:
+                categories:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.Category'
+        api.mall.v1.ListEventsReply:
+            type: object
+            properties:
+                events:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.Event'
+        api.mall.v1.ListProductsReply:
+            type: object
+            properties:
+                products:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.Product'
+                total:
+                    type: integer
+                    format: int32
+        api.mall.v1.MediaInfo:
+            type: object
+            properties:
+                ossUrl:
+                    type: string
+                bucketName:
+                    type: string
+                objectKey:
+                    type: string
+                contentType:
+                    type: string
+                size:
+                    type: string
+        api.mall.v1.Product:
+            type: object
+            properties:
+                id:
+                    type: string
+                categoryId:
+                    type: string
+                name:
+                    type: string
+                price:
+                    type: string
+                discount:
+                    type: string
+                stock:
+                    type: integer
+                    format: int32
+                status:
+                    type: integer
+                    format: int32
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.MediaInfo'
+                description:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+        api.mall.v1.UpdateCategoryRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                sortOrder:
+                    type: integer
+                    format: int32
+        api.mall.v1.UpdateEventRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.MediaInfo'
+                description:
+                    type: string
+                startAt:
+                    type: string
+                    format: date-time
+                endAt:
+                    type: string
+                    format: date-time
+        api.mall.v1.UpdateEventStatusReply:
+            type: object
+            properties: {}
+        api.mall.v1.UpdateEventStatusRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                status:
+                    type: integer
+                    format: int32
+        api.mall.v1.UpdateProductRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                categoryId:
+                    type: string
+                name:
+                    type: string
+                price:
+                    type: string
+                discount:
+                    type: string
+                stock:
+                    type: integer
+                    format: int32
+                coverImage:
+                    type: string
+                mediaAssets:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.mall.v1.MediaInfo'
+                description:
+                    type: string
+        api.mall.v1.UpdateProductStatusReply:
+            type: object
+            properties: {}
+        api.mall.v1.UpdateProductStatusRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                status:
+                    type: integer
+                    format: int32
+        api.order.v1.CancelOrderReply:
+            type: object
+            properties: {}
+        api.order.v1.CancelOrderRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                userId:
+                    type: string
+        api.order.v1.CreateOrderRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+                addressId:
+                    type: string
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.order.v1.OrderItemInput'
+        api.order.v1.ListOrdersReply:
+            type: object
+            properties:
+                orders:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.order.v1.OrderInfo'
+                total:
+                    type: integer
+                    format: int32
+        api.order.v1.OrderInfo:
+            type: object
+            properties:
+                id:
+                    type: string
+                userId:
+                    type: string
+                addressId:
+                    type: string
+                totalAmount:
+                    type: string
+                status:
+                    type: string
+                isCompleted:
+                    type: boolean
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.order.v1.OrderItem'
+                createdAt:
+                    type: string
+                    format: date-time
+                updatedAt:
+                    type: string
+                    format: date-time
+                orderNo:
+                    type: string
+                currency:
+                    type: string
+        api.order.v1.OrderItem:
+            type: object
+            properties:
+                productId:
+                    type: string
+                productName:
+                    type: string
+                coverImage:
+                    type: string
+                quantity:
+                    type: integer
+                    format: int32
+                unitPrice:
+                    type: string
+        api.order.v1.OrderItemInput:
+            type: object
+            properties:
+                productId:
+                    type: string
+                quantity:
+                    type: integer
+                    format: int32
+        api.payment.v1.ClosePaymentReply:
+            type: object
+            properties:
+                success:
+                    type: boolean
+        api.payment.v1.ClosePaymentReq:
+            type: object
+            properties:
+                outTradeNo:
+                    type: string
+        api.payment.v1.CreatePaymentCheckJobRequest:
+            type: object
+            properties:
+                paymentId:
+                    type: string
+                delaySeconds:
+                    type: integer
+                    format: int32
+                maxPolls:
+                    type: integer
+                    format: int32
+                pollIntervalSeconds:
+                    type: integer
+                    format: int32
+                trigger:
+                    type: string
+        api.payment.v1.CreatePaymentReply:
+            type: object
+            properties:
+                actionType:
+                    type: string
+                payload:
+                    type: string
+            description: |-
+                统一创建支付响应。
+                 - action_type: 告诉前端该怎么处理 payload。
+                     * "form"     — 提交表单。
+                     * "redirect" — 跳转链接。
+                     * "invoke"   — 调用客户端支付 SDK/API。
+                 - payload: 渠道真实的支付参数,序列化为 JSON 字符串,字段契约见 service 注释。
+        api.payment.v1.CreatePaymentReq:
+            type: object
+            properties:
+                orderNo:
+                    type: string
+                method:
+                    type: string
+                clientIp:
+                    type: string
+                extraParams:
+                    type: object
+                    additionalProperties:
+                        type: string
+                description:
+                    type: string
+                totalAmount:
+                    type: integer
+                    format: int32
+            description: |-
+                统一创建支付请求。
+                 - order_no: 商户订单号(对应 orders.out_trade_no)。
+                 - method: provider-neutral 的 "provider:product"，例如 "alipay:wap"。
+                 - client_ip: 客户端 IP,微信风控必传。
+                 - extra_params: 渠道特有的扩展参数抹平字段:
+                     * WECHAT_JSAPI 必须传 "openid"。
+                     * ALIPAY_WAP 可传 "return_url"。
+                 - description: 可选;省略时服务端从订单号生成安全描述。
+                 - total_amount: 已废弃且服务端忽略，金额只从订单读取。
+        api.payment.v1.MQJobError:
+            type: object
+            properties:
+                attempt:
+                    type: integer
+                    format: int32
+                error:
+                    type: string
+                at:
+                    type: string
+                    format: date-time
+        api.payment.v1.MQJobInfo:
+            type: object
+            properties:
+                jobId:
+                    type: string
+                kind:
+                    type: string
+                queue:
+                    type: string
+                state:
+                    type: string
+                attempt:
+                    type: integer
+                    format: int32
+                maxAttempts:
+                    type: integer
+                    format: int32
+                argsJson:
+                    type: string
+                tags:
+                    type: array
+                    items:
+                        type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                scheduledAt:
+                    type: string
+                    format: date-time
+                attemptedAt:
+                    type: string
+                    format: date-time
+                finalizedAt:
+                    type: string
+                    format: date-time
+                errors:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.payment.v1.MQJobError'
+        api.payment.v1.PaymentInfo:
+            type: object
+            properties:
+                id:
+                    type: string
+                orderId:
+                    type: string
+                userId:
+                    type: string
+                merchantId:
+                    type: string
+                amountMinor:
+                    type: string
+                status:
+                    type: string
+                method:
+                    type: string
+                thirdPartyTxId:
+                    type: string
+                paidAt:
+                    type: string
+                    format: date-time
+                createdAt:
+                    type: string
+                    format: date-time
+                outTradeNo:
+                    type: string
+                currency:
+                    type: string
+        api.payment.v1.QueryPaymentReply:
+            type: object
+            properties:
+                outTradeNo:
+                    type: string
+                transactionId:
+                    type: string
+                tradeState:
+                    type: integer
+                    format: enum
+                amountMinor:
+                    type: string
+                currency:
+                    type: string
+        api.payment.v1.RefundPaymentReply:
+            type: object
+            properties: {}
+        api.payment.v1.RefundPaymentRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+        api.user.v1.CreateShippingAddressRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+                receiverName:
+                    type: string
+                receiverPhone:
+                    type: string
+                province:
+                    type: string
+                city:
+                    type: string
+                district:
+                    type: string
+                detailAddress:
+                    type: string
+                addressTag:
+                    type: string
+                isDefault:
+                    type: boolean
+        api.user.v1.DeleteShippingAddressReply:
+            type: object
+            properties: {}
+        api.user.v1.DeleteUserReply:
+            type: object
+            properties: {}
+        api.user.v1.ListShippingAddressesReply:
+            type: object
+            properties:
+                addresses:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.user.v1.ShippingAddress'
+        api.user.v1.LoginReply:
+            type: object
+            properties:
+                id:
+                    type: string
+                token:
+                    type: string
+                refreshToken:
+                    type: string
+        api.user.v1.LoginRequest:
+            type: object
+            properties:
+                phone:
+                    type: string
+                password:
+                    type: string
+        api.user.v1.RefreshReply:
+            type: object
+            properties:
+                accessToken:
+                    type: string
+                refreshToken:
+                    type: string
+        api.user.v1.RefreshRequest:
+            type: object
+            properties:
+                refreshToken:
+                    type: string
+        api.user.v1.RegisterReply:
+            type: object
+            properties:
+                id:
+                    type: string
+        api.user.v1.RegisterRequest:
+            type: object
+            properties:
+                phone:
+                    type: string
+                password:
+                    type: string
+        api.user.v1.SetDefaultShippingAddressReply:
+            type: object
+            properties: {}
+        api.user.v1.SetDefaultShippingAddressRequest:
+            type: object
+            properties:
+                userId:
+                    type: string
+                id:
+                    type: string
+        api.user.v1.ShippingAddress:
+            type: object
+            properties:
+                id:
+                    type: string
+                userId:
+                    type: string
+                receiverName:
+                    type: string
+                receiverPhone:
+                    type: string
+                province:
+                    type: string
+                city:
+                    type: string
+                district:
+                    type: string
+                detailAddress:
+                    type: string
+                addressTag:
+                    type: string
+                isDefault:
+                    type: boolean
+        api.user.v1.UpdateShippingAddressRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                userId:
+                    type: string
+                receiverName:
+                    type: string
+                receiverPhone:
+                    type: string
+                province:
+                    type: string
+                city:
+                    type: string
+                district:
+                    type: string
+                detailAddress:
+                    type: string
+                addressTag:
+                    type: string
+        api.user.v1.UpdateUserRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                nickname:
+                    type: string
+                realName:
+                    type: string
+        api.user.v1.UserInfo:
+            type: object
+            properties:
+                id:
+                    type: string
+                nickname:
+                    type: string
+                realName:
+                    type: string
+                phone:
+                    type: string
+                role:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+tags:
+    - name: Mall
+    - name: Order
+    - name: Payment
+      description: |-
+        支付服务。
+         原 WechatPayService / AliPayService 已经被收编到本 service,前端只需
+         通过 method 字段路由到已注册 adapter,不再为不同渠道调用不同的 RPC。
+    - name: User
