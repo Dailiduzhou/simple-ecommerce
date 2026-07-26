@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -30,10 +31,10 @@ type pollOutput struct {
 func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayArgs]) error {
 	args := biz.NormalizeCheckPayArgs(job.Args)
 	if args.PaymentID <= 0 || args.Provider == "" {
-		return river.JobCancel(fmt.Errorf("payment_id and provider are required"))
+		return w.cancel(ctx, args, fmt.Errorf("payment_id and provider are required"))
 	}
 	if w.paymentGateway == nil || w.paymentRepo == nil {
-		return river.JobCancel(fmt.Errorf("payment worker dependencies are missing"))
+		return w.cancel(ctx, args, fmt.Errorf("payment worker dependencies are missing"))
 	}
 	payment, err := w.paymentRepo.GetPayment(ctx, args.PaymentID)
 	if err != nil {
@@ -41,16 +42,26 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	}
 	method, err := biz.ParsePaymentMethod(payment.Method)
 	if err != nil {
-		return river.JobCancel(err)
+		return w.cancel(ctx, args, err)
 	}
 	if method.Provider != args.Provider {
-		return river.JobCancel(fmt.Errorf("job provider does not match payment method"))
+		return w.cancel(ctx, args, fmt.Errorf("job provider does not match payment method"))
+	}
+	proceed, err := w.paymentRepo.BeginPaymentNotificationProcessing(ctx, args.NotificationID, args.Provider, payment.OutTradeNo)
+	if err != nil {
+		if errors.Is(err, biz.ErrPaymentNotificationBinding) {
+			return w.cancel(ctx, args, err)
+		}
+		return err
+	}
+	if !proceed {
+		return nil
 	}
 
 	result, err := w.paymentGateway.Query(ctx, biz.PaymentQueryRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
 	if err != nil {
 		observability.PaymentReconcileJob(ctx, args.Provider, "technical_error")
-		return err
+		return w.retryable(ctx, args, err)
 	}
 	if result.TradeState.IsTerminal() {
 		err := w.paymentRepo.ApplyPayQuery(ctx, args, result)
@@ -59,10 +70,13 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 		} else {
 			observability.PaymentReconcileJob(ctx, args.Provider, "terminal")
 		}
-		return err
+		if err != nil {
+			return w.retryable(ctx, args, err)
+		}
+		return nil
 	}
 	if !result.TradeState.IsPending() {
-		return fmt.Errorf("provider returned unsupported state %s", result.TradeState)
+		return w.retryable(ctx, args, fmt.Errorf("provider returned unsupported state %s", result.TradeState))
 	}
 
 	state := pollOutput{PollCount: args.PollCount}
@@ -72,7 +86,7 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	state.PollCount++
 	args.PollCount = state.PollCount
 	if err := river.RecordOutput(ctx, state); err != nil {
-		return err
+		return w.retryable(ctx, args, err)
 	}
 	if state.PollCount < args.MaxPolls {
 		observability.PaymentReconcileJob(ctx, args.Provider, "pending")
@@ -80,23 +94,28 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	}
 
 	if err := w.paymentRepo.MarkPayClosePending(ctx, args); err != nil {
-		return err
+		return w.retryable(ctx, args, err)
 	}
-	capabilities, err := w.paymentGateway.Capabilities(method)
-	if err != nil {
-		return err
+	return nil
+}
+
+func (w *CheckPayWorker) retryable(ctx context.Context, args biz.CheckPayArgs, workErr error) error {
+	if w.paymentRepo == nil || args.NotificationID <= 0 {
+		return workErr
 	}
-	if !capabilities.SupportsClose {
-		return w.paymentRepo.MarkReconciliationRequired(ctx, biz.ReconciliationFailure{PaymentID: payment.ID, Provider: method.Provider, Attempt: max(1, job.Attempt), LastError: "business polling deadline reached and provider cannot close"})
+	if err := w.paymentRepo.RecordPaymentNotificationError(ctx, args.NotificationID, workErr.Error()); err != nil {
+		return fmt.Errorf("%w; record payment notification error: %v", workErr, err)
 	}
-	closed, err := w.paymentGateway.Close(ctx, biz.PaymentCloseRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
-	if err != nil {
-		return err
+	return workErr
+}
+
+func (w *CheckPayWorker) cancel(ctx context.Context, args biz.CheckPayArgs, workErr error) error {
+	if w.paymentRepo != nil && args.NotificationID > 0 {
+		if err := w.paymentRepo.MarkPaymentNotificationFailed(ctx, args.NotificationID, workErr.Error()); err != nil {
+			return fmt.Errorf("mark payment notification failed: %w", err)
+		}
 	}
-	if !closed.Success {
-		return fmt.Errorf("provider did not confirm payment close")
-	}
-	return w.paymentRepo.ApplyPayQuery(ctx, args, &biz.PaymentQueryResult{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: closed.TransactionID, TradeState: biz.TradeStateClosed, Amount: payment.Amount, Currency: payment.Currency})
+	return river.JobCancel(workErr)
 }
 
 func (w *CheckPayWorker) NextRetry(job *river.Job[biz.CheckPayArgs]) time.Time {
