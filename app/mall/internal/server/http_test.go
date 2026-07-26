@@ -53,6 +53,9 @@ func (u *callbackPaymentUsecase) NotificationAck(provider string, success bool) 
 	}
 	return biz.DefaultPaymentNotificationAck()
 }
+func (u *callbackPaymentUsecase) SupportsNotificationProvider(provider string) bool {
+	return provider == "wechat" || provider == "alipay"
+}
 
 func newHTTPTestServer(uc biz.PaymentUsecase) http.Handler {
 	mall := service.NewMallService(nil, nil, nil, log.DefaultLogger)
@@ -79,6 +82,16 @@ func TestPaymentCallbackPersistenceFailureReturnsProviderFailureAck(t *testing.T
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	require.Equal(t, "fail", response.Body.String())
+}
+
+func TestUnsupportedPaymentCallbackProviderIsRejectedBeforeUsecase(t *testing.T) {
+	uc := &callbackPaymentUsecase{}
+	server := newHTTPTestServer(uc)
+	request := httptest.NewRequest(http.MethodPost, "/v1/payments/random/notify", strings.NewReader("payload"))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Empty(t, uc.provider)
 }
 
 func TestAnonymousBusinessPaymentAPIStillRequiresJWT(t *testing.T) {
