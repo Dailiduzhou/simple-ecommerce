@@ -1,6 +1,9 @@
 -- name: CreateOrder :one
-INSERT INTO orders (user_id, address_id, total_amount_minor, currency, status, out_trade_no)
-VALUES ($1, $2, $3, $4, 'pending_payment', $5)
+INSERT INTO orders (
+  user_id, address_id, total_amount_minor, currency, status, out_trade_no,
+  idempotency_key, request_hash, expires_at
+)
+VALUES ($1, $2, $3, $4, 'pending_payment', $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetOrder :one
@@ -16,6 +19,9 @@ SELECT * FROM orders WHERE out_trade_no = $1;
 
 -- name: GetOrderByUser :one
 SELECT * FROM orders WHERE id = $1 AND user_id = $2;
+
+-- name: GetOrderByUserIdempotency :one
+SELECT * FROM orders WHERE user_id = $1 AND idempotency_key = $2;
 
 -- name: GetOrderByUserForUpdate :one
 SELECT * FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE;

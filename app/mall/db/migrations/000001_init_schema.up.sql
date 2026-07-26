@@ -88,19 +88,26 @@ CREATE TABLE orders (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL,
   address_id BIGINT NOT NULL,
-  total_amount_minor BIGINT NOT NULL DEFAULT 0,
+  total_amount_minor BIGINT NOT NULL,
   currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
-  status VARCHAR(20) NOT NULL DEFAULT 'creating',
+  status VARCHAR(20) NOT NULL DEFAULT 'pending_payment',
   is_completed BOOLEAN NOT NULL DEFAULT FALSE,
-  out_trade_no VARCHAR(64),
+  out_trade_no VARCHAR(64) NOT NULL,
+  idempotency_key VARCHAR(64) NOT NULL,
+  request_hash VARCHAR(64) NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_order_user
     FOREIGN KEY (user_id) REFERENCES users(id),
   CONSTRAINT fk_order_address
     FOREIGN KEY (address_id) REFERENCES shipping_addresses(id),
+  CONSTRAINT orders_amount_check CHECK (total_amount_minor > 0),
   CONSTRAINT orders_status_check CHECK (
-    status IN ('creating', 'pending_payment', 'paid', 'shipped', 'completed', 'cancelling', 'cancelled')
+    status IN ('pending_payment', 'paid', 'shipped', 'completed', 'cancelling', 'cancelled')
+  ),
+  CONSTRAINT orders_completion_check CHECK (
+    is_completed = (status IN ('completed', 'cancelled'))
   )
 );
 
@@ -109,8 +116,12 @@ CREATE INDEX idx_orders_ongoing ON orders(user_id, is_completed)
   WHERE is_completed = FALSE;
 CREATE INDEX idx_orders_done ON orders(user_id, is_completed)
   WHERE is_completed = TRUE;
-CREATE UNIQUE INDEX idx_orders_out_trade_no ON orders(out_trade_no)
-  WHERE out_trade_no IS NOT NULL;
+CREATE UNIQUE INDEX idx_orders_out_trade_no ON orders(out_trade_no);
+CREATE UNIQUE INDEX idx_orders_user_idempotency
+  ON orders(user_id, idempotency_key);
+CREATE INDEX idx_orders_pending_expiry
+  ON orders(expires_at)
+  WHERE status = 'pending_payment';
 
 CREATE TABLE order_items (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -124,7 +135,9 @@ CREATE TABLE order_items (
   CONSTRAINT fk_order_item_order
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
   CONSTRAINT fk_order_item_product
-    FOREIGN KEY (product_id) REFERENCES products(id)
+    FOREIGN KEY (product_id) REFERENCES products(id),
+  CONSTRAINT order_items_quantity_check CHECK (quantity > 0),
+  CONSTRAINT order_items_price_check CHECK (unit_price_minor >= 0)
 );
 
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);
@@ -137,21 +150,32 @@ CREATE TABLE payments (
   merchant_id BIGINT NOT NULL,
   amount_minor BIGINT NOT NULL,
   currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  pay_channel VARCHAR(30) NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'creating',
+  pay_channel VARCHAR(30) NOT NULL,
   third_party_tx_id VARCHAR(128),
-  out_trade_no VARCHAR(64),
+  out_trade_no VARCHAR(64) NOT NULL,
   action_type VARCHAR(20),
   action_payload JSONB,
   paid_at TIMESTAMPTZ,
+  reconciliation_status VARCHAR(20) NOT NULL DEFAULT 'none',
+  reconciliation_reason VARCHAR(64),
+  reconciliation_detail TEXT,
+  prepay_lease_token VARCHAR(64),
+  prepay_lease_until TIMESTAMPTZ,
+  prepay_attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_payment_order
     FOREIGN KEY (order_id) REFERENCES orders(id),
   CONSTRAINT fk_payment_user
     FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT payments_amount_check CHECK (amount_minor > 0),
   CONSTRAINT payments_status_check CHECK (
-    status IN ('creating', 'pending', 'success', 'refunded', 'close_pending', 'closed', 'reconcile_required')
+    status IN ('creating', 'pending', 'failed', 'close_pending', 'closed', 'success', 'refunded')
+  ),
+  CONSTRAINT payments_reconciliation_status_check CHECK (
+    reconciliation_status IN ('none', 'required', 'processing', 'resolved')
   )
 );
 
@@ -160,12 +184,14 @@ CREATE INDEX idx_payments_user_id ON payments(user_id);
 CREATE UNIQUE INDEX idx_payments_third_party_tx_id_channel
   ON payments(third_party_tx_id, pay_channel)
   WHERE third_party_tx_id IS NOT NULL;
-CREATE UNIQUE INDEX idx_payments_out_trade_no_unique
-  ON payments(out_trade_no)
-  WHERE out_trade_no IS NOT NULL;
-CREATE UNIQUE INDEX idx_payments_active_order_method
-  ON payments(order_id, pay_channel)
-  WHERE status IN ('creating', 'pending', 'success', 'close_pending');
+CREATE UNIQUE INDEX idx_payments_out_trade_no
+  ON payments(out_trade_no);
+CREATE UNIQUE INDEX idx_payments_one_active_per_order
+  ON payments(order_id)
+  WHERE status IN ('creating', 'pending', 'close_pending');
+CREATE INDEX idx_payments_reconciliation
+  ON payments(reconciliation_status, updated_at)
+  WHERE reconciliation_status <> 'none';
 
 CREATE TABLE order_refunds (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -200,7 +226,9 @@ CREATE TABLE payment_notifications (
   processed_at TIMESTAMPTZ,
   status VARCHAR(20) NOT NULL DEFAULT 'received',
   last_error TEXT,
+  river_job_id BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT payment_notifications_status_check CHECK (
     status IN ('received', 'processing', 'processed', 'failed')
   )
@@ -211,11 +239,14 @@ CREATE UNIQUE INDEX idx_payment_notifications_event
   WHERE provider_event_id IS NOT NULL;
 CREATE UNIQUE INDEX idx_payment_notifications_payload
   ON payment_notifications(provider, out_trade_no, payload_hash);
+CREATE INDEX idx_payment_notifications_status_updated
+  ON payment_notifications(status, updated_at);
 
 CREATE TABLE payment_reconciliation_failures (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   payment_id BIGINT NOT NULL REFERENCES payments(id),
   provider VARCHAR(32) NOT NULL,
+  reason VARCHAR(64) NOT NULL,
   river_job_id BIGINT,
   attempt INTEGER NOT NULL,
   last_error TEXT NOT NULL,
