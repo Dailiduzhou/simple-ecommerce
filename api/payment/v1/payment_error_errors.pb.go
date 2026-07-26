@@ -82,3 +82,75 @@ func IsThirdPartyPaymentFailed(err error) bool {
 func ErrorThirdPartyPaymentFailed(format string, args ...interface{}) *errors.Error {
 	return errors.New(502, ErrorReason_THIRD_PARTY_PAYMENT_FAILED.String(), fmt.Sprintf(format, args...))
 }
+
+func IsOrderHasActivePayment(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_ORDER_HAS_ACTIVE_PAYMENT.String() && e.Code == 409
+}
+
+func ErrorOrderHasActivePayment(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_ORDER_HAS_ACTIVE_PAYMENT.String(), fmt.Sprintf(format, args...))
+}
+
+func IsOrderAlreadyPaid(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_ORDER_ALREADY_PAID.String() && e.Code == 409
+}
+
+func ErrorOrderAlreadyPaid(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_ORDER_ALREADY_PAID.String(), fmt.Sprintf(format, args...))
+}
+
+func IsOrderExpired(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_ORDER_EXPIRED.String() && e.Code == 409
+}
+
+func ErrorOrderExpired(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_ORDER_EXPIRED.String(), fmt.Sprintf(format, args...))
+}
+
+func IsPaymentPrepayInProgress(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PAYMENT_PREPAY_IN_PROGRESS.String() && e.Code == 409
+}
+
+func ErrorPaymentPrepayInProgress(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_PAYMENT_PREPAY_IN_PROGRESS.String(), fmt.Sprintf(format, args...))
+}
+
+func IsPaymentReconciliationRequired(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PAYMENT_RECONCILIATION_REQUIRED.String() && e.Code == 409
+}
+
+func ErrorPaymentReconciliationRequired(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_PAYMENT_RECONCILIATION_REQUIRED.String(), fmt.Sprintf(format, args...))
+}
+
+func IsPaymentStateConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PAYMENT_STATE_CONFLICT.String() && e.Code == 409
+}
+
+func ErrorPaymentStateConflict(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_PAYMENT_STATE_CONFLICT.String(), fmt.Sprintf(format, args...))
+}

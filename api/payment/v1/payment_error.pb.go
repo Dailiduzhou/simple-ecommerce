@@ -25,31 +25,49 @@ const (
 type ErrorReason int32
 
 const (
-	ErrorReason_PAYMENT_NOT_FOUND          ErrorReason = 0
-	ErrorReason_PAYMENT_ALREADY_PAID       ErrorReason = 1
-	ErrorReason_PAYMENT_EXPIRED            ErrorReason = 2
-	ErrorReason_REFUND_FAILED              ErrorReason = 3
-	ErrorReason_PAYMENT_AMOUNT_MISMATCH    ErrorReason = 4
-	ErrorReason_THIRD_PARTY_PAYMENT_FAILED ErrorReason = 5
+	ErrorReason_PAYMENT_NOT_FOUND               ErrorReason = 0
+	ErrorReason_PAYMENT_ALREADY_PAID            ErrorReason = 1
+	ErrorReason_PAYMENT_EXPIRED                 ErrorReason = 2
+	ErrorReason_REFUND_FAILED                   ErrorReason = 3
+	ErrorReason_PAYMENT_AMOUNT_MISMATCH         ErrorReason = 4
+	ErrorReason_THIRD_PARTY_PAYMENT_FAILED      ErrorReason = 5
+	ErrorReason_ORDER_HAS_ACTIVE_PAYMENT        ErrorReason = 6
+	ErrorReason_ORDER_ALREADY_PAID              ErrorReason = 7
+	ErrorReason_ORDER_EXPIRED                   ErrorReason = 8
+	ErrorReason_PAYMENT_PREPAY_IN_PROGRESS      ErrorReason = 9
+	ErrorReason_PAYMENT_RECONCILIATION_REQUIRED ErrorReason = 10
+	ErrorReason_PAYMENT_STATE_CONFLICT          ErrorReason = 11
 )
 
 // Enum value maps for ErrorReason.
 var (
 	ErrorReason_name = map[int32]string{
-		0: "PAYMENT_NOT_FOUND",
-		1: "PAYMENT_ALREADY_PAID",
-		2: "PAYMENT_EXPIRED",
-		3: "REFUND_FAILED",
-		4: "PAYMENT_AMOUNT_MISMATCH",
-		5: "THIRD_PARTY_PAYMENT_FAILED",
+		0:  "PAYMENT_NOT_FOUND",
+		1:  "PAYMENT_ALREADY_PAID",
+		2:  "PAYMENT_EXPIRED",
+		3:  "REFUND_FAILED",
+		4:  "PAYMENT_AMOUNT_MISMATCH",
+		5:  "THIRD_PARTY_PAYMENT_FAILED",
+		6:  "ORDER_HAS_ACTIVE_PAYMENT",
+		7:  "ORDER_ALREADY_PAID",
+		8:  "ORDER_EXPIRED",
+		9:  "PAYMENT_PREPAY_IN_PROGRESS",
+		10: "PAYMENT_RECONCILIATION_REQUIRED",
+		11: "PAYMENT_STATE_CONFLICT",
 	}
 	ErrorReason_value = map[string]int32{
-		"PAYMENT_NOT_FOUND":          0,
-		"PAYMENT_ALREADY_PAID":       1,
-		"PAYMENT_EXPIRED":            2,
-		"REFUND_FAILED":              3,
-		"PAYMENT_AMOUNT_MISMATCH":    4,
-		"THIRD_PARTY_PAYMENT_FAILED": 5,
+		"PAYMENT_NOT_FOUND":               0,
+		"PAYMENT_ALREADY_PAID":            1,
+		"PAYMENT_EXPIRED":                 2,
+		"REFUND_FAILED":                   3,
+		"PAYMENT_AMOUNT_MISMATCH":         4,
+		"THIRD_PARTY_PAYMENT_FAILED":      5,
+		"ORDER_HAS_ACTIVE_PAYMENT":        6,
+		"ORDER_ALREADY_PAID":              7,
+		"ORDER_EXPIRED":                   8,
+		"PAYMENT_PREPAY_IN_PROGRESS":      9,
+		"PAYMENT_RECONCILIATION_REQUIRED": 10,
+		"PAYMENT_STATE_CONFLICT":          11,
 	}
 )
 
@@ -84,14 +102,21 @@ var File_payment_v1_payment_error_proto protoreflect.FileDescriptor
 
 const file_payment_v1_payment_error_proto_rawDesc = "" +
 	"\n" +
-	"\x1epayment/v1/payment_error.proto\x12\x0eapi.payment.v1\x1a\x13errors/errors.proto*\xcd\x01\n" +
+	"\x1epayment/v1/payment_error.proto\x12\x0eapi.payment.v1\x1a\x13errors/errors.proto*\x9b\x03\n" +
 	"\vErrorReason\x12\x1b\n" +
 	"\x11PAYMENT_NOT_FOUND\x10\x00\x1a\x04\xa8E\x94\x03\x12\x1e\n" +
 	"\x14PAYMENT_ALREADY_PAID\x10\x01\x1a\x04\xa8E\x99\x03\x12\x19\n" +
 	"\x0fPAYMENT_EXPIRED\x10\x02\x1a\x04\xa8E\x98\x03\x12\x17\n" +
 	"\rREFUND_FAILED\x10\x03\x1a\x04\xa8E\x90\x03\x12!\n" +
 	"\x17PAYMENT_AMOUNT_MISMATCH\x10\x04\x1a\x04\xa8E\x90\x03\x12$\n" +
-	"\x1aTHIRD_PARTY_PAYMENT_FAILED\x10\x05\x1a\x04\xa8E\xf6\x03\x1a\x04\xa0E\xf4\x03BM\n" +
+	"\x1aTHIRD_PARTY_PAYMENT_FAILED\x10\x05\x1a\x04\xa8E\xf6\x03\x12\"\n" +
+	"\x18ORDER_HAS_ACTIVE_PAYMENT\x10\x06\x1a\x04\xa8E\x99\x03\x12\x1c\n" +
+	"\x12ORDER_ALREADY_PAID\x10\a\x1a\x04\xa8E\x99\x03\x12\x17\n" +
+	"\rORDER_EXPIRED\x10\b\x1a\x04\xa8E\x99\x03\x12$\n" +
+	"\x1aPAYMENT_PREPAY_IN_PROGRESS\x10\t\x1a\x04\xa8E\x99\x03\x12)\n" +
+	"\x1fPAYMENT_RECONCILIATION_REQUIRED\x10\n" +
+	"\x1a\x04\xa8E\x99\x03\x12 \n" +
+	"\x16PAYMENT_STATE_CONFLICT\x10\v\x1a\x04\xa8E\x99\x03\x1a\x04\xa0E\xf4\x03BM\n" +
 	"\x0eapi.payment.v1P\x01Z9github.com/Dailiduzhou/simple-ecommerce/api/payment/v1;v1b\x06proto3"
 
 var (

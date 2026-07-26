@@ -25,11 +25,15 @@ const (
 type ErrorReason int32
 
 const (
-	ErrorReason_ORDER_NOT_FOUND         ErrorReason = 0
-	ErrorReason_ORDER_ALREADY_CANCELLED ErrorReason = 1
-	ErrorReason_ORDER_CANNOT_CANCEL     ErrorReason = 2
-	ErrorReason_INSUFFICIENT_STOCK      ErrorReason = 3
-	ErrorReason_ADDRESS_NOT_FOUND       ErrorReason = 4
+	ErrorReason_ORDER_NOT_FOUND          ErrorReason = 0
+	ErrorReason_ORDER_ALREADY_CANCELLED  ErrorReason = 1
+	ErrorReason_ORDER_CANNOT_CANCEL      ErrorReason = 2
+	ErrorReason_INSUFFICIENT_STOCK       ErrorReason = 3
+	ErrorReason_ADDRESS_NOT_FOUND        ErrorReason = 4
+	ErrorReason_IDEMPOTENCY_KEY_REQUIRED ErrorReason = 5
+	ErrorReason_IDEMPOTENCY_KEY_INVALID  ErrorReason = 6
+	ErrorReason_IDEMPOTENCY_KEY_CONFLICT ErrorReason = 7
+	ErrorReason_ORDER_EXPIRED            ErrorReason = 8
 )
 
 // Enum value maps for ErrorReason.
@@ -40,13 +44,21 @@ var (
 		2: "ORDER_CANNOT_CANCEL",
 		3: "INSUFFICIENT_STOCK",
 		4: "ADDRESS_NOT_FOUND",
+		5: "IDEMPOTENCY_KEY_REQUIRED",
+		6: "IDEMPOTENCY_KEY_INVALID",
+		7: "IDEMPOTENCY_KEY_CONFLICT",
+		8: "ORDER_EXPIRED",
 	}
 	ErrorReason_value = map[string]int32{
-		"ORDER_NOT_FOUND":         0,
-		"ORDER_ALREADY_CANCELLED": 1,
-		"ORDER_CANNOT_CANCEL":     2,
-		"INSUFFICIENT_STOCK":      3,
-		"ADDRESS_NOT_FOUND":       4,
+		"ORDER_NOT_FOUND":          0,
+		"ORDER_ALREADY_CANCELLED":  1,
+		"ORDER_CANNOT_CANCEL":      2,
+		"INSUFFICIENT_STOCK":       3,
+		"ADDRESS_NOT_FOUND":        4,
+		"IDEMPOTENCY_KEY_REQUIRED": 5,
+		"IDEMPOTENCY_KEY_INVALID":  6,
+		"IDEMPOTENCY_KEY_CONFLICT": 7,
+		"ORDER_EXPIRED":            8,
 	}
 )
 
@@ -81,13 +93,17 @@ var File_order_v1_order_error_proto protoreflect.FileDescriptor
 
 const file_order_v1_order_error_proto_rawDesc = "" +
 	"\n" +
-	"\x1aorder/v1/order_error.proto\x12\fapi.order.v1\x1a\x13errors/errors.proto*\xab\x01\n" +
+	"\x1aorder/v1/order_error.proto\x12\fapi.order.v1\x1a\x13errors/errors.proto*\xaf\x02\n" +
 	"\vErrorReason\x12\x19\n" +
 	"\x0fORDER_NOT_FOUND\x10\x00\x1a\x04\xa8E\x94\x03\x12!\n" +
 	"\x17ORDER_ALREADY_CANCELLED\x10\x01\x1a\x04\xa8E\x99\x03\x12\x1d\n" +
 	"\x13ORDER_CANNOT_CANCEL\x10\x02\x1a\x04\xa8E\x90\x03\x12\x1c\n" +
 	"\x12INSUFFICIENT_STOCK\x10\x03\x1a\x04\xa8E\x99\x03\x12\x1b\n" +
-	"\x11ADDRESS_NOT_FOUND\x10\x04\x1a\x04\xa8E\x94\x03\x1a\x04\xa0E\xf4\x03BI\n" +
+	"\x11ADDRESS_NOT_FOUND\x10\x04\x1a\x04\xa8E\x94\x03\x12\"\n" +
+	"\x18IDEMPOTENCY_KEY_REQUIRED\x10\x05\x1a\x04\xa8E\x90\x03\x12!\n" +
+	"\x17IDEMPOTENCY_KEY_INVALID\x10\x06\x1a\x04\xa8E\x90\x03\x12\"\n" +
+	"\x18IDEMPOTENCY_KEY_CONFLICT\x10\a\x1a\x04\xa8E\x99\x03\x12\x17\n" +
+	"\rORDER_EXPIRED\x10\b\x1a\x04\xa8E\x99\x03\x1a\x04\xa0E\xf4\x03BI\n" +
 	"\fapi.order.v1P\x01Z7github.com/Dailiduzhou/simple-ecommerce/api/order/v1;v1b\x06proto3"
 
 var (
