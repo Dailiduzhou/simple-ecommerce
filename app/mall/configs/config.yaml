@@ -30,6 +30,8 @@ trace:
   endpoint: http://otel-collector:4317
 
 payment:
+  order_payment_timeout: 30m
+  prepay_lease_duration: 30s
   alipay:
     enabled: false
     app_id: 9021000164669272

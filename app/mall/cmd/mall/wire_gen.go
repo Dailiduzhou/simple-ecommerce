@@ -54,14 +54,22 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	shippingAddressRepo := data.NewShippingAddressRepo(dataData, txManager, logger)
 	shippingAddressUsecase := biz.NewShippingAddressUsecase(shippingAddressRepo, auth, logger)
 	userService := service.NewUserService(authUsecase, userUsecase, shippingAddressUsecase, logger)
-	orderRepo := data.NewOrderRepo(dataData, txManager, logger)
+	riverInsertClient, err := data.NewRiverInsertClient(pool)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	paymentMQRepo := data.NewPaymentMQRepoForWire(riverInsertClient, logger)
+	orderRepo := data.NewOrderRepoWithJobs(dataData, txManager, paymentMQRepo, logger)
 	snowflakeGenerator, err := data.NewSnowflakeIDGenerator(snowflake)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	orderUsecase := biz.NewOrderUsecase(orderRepo, snowflakeGenerator, logger)
+	orderPolicy := data.NewOrderPolicy(payment)
+	orderUsecase := biz.NewConfiguredOrderUsecase(orderRepo, snowflakeGenerator, orderPolicy, logger)
 	orderService := service.NewOrderService(orderUsecase)
 	v, err := data.NewPaymentAdapters(payment, logger)
 	if err != nil {
@@ -70,9 +78,19 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 		return nil, nil, err
 	}
 	paymentGateway := biz.NewPaymentGateway(v)
-	paymentRepo := data.NewPaymentRepo(dataData, txManager, logger)
+	paymentRepo := data.NewPaymentRepoWithJobs(dataData, txManager, paymentMQRepo, logger)
+	paymentNotificationRepo := data.NewPaymentNotificationRepo(txManager, paymentMQRepo)
+	paymentJobUsecase := biz.NewPaymentJobUsecase(paymentMQRepo, logger)
+	paymentPolicy := data.NewPaymentPolicy(payment)
+	paymentUsecase := biz.NewConfiguredPaymentUsecase(paymentGateway, paymentRepo, paymentNotificationRepo, orderRepo, paymentJobUsecase, txManager, snowflakeGenerator, paymentPolicy, logger)
+	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase, logger)
+	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
+	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	checkPayWorker := job.NewCheckPayWorker(paymentGateway, paymentRepo, logger)
-	workers := job.NewWorkers(checkPayWorker, logger)
+	orderExpiryRepo := data.NewOrderExpiryRepo(dataData, txManager, paymentMQRepo, logger)
+	expireOrderWorker := job.NewExpireOrderWorker(orderExpiryRepo)
+	closePayWorker := job.NewClosePayWorker(paymentGateway, paymentRepo)
+	workers := job.NewWorkers(checkPayWorker, expireOrderWorker, closePayWorker, logger)
 	paymentRiverErrorHandler := data.NewPaymentRiverErrorHandler(pool, client, logger)
 	riverClient, err := data.NewRiverClient(pool, workers, paymentRiverErrorHandler)
 	if err != nil {
@@ -80,13 +98,6 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 		cleanup()
 		return nil, nil, err
 	}
-	paymentMQRepo := data.NewPaymentMQRepo(riverClient, logger)
-	paymentNotificationRepo := data.NewPaymentNotificationRepo(txManager, paymentMQRepo)
-	paymentJobUsecase := biz.NewPaymentJobUsecase(paymentMQRepo, logger)
-	paymentUsecase := biz.NewPaymentUsecase(paymentGateway, paymentRepo, paymentNotificationRepo, orderRepo, paymentJobUsecase, txManager, snowflakeGenerator, logger)
-	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase, logger)
-	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
-	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
 	riverServer := job.NewRiverServer(riverClient)
 	app := newApp(logger, grpcServer, httpServer, riverServer)
 	return app, func() {
