@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
@@ -25,8 +26,12 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *pb.CreateOrderReque
 	if req == nil {
 		return nil, errors.BadRequest("ORDER_REQUEST_REQUIRED", "request is required")
 	}
-	if err := requireResourceOwner(claims, req.UserId); err != nil {
-		return nil, err
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if idempotencyKey == "" {
+		return nil, biz.ErrIdempotencyKeyRequired
+	}
+	if len(idempotencyKey) < 8 || len(idempotencyKey) > 64 {
+		return nil, biz.ErrIdempotencyKeyInvalid
 	}
 	items := make([]biz.OrderItemInput, len(req.Items))
 	for i, item := range req.Items {
@@ -35,7 +40,9 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *pb.CreateOrderReque
 		}
 		items[i] = biz.OrderItemInput{ProductID: item.ProductId, Quantity: item.Quantity}
 	}
-	order, err := s.orderUc.CreateOrder(ctx, &biz.CreateOrderReq{UserID: claims.UserID, AddressID: req.AddressId, Items: items})
+	order, err := s.orderUc.CreateOrder(ctx, &biz.CreateOrderReq{
+		UserID: claims.UserID, AddressID: req.AddressId, Items: items, IdempotencyKey: idempotencyKey,
+	})
 	if err != nil {
 		return nil, err
 	}

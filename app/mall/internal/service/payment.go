@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -46,7 +47,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymen
 	if result == nil || result.Prepay == nil {
 		return nil, errors.InternalServer("PREPAY_RESULT_EMPTY", "prepay result is empty")
 	}
-	return &pb.CreatePaymentReply{ActionType: string(result.Prepay.Action.Type), Payload: string(result.Prepay.Action.Payload)}, nil
+	return &pb.CreatePaymentReply{
+		PaymentId: result.Payment.ID, OutTradeNo: result.Payment.OutTradeNo,
+		ActionType: string(result.Prepay.Action.Type), Payload: append([]byte(nil), result.Prepay.Action.Payload...),
+	}, nil
 }
 
 func (s *PaymentService) QueryPayment(ctx context.Context, req *pb.QueryPaymentReq) (*pb.QueryPaymentReply, error) {
@@ -158,7 +162,13 @@ func (s *PaymentService) HandlePaymentNotify(ctx khttp.Context) error {
 
 func (s *PaymentService) handleNotify(ctx khttp.Context, provider string) error {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	if !s.callbackLimiter.Allow(provider, time.Now()) {
+	checker, ok := s.paymentUc.(biz.PaymentNotificationProviderChecker)
+	if !ok || !checker.SupportsNotificationProvider(provider) {
+		s.log.WithContext(ctx).Warnw("msg", "unsupported payment callback provider", "provider", provider)
+		return s.writeProviderAck(ctx, provider, false)
+	}
+	limiterKey := callbackLimiterKey(provider, ctx.Request().RemoteAddr)
+	if !s.callbackLimiter.Allow(limiterKey, time.Now()) {
 		s.log.WithContext(ctx).Warnw("msg", "payment callback rate limited", "provider", provider)
 		return s.writeProviderAck(ctx, provider, false)
 	}
@@ -177,9 +187,11 @@ func (s *PaymentService) handleNotify(ctx khttp.Context, provider string) error 
 }
 
 type providerCallbackLimiter struct {
-	mu      sync.Mutex
-	limit   int
-	windows map[string]callbackWindow
+	mu                sync.Mutex
+	limit             int
+	maxKeys           int
+	lastCleanupMinute int64
+	windows           map[string]callbackWindow
 }
 type callbackWindow struct {
 	minute int64
@@ -187,23 +199,45 @@ type callbackWindow struct {
 }
 
 func newProviderCallbackLimiter(limit int) *providerCallbackLimiter {
-	return &providerCallbackLimiter{limit: limit, windows: make(map[string]callbackWindow)}
+	return &providerCallbackLimiter{limit: limit, maxKeys: 4096, windows: make(map[string]callbackWindow)}
 }
-func (l *providerCallbackLimiter) Allow(provider string, now time.Time) bool {
+func (l *providerCallbackLimiter) Allow(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	minute := now.Unix() / 60
-	window := l.windows[provider]
+	if l.lastCleanupMinute != minute {
+		for existingKey, window := range l.windows {
+			if window.minute < minute {
+				delete(l.windows, existingKey)
+			}
+		}
+		l.lastCleanupMinute = minute
+	}
+	window, exists := l.windows[key]
+	if !exists && len(l.windows) >= l.maxKeys {
+		return false
+	}
 	if window.minute != minute {
 		window = callbackWindow{minute: minute}
 	}
 	if window.count >= l.limit {
-		l.windows[provider] = window
+		l.windows[key] = window
 		return false
 	}
 	window.count++
-	l.windows[provider] = window
+	l.windows[key] = window
 	return true
+}
+
+func callbackLimiterKey(provider, remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		remoteAddr = host
+	}
+	if remoteAddr == "" {
+		remoteAddr = "unknown"
+	}
+	return provider + "|" + remoteAddr
 }
 
 func (s *PaymentService) writeProviderAck(ctx khttp.Context, provider string, success bool) error {
@@ -245,7 +279,12 @@ func toProtoPaymentInfo(payment *biz.PaymentDO) *pb.PaymentInfo {
 	if payment == nil {
 		return nil
 	}
-	result := &pb.PaymentInfo{Id: payment.ID, OrderId: payment.OrderID, UserId: payment.UserID, MerchantId: payment.MerchantID, AmountMinor: payment.Amount, Currency: payment.Currency, Status: payment.Status, Method: payment.Method, ThirdPartyTxId: payment.ThirdPartyTxID, OutTradeNo: payment.OutTradeNo, CreatedAt: timestamppb.New(payment.CreatedAt)}
+	result := &pb.PaymentInfo{
+		Id: payment.ID, OrderId: payment.OrderID, UserId: payment.UserID, MerchantId: payment.MerchantID,
+		AmountMinor: payment.Amount, Currency: payment.Currency, Status: payment.Status, Method: payment.Method,
+		ThirdPartyTxId: payment.ThirdPartyTxID, OutTradeNo: payment.OutTradeNo, CreatedAt: timestamppb.New(payment.CreatedAt),
+		ReconciliationStatus: payment.ReconciliationStatus, ReconciliationReason: payment.ReconciliationReason,
+	}
 	if payment.PaidAt != nil {
 		result.PaidAt = timestamppb.New(*payment.PaidAt)
 	}

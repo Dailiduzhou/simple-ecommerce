@@ -35,7 +35,7 @@ func TestOrderService_AllOperationsUseAuthenticatedOwner(t *testing.T) {
 	uc := &orderServiceUsecase{order: &biz.Order{ID: 1, UserID: 42, TotalAmount: 10000, Currency: "CNY", Items: []biz.OrderItem{{ProductID: 3, Quantity: 2, UnitPrice: 5000}}}}
 	service := NewOrderService(uc)
 	ctx := authenticatedPaymentContext(42, "user")
-	created, err := service.CreateOrder(ctx, &pb.CreateOrderRequest{UserId: 42, AddressId: 9, Items: []*pb.OrderItemInput{{ProductId: 3, Quantity: 2}}})
+	created, err := service.CreateOrder(ctx, &pb.CreateOrderRequest{AddressId: 9, IdempotencyKey: "checkout-42", Items: []*pb.OrderItemInput{{ProductId: 3, Quantity: 2}}})
 	require.NoError(t, err)
 	require.Equal(t, "100.00", created.TotalAmount)
 	require.Equal(t, int64(42), uc.createReq.UserID)
@@ -49,8 +49,8 @@ func TestOrderService_AllOperationsUseAuthenticatedOwner(t *testing.T) {
 	require.Equal(t, int64(42), uc.cancelledUser)
 }
 
-func TestOrderService_RejectsBodyUserMismatch(t *testing.T) {
+func TestOrderService_RequiresIdempotencyKey(t *testing.T) {
 	service := NewOrderService(&orderServiceUsecase{order: &biz.Order{}})
-	_, err := service.CreateOrder(authenticatedPaymentContext(42, "user"), &pb.CreateOrderRequest{UserId: 7, AddressId: 1, Items: []*pb.OrderItemInput{{ProductId: 1, Quantity: 1}}})
-	require.True(t, errors.IsForbidden(err))
+	_, err := service.CreateOrder(authenticatedPaymentContext(42, "user"), &pb.CreateOrderRequest{AddressId: 1, Items: []*pb.OrderItemInput{{ProductId: 1, Quantity: 1}}})
+	require.True(t, errors.IsBadRequest(err))
 }
