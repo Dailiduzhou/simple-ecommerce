@@ -10,7 +10,7 @@ import (
 	"github.com/riverqueue/river"
 )
 
-var ProviderSet = wire.NewSet(NewRiverServer, NewWorkers, NewCheckPayWorker)
+var ProviderSet = wire.NewSet(NewRiverServer, NewWorkers, NewCheckPayWorker, NewExpireOrderWorker, NewClosePayWorker)
 
 type RiverServer struct {
 	client *river.Client[pgx.Tx]
@@ -28,9 +28,11 @@ func (s *RiverServer) Stop(ctx context.Context) error {
 	return s.client.Stop(ctx)
 }
 
-func NewWorkers(checkPayWorker *CheckPayWorker, logger log.Logger) *river.Workers {
+func NewWorkers(checkPayWorker *CheckPayWorker, expireOrderWorker *ExpireOrderWorker, closePayWorker *ClosePayWorker, logger log.Logger) *river.Workers {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, checkPayWorker)
-	log.NewHelper(logger).Infof("registered river worker kind=%s", biz.CheckPayJobKind)
+	river.AddWorker(workers, expireOrderWorker)
+	river.AddWorker(workers, closePayWorker)
+	log.NewHelper(logger).Infof("registered river worker kinds=%s,%s,%s", biz.CheckPayJobKind, biz.ExpireOrderJobKind, biz.ClosePayJobKind)
 	return workers
 }
