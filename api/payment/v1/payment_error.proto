@@ -17,4 +17,10 @@ enum ErrorReason {
   REFUND_FAILED                  = 3 [(errors.code) = 400];
   PAYMENT_AMOUNT_MISMATCH        = 4 [(errors.code) = 400];
   THIRD_PARTY_PAYMENT_FAILED     = 5 [(errors.code) = 502];
+  ORDER_HAS_ACTIVE_PAYMENT       = 6 [(errors.code) = 409];
+  ORDER_ALREADY_PAID             = 7 [(errors.code) = 409];
+  ORDER_EXPIRED                  = 8 [(errors.code) = 409];
+  PAYMENT_PREPAY_IN_PROGRESS     = 9 [(errors.code) = 409];
+  PAYMENT_RECONCILIATION_REQUIRED = 10 [(errors.code) = 409];
+  PAYMENT_STATE_CONFLICT         = 11 [(errors.code) = 409];
 }

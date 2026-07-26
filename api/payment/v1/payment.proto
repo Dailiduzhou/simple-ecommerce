@@ -70,14 +70,12 @@ service Payment {
 //     * WECHAT_JSAPI 必须传 "openid"。
 //     * ALIPAY_WAP 可传 "return_url"。
 // - description: 可选;省略时服务端从订单号生成安全描述。
-// - total_amount: 已废弃且服务端忽略，金额只从订单读取。
 message CreatePaymentReq {
   string order_no = 1;
   string method = 2;
   string client_ip = 3;
   map<string, string> extra_params = 4;
   string description = 5;
-  int32 total_amount = 6 [deprecated = true];
 }
 
 // 统一创建支付响应。
@@ -87,8 +85,10 @@ message CreatePaymentReq {
 //     * "invoke"   — 调用客户端支付 SDK/API。
 // - payload: 渠道真实的支付参数,序列化为 JSON 字符串,字段契约见 service 注释。
 message CreatePaymentReply {
-  string action_type = 1;
-  string payload = 2;
+  int64 payment_id = 1;
+  string out_trade_no = 2;
+  string action_type = 3;
+  bytes payload = 4;
 }
 
 message QueryPaymentReq {
@@ -124,6 +124,8 @@ message PaymentInfo {
   google.protobuf.Timestamp created_at = 10;
   string out_trade_no = 11;
   string currency = 12;
+  string reconciliation_status = 13;
+  string reconciliation_reason = 14;
 }
 
 message GetPaymentRequest {

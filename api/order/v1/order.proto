@@ -57,9 +57,9 @@ message OrderInfo {
 }
 
 message CreateOrderRequest {
-  int64 user_id    = 1;
-  int64 address_id = 2;
-  repeated OrderItemInput items = 3;
+  int64 address_id = 1;
+  repeated OrderItemInput items = 2;
+  string idempotency_key = 3;
 }
 message OrderItemInput {
   int64 product_id = 1;

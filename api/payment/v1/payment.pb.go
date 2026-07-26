@@ -96,16 +96,13 @@ func (TradeState) EnumDescriptor() ([]byte, []int) {
 //   - ALIPAY_WAP 可传 "return_url"。
 //
 // - description: 可选;省略时服务端从订单号生成安全描述。
-// - total_amount: 已废弃且服务端忽略，金额只从订单读取。
 type CreatePaymentReq struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	OrderNo     string                 `protobuf:"bytes,1,opt,name=order_no,json=orderNo,proto3" json:"order_no,omitempty"`
-	Method      string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	ClientIp    string                 `protobuf:"bytes,3,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
-	ExtraParams map[string]string      `protobuf:"bytes,4,rep,name=extra_params,json=extraParams,proto3" json:"extra_params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Description string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
-	// Deprecated: Marked as deprecated in payment/v1/payment.proto.
-	TotalAmount   int32 `protobuf:"varint,6,opt,name=total_amount,json=totalAmount,proto3" json:"total_amount,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderNo       string                 `protobuf:"bytes,1,opt,name=order_no,json=orderNo,proto3" json:"order_no,omitempty"`
+	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
+	ClientIp      string                 `protobuf:"bytes,3,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	ExtraParams   map[string]string      `protobuf:"bytes,4,rep,name=extra_params,json=extraParams,proto3" json:"extra_params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -175,14 +172,6 @@ func (x *CreatePaymentReq) GetDescription() string {
 	return ""
 }
 
-// Deprecated: Marked as deprecated in payment/v1/payment.proto.
-func (x *CreatePaymentReq) GetTotalAmount() int32 {
-	if x != nil {
-		return x.TotalAmount
-	}
-	return 0
-}
-
 // 统一创建支付响应。
 // - action_type: 告诉前端该怎么处理 payload。
 //   - "form"     — 提交表单。
@@ -192,8 +181,10 @@ func (x *CreatePaymentReq) GetTotalAmount() int32 {
 // - payload: 渠道真实的支付参数,序列化为 JSON 字符串,字段契约见 service 注释。
 type CreatePaymentReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActionType    string                 `protobuf:"bytes,1,opt,name=action_type,json=actionType,proto3" json:"action_type,omitempty"`
-	Payload       string                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+	PaymentId     int64                  `protobuf:"varint,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	OutTradeNo    string                 `protobuf:"bytes,2,opt,name=out_trade_no,json=outTradeNo,proto3" json:"out_trade_no,omitempty"`
+	ActionType    string                 `protobuf:"bytes,3,opt,name=action_type,json=actionType,proto3" json:"action_type,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -228,6 +219,20 @@ func (*CreatePaymentReply) Descriptor() ([]byte, []int) {
 	return file_payment_v1_payment_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *CreatePaymentReply) GetPaymentId() int64 {
+	if x != nil {
+		return x.PaymentId
+	}
+	return 0
+}
+
+func (x *CreatePaymentReply) GetOutTradeNo() string {
+	if x != nil {
+		return x.OutTradeNo
+	}
+	return ""
+}
+
 func (x *CreatePaymentReply) GetActionType() string {
 	if x != nil {
 		return x.ActionType
@@ -235,11 +240,11 @@ func (x *CreatePaymentReply) GetActionType() string {
 	return ""
 }
 
-func (x *CreatePaymentReply) GetPayload() string {
+func (x *CreatePaymentReply) GetPayload() []byte {
 	if x != nil {
 		return x.Payload
 	}
-	return ""
+	return nil
 }
 
 type QueryPaymentReq struct {
@@ -451,21 +456,23 @@ func (x *ClosePaymentReply) GetSuccess() bool {
 }
 
 type PaymentInfo struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	OrderId        int64                  `protobuf:"varint,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	UserId         int64                  `protobuf:"varint,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	MerchantId     int64                  `protobuf:"varint,4,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"`
-	AmountMinor    int64                  `protobuf:"varint,5,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`
-	Status         string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	Method         string                 `protobuf:"bytes,7,opt,name=method,proto3" json:"method,omitempty"`
-	ThirdPartyTxId string                 `protobuf:"bytes,8,opt,name=third_party_tx_id,json=thirdPartyTxId,proto3" json:"third_party_tx_id,omitempty"`
-	PaidAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=paid_at,json=paidAt,proto3" json:"paid_at,omitempty"`
-	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	OutTradeNo     string                 `protobuf:"bytes,11,opt,name=out_trade_no,json=outTradeNo,proto3" json:"out_trade_no,omitempty"`
-	Currency       string                 `protobuf:"bytes,12,opt,name=currency,proto3" json:"currency,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Id                   int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrderId              int64                  `protobuf:"varint,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	UserId               int64                  `protobuf:"varint,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	MerchantId           int64                  `protobuf:"varint,4,opt,name=merchant_id,json=merchantId,proto3" json:"merchant_id,omitempty"`
+	AmountMinor          int64                  `protobuf:"varint,5,opt,name=amount_minor,json=amountMinor,proto3" json:"amount_minor,omitempty"`
+	Status               string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	Method               string                 `protobuf:"bytes,7,opt,name=method,proto3" json:"method,omitempty"`
+	ThirdPartyTxId       string                 `protobuf:"bytes,8,opt,name=third_party_tx_id,json=thirdPartyTxId,proto3" json:"third_party_tx_id,omitempty"`
+	PaidAt               *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=paid_at,json=paidAt,proto3" json:"paid_at,omitempty"`
+	CreatedAt            *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	OutTradeNo           string                 `protobuf:"bytes,11,opt,name=out_trade_no,json=outTradeNo,proto3" json:"out_trade_no,omitempty"`
+	Currency             string                 `protobuf:"bytes,12,opt,name=currency,proto3" json:"currency,omitempty"`
+	ReconciliationStatus string                 `protobuf:"bytes,13,opt,name=reconciliation_status,json=reconciliationStatus,proto3" json:"reconciliation_status,omitempty"`
+	ReconciliationReason string                 `protobuf:"bytes,14,opt,name=reconciliation_reason,json=reconciliationReason,proto3" json:"reconciliation_reason,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *PaymentInfo) Reset() {
@@ -578,6 +585,20 @@ func (x *PaymentInfo) GetOutTradeNo() string {
 func (x *PaymentInfo) GetCurrency() string {
 	if x != nil {
 		return x.Currency
+	}
+	return ""
+}
+
+func (x *PaymentInfo) GetReconciliationStatus() string {
+	if x != nil {
+		return x.ReconciliationStatus
+	}
+	return ""
+}
+
+func (x *PaymentInfo) GetReconciliationReason() string {
+	if x != nil {
+		return x.ReconciliationReason
 	}
 	return ""
 }
@@ -1074,21 +1095,24 @@ var File_payment_v1_payment_proto protoreflect.FileDescriptor
 
 const file_payment_v1_payment_proto_rawDesc = "" +
 	"\n" +
-	"\x18payment/v1/payment.proto\x12\x0eapi.payment.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc1\x02\n" +
+	"\x18payment/v1/payment.proto\x12\x0eapi.payment.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9a\x02\n" +
 	"\x10CreatePaymentReq\x12\x19\n" +
 	"\border_no\x18\x01 \x01(\tR\aorderNo\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x1b\n" +
 	"\tclient_ip\x18\x03 \x01(\tR\bclientIp\x12T\n" +
 	"\fextra_params\x18\x04 \x03(\v21.api.payment.v1.CreatePaymentReq.ExtraParamsEntryR\vextraParams\x12 \n" +
-	"\vdescription\x18\x05 \x01(\tR\vdescription\x12%\n" +
-	"\ftotal_amount\x18\x06 \x01(\x05B\x02\x18\x01R\vtotalAmount\x1a>\n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription\x1a>\n" +
 	"\x10ExtraParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"O\n" +
-	"\x12CreatePaymentReply\x12\x1f\n" +
-	"\vaction_type\x18\x01 \x01(\tR\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x90\x01\n" +
+	"\x12CreatePaymentReply\x12\x1d\n" +
+	"\n" +
+	"payment_id\x18\x01 \x01(\x03R\tpaymentId\x12 \n" +
+	"\fout_trade_no\x18\x02 \x01(\tR\n" +
+	"outTradeNo\x12\x1f\n" +
+	"\vaction_type\x18\x03 \x01(\tR\n" +
 	"actionType\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\tR\apayload\"9\n" +
+	"\apayload\x18\x04 \x01(\fR\apayload\"9\n" +
 	"\x0fQueryPaymentReq\x12 \n" +
 	"\fout_trade_no\x18\x01 \x01(\tR\n" +
 	"outTradeNoJ\x04\b\x02\x10\x03\"\xd8\x01\n" +
@@ -1104,7 +1128,7 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\fout_trade_no\x18\x01 \x01(\tR\n" +
 	"outTradeNoJ\x04\b\x02\x10\x03\"-\n" +
 	"\x11ClosePaymentReply\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x9e\x03\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x88\x04\n" +
 	"\vPaymentInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\x03R\aorderId\x12\x17\n" +
@@ -1121,7 +1145,9 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12 \n" +
 	"\fout_trade_no\x18\v \x01(\tR\n" +
 	"outTradeNo\x12\x1a\n" +
-	"\bcurrency\x18\f \x01(\tR\bcurrency\"#\n" +
+	"\bcurrency\x18\f \x01(\tR\bcurrency\x123\n" +
+	"\x15reconciliation_status\x18\r \x01(\tR\x14reconciliationStatus\x123\n" +
+	"\x15reconciliation_reason\x18\x0e \x01(\tR\x14reconciliationReason\"#\n" +
 	"\x11GetPaymentRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"5\n" +
 	"\x18GetPaymentByOrderRequest\x12\x19\n" +

@@ -16,4 +16,8 @@ enum ErrorReason {
   ORDER_CANNOT_CANCEL      = 2 [(errors.code) = 400];
   INSUFFICIENT_STOCK       = 3 [(errors.code) = 409];
   ADDRESS_NOT_FOUND        = 4 [(errors.code) = 404];
+  IDEMPOTENCY_KEY_REQUIRED = 5 [(errors.code) = 400];
+  IDEMPOTENCY_KEY_INVALID  = 6 [(errors.code) = 400];
+  IDEMPOTENCY_KEY_CONFLICT = 7 [(errors.code) = 409];
+  ORDER_EXPIRED            = 8 [(errors.code) = 409];
 }
