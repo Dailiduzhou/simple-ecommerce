@@ -2,7 +2,12 @@ package biz
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"math"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-kratos/kratos/v2/errors"
@@ -10,7 +15,6 @@ import (
 )
 
 const (
-	OrderStatusCreating       = "creating"
 	OrderStatusPendingPayment = "pending_payment"
 	OrderStatusPaid           = "paid"
 	OrderStatusShipped        = "shipped"
@@ -21,28 +25,34 @@ const (
 )
 
 var (
-	ErrOrderNotFound         = errors.NotFound("ORDER_NOT_FOUND", "order not found")
-	ErrAddressNotFound       = errors.NotFound("ADDRESS_NOT_FOUND", "shipping address not found")
-	ErrProductNotFound       = errors.NotFound("PRODUCT_NOT_FOUND", "product not found")
-	ErrInsufficientStock     = errors.Conflict("INSUFFICIENT_STOCK", "insufficient product stock")
-	ErrOrderCannotCancel     = errors.Conflict("ORDER_CANNOT_CANCEL", "order cannot be cancelled in its current state")
-	ErrOrderHasActivePayment = errors.Conflict("ORDER_HAS_ACTIVE_PAYMENT", "close the active payment before cancelling the order")
-	ErrOrderAlreadyPaid      = errors.Conflict("ORDER_ALREADY_PAID", "paid order must use the refund flow")
-	ErrOrderInputInvalid     = errors.BadRequest("ORDER_INPUT_INVALID", "order items are invalid")
+	ErrOrderNotFound          = errors.NotFound("ORDER_NOT_FOUND", "order not found")
+	ErrAddressNotFound        = errors.NotFound("ADDRESS_NOT_FOUND", "shipping address not found")
+	ErrProductNotFound        = errors.NotFound("PRODUCT_NOT_FOUND", "product not found")
+	ErrInsufficientStock      = errors.Conflict("INSUFFICIENT_STOCK", "insufficient product stock")
+	ErrOrderCannotCancel      = errors.Conflict("ORDER_CANNOT_CANCEL", "order cannot be cancelled in its current state")
+	ErrOrderHasActivePayment  = errors.Conflict("ORDER_HAS_ACTIVE_PAYMENT", "close the active payment before cancelling the order")
+	ErrOrderAlreadyPaid       = errors.Conflict("ORDER_ALREADY_PAID", "paid order must use the refund flow")
+	ErrOrderInputInvalid      = errors.BadRequest("ORDER_INPUT_INVALID", "order items are invalid")
+	ErrIdempotencyKeyRequired = errors.BadRequest("IDEMPOTENCY_KEY_REQUIRED", "idempotency_key is required")
+	ErrIdempotencyKeyInvalid  = errors.BadRequest("IDEMPOTENCY_KEY_INVALID", "idempotency_key must be 8 to 64 characters")
+	ErrIdempotencyKeyConflict = errors.Conflict("IDEMPOTENCY_KEY_CONFLICT", "idempotency_key was already used for a different order request")
 )
 
 type Order struct {
-	ID          int64
-	UserID      int64
-	AddressID   int64
-	TotalAmount int64 // minor units
-	Currency    string
-	Status      string
-	IsCompleted bool
-	Items       []OrderItem
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	OutTradeNo  string
+	ID             int64
+	UserID         int64
+	AddressID      int64
+	TotalAmount    int64 // minor units
+	Currency       string
+	Status         string
+	IsCompleted    bool
+	Items          []OrderItem
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	OutTradeNo     string
+	IdempotencyKey string
+	RequestHash    string
+	ExpiresAt      time.Time
 }
 
 type OrderItem struct {
@@ -55,16 +65,31 @@ type OrderItem struct {
 }
 
 type OrderItemInput struct {
-	ProductID int64
-	Quantity  int32
+	ProductID int64 `json:"product_id"`
+	Quantity  int32 `json:"quantity"`
 }
 
 type CreateOrderArgs struct {
-	UserID     int64
-	AddressID  int64
-	OutTradeNo string
-	Currency   string
-	Items      []OrderItemInput
+	UserID         int64
+	AddressID      int64
+	OutTradeNo     string
+	Currency       string
+	Items          []OrderItemInput
+	IdempotencyKey string
+	RequestHash    string
+	ExpiresAt      time.Time
+}
+
+const ExpireOrderJobKind = "expire_order"
+
+type ExpireOrderArgs struct {
+	OrderID int64 `json:"order_id" river:"unique"`
+}
+
+func (ExpireOrderArgs) Kind() string { return ExpireOrderJobKind }
+
+type OrderMQRepo interface {
+	EnqueueExpireOrderTx(context.Context, ExpireOrderArgs, time.Time) (*MQJob, error)
 }
 
 type OrderRepo interface {
@@ -87,19 +112,32 @@ type OrderUsecase interface {
 }
 
 type orderUsecase struct {
-	repo  OrderRepo
-	idGen IDGenerator
-	log   *log.Helper
+	repo   OrderRepo
+	idGen  IDGenerator
+	policy OrderPolicy
+	log    *log.Helper
+}
+
+type OrderPolicy struct {
+	PaymentTimeout time.Duration
 }
 
 func NewOrderUsecase(repo OrderRepo, idGen IDGenerator, logger log.Logger) OrderUsecase {
-	return &orderUsecase{repo: repo, idGen: idGen, log: log.NewHelper(logger)}
+	return NewConfiguredOrderUsecase(repo, idGen, OrderPolicy{}, logger)
+}
+
+func NewConfiguredOrderUsecase(repo OrderRepo, idGen IDGenerator, policy OrderPolicy, logger log.Logger) OrderUsecase {
+	if policy.PaymentTimeout <= 0 {
+		policy.PaymentTimeout = 30 * time.Minute
+	}
+	return &orderUsecase{repo: repo, idGen: idGen, policy: policy, log: log.NewHelper(logger)}
 }
 
 type CreateOrderReq struct {
-	UserID    int64
-	AddressID int64
-	Items     []OrderItemInput
+	UserID         int64
+	AddressID      int64
+	Items          []OrderItemInput
+	IdempotencyKey string
 }
 
 type ListOrdersReq struct {
@@ -113,8 +151,16 @@ func (uc *orderUsecase) CreateOrder(ctx context.Context, req *CreateOrderReq) (*
 	if req == nil || req.UserID <= 0 || req.AddressID <= 0 || len(req.Items) == 0 {
 		return nil, ErrOrderInputInvalid
 	}
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	if req.IdempotencyKey == "" {
+		return nil, ErrIdempotencyKeyRequired
+	}
+	if len(req.IdempotencyKey) < 8 || len(req.IdempotencyKey) > 64 {
+		return nil, ErrIdempotencyKeyInvalid
+	}
+	items := append([]OrderItemInput(nil), req.Items...)
 	seen := make(map[int64]struct{}, len(req.Items))
-	for _, item := range req.Items {
+	for _, item := range items {
 		if item.ProductID <= 0 || item.Quantity <= 0 {
 			return nil, ErrOrderInputInvalid
 		}
@@ -123,18 +169,38 @@ func (uc *orderUsecase) CreateOrder(ctx context.Context, req *CreateOrderReq) (*
 		}
 		seen[item.ProductID] = struct{}{}
 	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ProductID < items[j].ProductID })
 	if uc.idGen == nil {
 		return nil, errors.InternalServer("ORDER_ID_GENERATOR_MISSING", "order number generator is unavailable")
+	}
+	requestHash, err := hashOrderRequest(req.UserID, req.AddressID, items)
+	if err != nil {
+		return nil, errors.InternalServer("ORDER_REQUEST_HASH_FAILED", "failed to hash order request")
 	}
 	orderNo := uc.idGen.GenerateString()
 	order, err := uc.repo.CreateOrder(ctx, CreateOrderArgs{
 		UserID: req.UserID, AddressID: req.AddressID, OutTradeNo: orderNo,
-		Currency: DefaultCurrency, Items: req.Items,
+		Currency: DefaultCurrency, Items: items, IdempotencyKey: req.IdempotencyKey,
+		RequestHash: requestHash, ExpiresAt: time.Now().UTC().Add(uc.policy.PaymentTimeout),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &order, nil
+}
+
+func hashOrderRequest(userID, addressID int64, items []OrderItemInput) (string, error) {
+	normalized := struct {
+		UserID    int64            `json:"user_id"`
+		AddressID int64            `json:"address_id"`
+		Items     []OrderItemInput `json:"items"`
+	}{UserID: userID, AddressID: addressID, Items: items}
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 func (uc *orderUsecase) GetOrder(ctx context.Context, id, userID int64) (*Order, error) {

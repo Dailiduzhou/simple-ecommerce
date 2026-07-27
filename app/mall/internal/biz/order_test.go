@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/stretchr/testify/require"
@@ -12,6 +13,24 @@ type orderUsecaseRepo struct {
 	created    CreateOrderArgs
 	order      Order
 	cancelUser int64
+}
+
+func TestHashOrderRequest_NormalizesItemOrder(t *testing.T) {
+	first := []OrderItemInput{{ProductID: 9, Quantity: 1}, {ProductID: 3, Quantity: 2}}
+	second := []OrderItemInput{{ProductID: 3, Quantity: 2}, {ProductID: 9, Quantity: 1}}
+	uc := NewConfiguredOrderUsecase(&orderUsecaseRepo{}, paymentTestID{}, OrderPolicy{PaymentTimeout: time.Minute}, log.DefaultLogger)
+	_, err := uc.CreateOrder(context.Background(), &CreateOrderReq{
+		UserID: 1, AddressID: 2, IdempotencyKey: "checkout-normalized", Items: first,
+	})
+	require.NoError(t, err)
+	repo := uc.(*orderUsecase).repo.(*orderUsecaseRepo)
+	firstHash := repo.created.RequestHash
+	_, err = uc.CreateOrder(context.Background(), &CreateOrderReq{
+		UserID: 1, AddressID: 2, IdempotencyKey: "checkout-normalized", Items: second,
+	})
+	require.NoError(t, err)
+	require.Equal(t, firstHash, repo.created.RequestHash)
+	require.Equal(t, int64(3), repo.created.Items[0].ProductID)
 }
 
 func (r *orderUsecaseRepo) CreateOrder(_ context.Context, args CreateOrderArgs) (Order, error) {
@@ -42,7 +61,7 @@ func (r *orderUsecaseRepo) CancelOrderByUser(_ context.Context, _ int64, userID 
 func TestOrderUsecase_CreateUsesItemsAndServerOrderNumber(t *testing.T) {
 	repo := &orderUsecaseRepo{}
 	uc := NewOrderUsecase(repo, paymentTestID{}, log.DefaultLogger)
-	order, err := uc.CreateOrder(context.Background(), &CreateOrderReq{UserID: 42, AddressID: 9, Items: []OrderItemInput{{ProductID: 3, Quantity: 2}}})
+	order, err := uc.CreateOrder(context.Background(), &CreateOrderReq{UserID: 42, AddressID: 9, IdempotencyKey: "checkout-42", Items: []OrderItemInput{{ProductID: 3, Quantity: 2}}})
 	require.NoError(t, err)
 	require.Equal(t, int64(42), repo.created.UserID)
 	require.Equal(t, "payment_99", repo.created.OutTradeNo)
