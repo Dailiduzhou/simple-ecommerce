@@ -36,6 +36,36 @@ func (m *MockQuerier) EXPECT() *MockQuerierMockRecorder {
 	return m.recorder
 }
 
+// BeginPaymentNotificationProcessing mocks base method.
+func (m *MockQuerier) BeginPaymentNotificationProcessing(ctx context.Context, id int64) (db.PaymentNotification, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BeginPaymentNotificationProcessing", ctx, id)
+	ret0, _ := ret[0].(db.PaymentNotification)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BeginPaymentNotificationProcessing indicates an expected call of BeginPaymentNotificationProcessing.
+func (mr *MockQuerierMockRecorder) BeginPaymentNotificationProcessing(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginPaymentNotificationProcessing", reflect.TypeOf((*MockQuerier)(nil).BeginPaymentNotificationProcessing), ctx, id)
+}
+
+// ClaimPaymentPrepay mocks base method.
+func (m *MockQuerier) ClaimPaymentPrepay(ctx context.Context, arg db.ClaimPaymentPrepayParams) (db.Payment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimPaymentPrepay", ctx, arg)
+	ret0, _ := ret[0].(db.Payment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ClaimPaymentPrepay indicates an expected call of ClaimPaymentPrepay.
+func (mr *MockQuerierMockRecorder) ClaimPaymentPrepay(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimPaymentPrepay", reflect.TypeOf((*MockQuerier)(nil).ClaimPaymentPrepay), ctx, arg)
+}
+
 // ClearDefaultShippingAddress mocks base method.
 func (m *MockQuerier) ClearDefaultShippingAddress(ctx context.Context, userID int64) error {
 	m.ctrl.T.Helper()
@@ -287,6 +317,51 @@ func (mr *MockQuerierMockRecorder) DeleteUser(ctx, id interface{}) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUser", reflect.TypeOf((*MockQuerier)(nil).DeleteUser), ctx, id)
 }
 
+// FailPaymentPrepay mocks base method.
+func (m *MockQuerier) FailPaymentPrepay(ctx context.Context, arg db.FailPaymentPrepayParams) (db.Payment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FailPaymentPrepay", ctx, arg)
+	ret0, _ := ret[0].(db.Payment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FailPaymentPrepay indicates an expected call of FailPaymentPrepay.
+func (mr *MockQuerierMockRecorder) FailPaymentPrepay(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailPaymentPrepay", reflect.TypeOf((*MockQuerier)(nil).FailPaymentPrepay), ctx, arg)
+}
+
+// FinalizePaymentPrepay mocks base method.
+func (m *MockQuerier) FinalizePaymentPrepay(ctx context.Context, arg db.FinalizePaymentPrepayParams) (db.Payment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FinalizePaymentPrepay", ctx, arg)
+	ret0, _ := ret[0].(db.Payment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FinalizePaymentPrepay indicates an expected call of FinalizePaymentPrepay.
+func (mr *MockQuerierMockRecorder) FinalizePaymentPrepay(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FinalizePaymentPrepay", reflect.TypeOf((*MockQuerier)(nil).FinalizePaymentPrepay), ctx, arg)
+}
+
+// GetActivePaymentByOrder mocks base method.
+func (m *MockQuerier) GetActivePaymentByOrder(ctx context.Context, orderID int64) (db.Payment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetActivePaymentByOrder", ctx, orderID)
+	ret0, _ := ret[0].(db.Payment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetActivePaymentByOrder indicates an expected call of GetActivePaymentByOrder.
+func (mr *MockQuerierMockRecorder) GetActivePaymentByOrder(ctx, orderID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActivePaymentByOrder", reflect.TypeOf((*MockQuerier)(nil).GetActivePaymentByOrder), ctx, orderID)
+}
+
 // GetActivePaymentByOrderChannel mocks base method.
 func (m *MockQuerier) GetActivePaymentByOrderChannel(ctx context.Context, arg db.GetActivePaymentByOrderChannelParams) (db.Payment, error) {
 	m.ctrl.T.Helper()
@@ -378,7 +453,7 @@ func (mr *MockQuerierMockRecorder) GetOrder(ctx, id interface{}) *gomock.Call {
 }
 
 // GetOrderByOrderNo mocks base method.
-func (m *MockQuerier) GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text) (db.Order, error) {
+func (m *MockQuerier) GetOrderByOrderNo(ctx context.Context, outTradeNo string) (db.Order, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetOrderByOrderNo", ctx, outTradeNo)
 	ret0, _ := ret[0].(db.Order)
@@ -422,6 +497,21 @@ func (mr *MockQuerierMockRecorder) GetOrderByUserForUpdate(ctx, arg interface{})
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderByUserForUpdate", reflect.TypeOf((*MockQuerier)(nil).GetOrderByUserForUpdate), ctx, arg)
 }
 
+// GetOrderByUserIdempotency mocks base method.
+func (m *MockQuerier) GetOrderByUserIdempotency(ctx context.Context, arg db.GetOrderByUserIdempotencyParams) (db.Order, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOrderByUserIdempotency", ctx, arg)
+	ret0, _ := ret[0].(db.Order)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderByUserIdempotency indicates an expected call of GetOrderByUserIdempotency.
+func (mr *MockQuerierMockRecorder) GetOrderByUserIdempotency(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderByUserIdempotency", reflect.TypeOf((*MockQuerier)(nil).GetOrderByUserIdempotency), ctx, arg)
+}
+
 // GetOrderForUpdate mocks base method.
 func (m *MockQuerier) GetOrderForUpdate(ctx context.Context, id int64) (db.Order, error) {
 	m.ctrl.T.Helper()
@@ -453,7 +543,7 @@ func (mr *MockQuerierMockRecorder) GetPayment(ctx, id interface{}) *gomock.Call 
 }
 
 // GetPaymentByOutTradeNo mocks base method.
-func (m *MockQuerier) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo pgtype.Text) (db.Payment, error) {
+func (m *MockQuerier) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (db.Payment, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetPaymentByOutTradeNo", ctx, outTradeNo)
 	ret0, _ := ret[0].(db.Payment)
@@ -510,6 +600,36 @@ func (m *MockQuerier) GetPaymentNotification(ctx context.Context, id int64) (db.
 func (mr *MockQuerierMockRecorder) GetPaymentNotification(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPaymentNotification", reflect.TypeOf((*MockQuerier)(nil).GetPaymentNotification), ctx, id)
+}
+
+// GetPaymentNotificationByEvent mocks base method.
+func (m *MockQuerier) GetPaymentNotificationByEvent(ctx context.Context, arg db.GetPaymentNotificationByEventParams) (db.PaymentNotification, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPaymentNotificationByEvent", ctx, arg)
+	ret0, _ := ret[0].(db.PaymentNotification)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPaymentNotificationByEvent indicates an expected call of GetPaymentNotificationByEvent.
+func (mr *MockQuerierMockRecorder) GetPaymentNotificationByEvent(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPaymentNotificationByEvent", reflect.TypeOf((*MockQuerier)(nil).GetPaymentNotificationByEvent), ctx, arg)
+}
+
+// GetPaymentNotificationByPayload mocks base method.
+func (m *MockQuerier) GetPaymentNotificationByPayload(ctx context.Context, arg db.GetPaymentNotificationByPayloadParams) (db.PaymentNotification, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPaymentNotificationByPayload", ctx, arg)
+	ret0, _ := ret[0].(db.PaymentNotification)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPaymentNotificationByPayload indicates an expected call of GetPaymentNotificationByPayload.
+func (mr *MockQuerierMockRecorder) GetPaymentNotificationByPayload(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPaymentNotificationByPayload", reflect.TypeOf((*MockQuerier)(nil).GetPaymentNotificationByPayload), ctx, arg)
 }
 
 // GetProduct mocks base method.
@@ -901,12 +1021,28 @@ func (mr *MockQuerierMockRecorder) MarkPaymentClosed(ctx, id interface{}) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkPaymentClosed", reflect.TypeOf((*MockQuerier)(nil).MarkPaymentClosed), ctx, id)
 }
 
+// MarkPaymentFailed mocks base method.
+func (m *MockQuerier) MarkPaymentFailed(ctx context.Context, arg db.MarkPaymentFailedParams) (db.Payment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkPaymentFailed", ctx, arg)
+	ret0, _ := ret[0].(db.Payment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MarkPaymentFailed indicates an expected call of MarkPaymentFailed.
+func (mr *MockQuerierMockRecorder) MarkPaymentFailed(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkPaymentFailed", reflect.TypeOf((*MockQuerier)(nil).MarkPaymentFailed), ctx, arg)
+}
+
 // MarkPaymentNotificationFailed mocks base method.
-func (m *MockQuerier) MarkPaymentNotificationFailed(ctx context.Context, arg db.MarkPaymentNotificationFailedParams) error {
+func (m *MockQuerier) MarkPaymentNotificationFailed(ctx context.Context, arg db.MarkPaymentNotificationFailedParams) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "MarkPaymentNotificationFailed", ctx, arg)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // MarkPaymentNotificationFailed indicates an expected call of MarkPaymentNotificationFailed.
@@ -916,11 +1052,12 @@ func (mr *MockQuerierMockRecorder) MarkPaymentNotificationFailed(ctx, arg interf
 }
 
 // MarkPaymentNotificationProcessed mocks base method.
-func (m *MockQuerier) MarkPaymentNotificationProcessed(ctx context.Context, id int64) error {
+func (m *MockQuerier) MarkPaymentNotificationProcessed(ctx context.Context, id int64) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "MarkPaymentNotificationProcessed", ctx, id)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // MarkPaymentNotificationProcessed indicates an expected call of MarkPaymentNotificationProcessed.
@@ -929,49 +1066,64 @@ func (mr *MockQuerierMockRecorder) MarkPaymentNotificationProcessed(ctx, id inte
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkPaymentNotificationProcessed", reflect.TypeOf((*MockQuerier)(nil).MarkPaymentNotificationProcessed), ctx, id)
 }
 
-// MarkPaymentPending mocks base method.
-func (m *MockQuerier) MarkPaymentPending(ctx context.Context, arg db.MarkPaymentPendingParams) (db.Payment, error) {
+// RecordPaymentNotificationError mocks base method.
+func (m *MockQuerier) RecordPaymentNotificationError(ctx context.Context, arg db.RecordPaymentNotificationErrorParams) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkPaymentPending", ctx, arg)
+	ret := m.ctrl.Call(m, "RecordPaymentNotificationError", ctx, arg)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RecordPaymentNotificationError indicates an expected call of RecordPaymentNotificationError.
+func (mr *MockQuerierMockRecorder) RecordPaymentNotificationError(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordPaymentNotificationError", reflect.TypeOf((*MockQuerier)(nil).RecordPaymentNotificationError), ctx, arg)
+}
+
+// RecordPaymentPrepayError mocks base method.
+func (m *MockQuerier) RecordPaymentPrepayError(ctx context.Context, arg db.RecordPaymentPrepayErrorParams) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordPaymentPrepayError", ctx, arg)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RecordPaymentPrepayError indicates an expected call of RecordPaymentPrepayError.
+func (mr *MockQuerierMockRecorder) RecordPaymentPrepayError(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordPaymentPrepayError", reflect.TypeOf((*MockQuerier)(nil).RecordPaymentPrepayError), ctx, arg)
+}
+
+// RecordPaymentSuccess mocks base method.
+func (m *MockQuerier) RecordPaymentSuccess(ctx context.Context, arg db.RecordPaymentSuccessParams) (db.Payment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordPaymentSuccess", ctx, arg)
 	ret0, _ := ret[0].(db.Payment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// MarkPaymentPending indicates an expected call of MarkPaymentPending.
-func (mr *MockQuerierMockRecorder) MarkPaymentPending(ctx, arg interface{}) *gomock.Call {
+// RecordPaymentSuccess indicates an expected call of RecordPaymentSuccess.
+func (mr *MockQuerierMockRecorder) RecordPaymentSuccess(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkPaymentPending", reflect.TypeOf((*MockQuerier)(nil).MarkPaymentPending), ctx, arg)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordPaymentSuccess", reflect.TypeOf((*MockQuerier)(nil).RecordPaymentSuccess), ctx, arg)
 }
 
-// MarkPaymentReconcileRequired mocks base method.
-func (m *MockQuerier) MarkPaymentReconcileRequired(ctx context.Context, id int64) (db.Payment, error) {
+// RequirePaymentReconciliation mocks base method.
+func (m *MockQuerier) RequirePaymentReconciliation(ctx context.Context, arg db.RequirePaymentReconciliationParams) (db.Payment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkPaymentReconcileRequired", ctx, id)
+	ret := m.ctrl.Call(m, "RequirePaymentReconciliation", ctx, arg)
 	ret0, _ := ret[0].(db.Payment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// MarkPaymentReconcileRequired indicates an expected call of MarkPaymentReconcileRequired.
-func (mr *MockQuerierMockRecorder) MarkPaymentReconcileRequired(ctx, id interface{}) *gomock.Call {
+// RequirePaymentReconciliation indicates an expected call of RequirePaymentReconciliation.
+func (mr *MockQuerierMockRecorder) RequirePaymentReconciliation(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkPaymentReconcileRequired", reflect.TypeOf((*MockQuerier)(nil).MarkPaymentReconcileRequired), ctx, id)
-}
-
-// MarkPaymentSuccess mocks base method.
-func (m *MockQuerier) MarkPaymentSuccess(ctx context.Context, arg db.MarkPaymentSuccessParams) (db.Payment, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MarkPaymentSuccess", ctx, arg)
-	ret0, _ := ret[0].(db.Payment)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// MarkPaymentSuccess indicates an expected call of MarkPaymentSuccess.
-func (mr *MockQuerierMockRecorder) MarkPaymentSuccess(ctx, arg interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkPaymentSuccess", reflect.TypeOf((*MockQuerier)(nil).MarkPaymentSuccess), ctx, arg)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequirePaymentReconciliation", reflect.TypeOf((*MockQuerier)(nil).RequirePaymentReconciliation), ctx, arg)
 }
 
 // RestoreOrderItemStock mocks base method.
@@ -1000,6 +1152,20 @@ func (m *MockQuerier) SetDefaultShippingAddress(ctx context.Context, arg db.SetD
 func (mr *MockQuerierMockRecorder) SetDefaultShippingAddress(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetDefaultShippingAddress", reflect.TypeOf((*MockQuerier)(nil).SetDefaultShippingAddress), ctx, arg)
+}
+
+// SetPaymentNotificationRiverJob mocks base method.
+func (m *MockQuerier) SetPaymentNotificationRiverJob(ctx context.Context, arg db.SetPaymentNotificationRiverJobParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetPaymentNotificationRiverJob", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetPaymentNotificationRiverJob indicates an expected call of SetPaymentNotificationRiverJob.
+func (mr *MockQuerierMockRecorder) SetPaymentNotificationRiverJob(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetPaymentNotificationRiverJob", reflect.TypeOf((*MockQuerier)(nil).SetPaymentNotificationRiverJob), ctx, arg)
 }
 
 // SoftDeleteEvent mocks base method.
