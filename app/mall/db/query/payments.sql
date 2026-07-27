@@ -48,7 +48,7 @@ SET reconciliation_status = 'required',
     reconciliation_reason = $2,
     reconciliation_detail = $3,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1
+WHERE id = $1 AND reconciliation_status NOT IN ('processing', 'resolved')
 RETURNING *;
 
 -- name: UpdatePaymentRefunded :exec
@@ -124,7 +124,10 @@ RETURNING *;
 
 -- name: RecordPaymentPrepayError :execrows
 UPDATE payments
-SET last_error = $3, updated_at = CURRENT_TIMESTAMP
+SET last_error = $3,
+    prepay_lease_token = NULL,
+    prepay_lease_until = NULL,
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status = 'creating'
   AND prepay_lease_token = $2;
@@ -136,7 +139,7 @@ SET status = 'failed',
     prepay_lease_until = NULL,
     last_error = $2,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('creating', 'pending')
+WHERE id = $1 AND status IN ('creating', 'pending', 'close_pending')
 RETURNING *;
 
 -- name: RecordPaymentSuccess :one
