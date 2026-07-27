@@ -63,12 +63,14 @@ type OrderRefund struct {
 	ID                int64
 	OrderID           int64
 	UserID            int64
+	PaymentID         pgtype.Int8
 	OutRefundNo       string
 	TotalAmountMinor  int64
 	RefundAmountMinor int64
 	Currency          string
 	Reason            string
 	Status            string
+	LastError         string
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
 }
