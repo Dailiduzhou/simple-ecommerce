@@ -13,9 +13,9 @@ type Category struct {
 	ID        int64
 	ParentID  pgtype.Int8
 	Name      string
+	SortOrder int32
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
-	SortOrder int32
 }
 
 type Event struct {
@@ -37,12 +37,15 @@ type Order struct {
 	UserID           int64
 	AddressID        int64
 	TotalAmountMinor int64
+	Currency         string
 	Status           string
 	IsCompleted      bool
+	OutTradeNo       string
+	IdempotencyKey   string
+	RequestHash      string
+	ExpiresAt        pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
-	OutTradeNo       pgtype.Text
-	Currency         string
 }
 
 type OrderItem struct {
@@ -51,9 +54,9 @@ type OrderItem struct {
 	ProductID           int64
 	Quantity            int32
 	UnitPriceMinor      int64
-	CreatedAt           pgtype.Timestamptz
 	ProductNameSnapshot string
 	CoverImageSnapshot  []byte
+	CreatedAt           pgtype.Timestamptz
 }
 
 type OrderRefund struct {
@@ -63,29 +66,36 @@ type OrderRefund struct {
 	OutRefundNo       string
 	TotalAmountMinor  int64
 	RefundAmountMinor int64
+	Currency          string
 	Reason            string
 	Status            string
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
-	Currency          string
 }
 
 type Payment struct {
-	ID             int64
-	OrderID        int64
-	UserID         int64
-	MerchantID     int64
-	AmountMinor    int64
-	Status         string
-	PayChannel     string
-	ThirdPartyTxID pgtype.Text
-	PaidAt         pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	OutTradeNo     pgtype.Text
-	Currency       string
-	ActionType     pgtype.Text
-	ActionPayload  []byte
+	ID                   int64
+	OrderID              int64
+	UserID               int64
+	MerchantID           int64
+	AmountMinor          int64
+	Currency             string
+	Status               string
+	PayChannel           string
+	ThirdPartyTxID       pgtype.Text
+	OutTradeNo           string
+	ActionType           pgtype.Text
+	ActionPayload        []byte
+	PaidAt               pgtype.Timestamptz
+	ReconciliationStatus string
+	ReconciliationReason pgtype.Text
+	ReconciliationDetail pgtype.Text
+	PrepayLeaseToken     pgtype.Text
+	PrepayLeaseUntil     pgtype.Timestamptz
+	PrepayAttempts       int32
+	LastError            pgtype.Text
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
 }
 
 type PaymentNotification struct {
@@ -98,13 +108,16 @@ type PaymentNotification struct {
 	ProcessedAt     pgtype.Timestamptz
 	Status          string
 	LastError       pgtype.Text
+	RiverJobID      pgtype.Int8
 	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
 }
 
 type PaymentReconciliationFailure struct {
 	ID         int64
 	PaymentID  int64
 	Provider   string
+	Reason     string
 	RiverJobID pgtype.Int8
 	Attempt    int32
 	LastError  string
@@ -113,12 +126,13 @@ type PaymentReconciliationFailure struct {
 }
 
 type Product struct {
-	ID          int64
-	CategoryID  int64
-	Name        string
-	PriceMinor  int64
-	Discount    decimal.Decimal
-	Stock       int32
+	ID         int64
+	CategoryID int64
+	Name       string
+	PriceMinor int64
+	Discount   decimal.Decimal
+	Stock      int32
+	// 商品状态：0=下架，1=上架；当前业务未定义其他状态值
 	Status      int16
 	CoverImage  []byte
 	MediaAssets []byte
