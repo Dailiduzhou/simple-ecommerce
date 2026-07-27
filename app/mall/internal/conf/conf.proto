@@ -60,6 +60,8 @@ message Payment {
   Alipay alipay = 1;
   Wechat wechat = 2;
   CheckPayJob check_pay_job = 3;
+  google.protobuf.Duration order_payment_timeout = 4;
+  google.protobuf.Duration prepay_lease_duration = 5;
 }
 
 message Alipay {
