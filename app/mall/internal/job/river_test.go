@@ -46,6 +46,7 @@ type workerRepo struct {
 	payment              *biz.PaymentDO
 	applied              bool
 	appliedArgs          biz.CheckPayArgs
+	appliedResult        *biz.PaymentQueryResult
 	notificationBegun    int64
 	notificationBeginErr error
 	skipNotification     bool
@@ -86,9 +87,10 @@ func (r *workerRepo) MarkPaymentNotificationFailed(_ context.Context, _ int64, l
 	r.notificationFailed = lastError
 	return nil
 }
-func (r *workerRepo) ApplyPayQuery(_ context.Context, args biz.CheckPayArgs, _ *biz.PaymentQueryResult) error {
+func (r *workerRepo) ApplyPayQuery(_ context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 	r.applied = true
 	r.appliedArgs = args
+	r.appliedResult = result
 	return nil
 }
 func (r *workerRepo) MarkPayClosePending(context.Context, biz.CheckPayArgs) error { return nil }
@@ -171,4 +173,22 @@ func TestClosePayWorker_AppliesAuthoritativeTerminalState(t *testing.T) {
 	require.NoError(t, worker.Work(context.Background(), job))
 	require.True(t, repo.applied)
 	require.Equal(t, "close_pay", repo.appliedArgs.Trigger)
+}
+
+func TestClosePayWorker_ProviderOrderNotExistSettlesAsClosed(t *testing.T) {
+	method := biz.PaymentMethod{Provider: "wechat", Product: "native"}
+	payment := &biz.PaymentDO{ID: 8, Method: method.String(), OutTradeNo: "pay_8", Amount: 10000, Currency: "CNY"}
+	gateway := &workerGateway{err: biz.ErrProviderOrderNotExist}
+	repo := &workerRepo{payment: payment}
+	worker := NewClosePayWorker(gateway, repo)
+	job := &river.Job[biz.ClosePayArgs]{
+		JobRow: &rivertype.JobRow{Attempt: 1},
+		Args:   biz.ClosePayArgs{PaymentID: 8, Provider: "wechat", Reason: "order_expired"},
+	}
+	require.NoError(t, worker.Work(context.Background(), job))
+	require.True(t, repo.applied)
+	require.Equal(t, "close_pay", repo.appliedArgs.Trigger)
+	require.Equal(t, biz.TradeStateClosed, repo.appliedResult.TradeState)
+	require.Equal(t, payment.Amount, repo.appliedResult.Amount)
+	require.Equal(t, 1, gateway.queries)
 }

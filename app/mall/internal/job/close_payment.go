@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,10 +39,18 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	query, err := w.gateway.Query(ctx, biz.PaymentQueryRequest{
 		Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID,
 	})
+	applyArgs := biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "close_pay"}
+	if errors.Is(err, biz.ErrProviderOrderNotExist) {
+		// The provider never saw this trade (prepay failed before reaching it),
+		// so there is nothing to close remotely; settle it as closed locally.
+		return w.repo.ApplyPayQuery(ctx, applyArgs, &biz.PaymentQueryResult{
+			Method: method, OutTradeNo: payment.OutTradeNo,
+			TradeState: biz.TradeStateClosed, Amount: payment.Amount, Currency: payment.Currency,
+		})
+	}
 	if err != nil {
 		return err
 	}
-	applyArgs := biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "close_pay"}
 	if query.TradeState.IsTerminal() {
 		return w.repo.ApplyPayQuery(ctx, applyArgs, query)
 	}
