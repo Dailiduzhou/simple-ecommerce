@@ -391,7 +391,7 @@ paths:
         post:
             tags:
                 - Payment
-            description: 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
+            description: 管理员对指定支付发起整笔全额退款。
             operationId: Payment_RefundPayment
             parameters:
                 - name: id
@@ -1087,14 +1087,14 @@ components:
         api.order.v1.CreateOrderRequest:
             type: object
             properties:
-                userId:
-                    type: string
                 addressId:
                     type: string
                 items:
                     type: array
                     items:
                         $ref: '#/components/schemas/api.order.v1.OrderItemInput'
+                idempotencyKey:
+                    type: string
         api.order.v1.ListOrdersReply:
             type: object
             properties:
@@ -1185,10 +1185,15 @@ components:
         api.payment.v1.CreatePaymentReply:
             type: object
             properties:
+                paymentId:
+                    type: string
+                outTradeNo:
+                    type: string
                 actionType:
                     type: string
                 payload:
                     type: string
+                    format: bytes
             description: |-
                 统一创建支付响应。
                  - action_type: 告诉前端该怎么处理 payload。
@@ -1211,9 +1216,6 @@ components:
                         type: string
                 description:
                     type: string
-                totalAmount:
-                    type: integer
-                    format: int32
             description: |-
                 统一创建支付请求。
                  - order_no: 商户订单号(对应 orders.out_trade_no)。
@@ -1223,7 +1225,6 @@ components:
                      * WECHAT_JSAPI 必须传 "openid"。
                      * ALIPAY_WAP 可传 "return_url"。
                  - description: 可选;省略时服务端从订单号生成安全描述。
-                 - total_amount: 已废弃且服务端忽略，金额只从订单读取。
         api.payment.v1.MQJobError:
             type: object
             properties:
@@ -1302,6 +1303,10 @@ components:
                 outTradeNo:
                     type: string
                 currency:
+                    type: string
+                reconciliationStatus:
+                    type: string
+                reconciliationReason:
                     type: string
         api.payment.v1.QueryPaymentReply:
             type: object

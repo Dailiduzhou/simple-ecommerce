@@ -114,17 +114,16 @@ func (s *PaymentService) GetPaymentByOrder(ctx context.Context, req *pb.GetPayme
 }
 
 func (s *PaymentService) RefundPayment(ctx context.Context, req *pb.RefundPaymentRequest) (*pb.RefundPaymentReply, error) {
-	claims, err := authenticatedClaims(ctx)
-	if err != nil {
+	if _, err := requireAdmin(ctx); err != nil {
 		return nil, err
 	}
-	if req == nil {
+	if req == nil || req.Id <= 0 {
 		return nil, errors.BadRequest("PAYMENT_REQUEST_REQUIRED", "request is required")
 	}
-	if _, err := s.paymentUc.GetPayment(ctx, req.Id, claims.UserID); err != nil {
+	if _, err := s.paymentUc.RefundPayment(ctx, req.Id); err != nil {
 		return nil, err
 	}
-	return nil, errors.New(501, "PAYMENT_REFUND_NOT_IMPLEMENTED", "payment refund is not implemented")
+	return &pb.RefundPaymentReply{}, nil
 }
 
 func (s *PaymentService) CreatePaymentCheckJob(ctx context.Context, req *pb.CreatePaymentCheckJobRequest) (*pb.MQJobInfo, error) {

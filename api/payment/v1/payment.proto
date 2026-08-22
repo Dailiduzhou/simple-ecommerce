@@ -44,7 +44,7 @@ service Payment {
   rpc GetPaymentByOrder(GetPaymentByOrderRequest) returns (PaymentInfo) {
     option (google.api.http) = {get: "/v1/orders/{order_id}/payment"};
   }
-  // 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
+  // 管理员对指定支付发起整笔全额退款。
   rpc RefundPayment(RefundPaymentRequest) returns (RefundPaymentReply) {
     option (google.api.http) = {
       post: "/v1/payments/{id}/refund"

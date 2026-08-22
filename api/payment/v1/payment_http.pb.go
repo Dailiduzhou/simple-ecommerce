@@ -41,7 +41,7 @@ type PaymentHTTPServer interface {
 	GetPaymentByOrder(context.Context, *GetPaymentByOrderRequest) (*PaymentInfo, error)
 	// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
 	QueryPayment(context.Context, *QueryPaymentReq) (*QueryPaymentReply, error)
-	// RefundPayment 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
+	// RefundPayment 管理员对指定支付发起整笔全额退款。
 	RefundPayment(context.Context, *RefundPaymentRequest) (*RefundPaymentReply, error)
 }
 
@@ -249,7 +249,7 @@ type PaymentHTTPClient interface {
 	GetPaymentByOrder(ctx context.Context, req *GetPaymentByOrderRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
 	// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
 	QueryPayment(ctx context.Context, req *QueryPaymentReq, opts ...http.CallOption) (rsp *QueryPaymentReply, err error)
-	// RefundPayment 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
+	// RefundPayment 管理员对指定支付发起整笔全额退款。
 	RefundPayment(ctx context.Context, req *RefundPaymentRequest, opts ...http.CallOption) (rsp *RefundPaymentReply, err error)
 }
 
@@ -357,7 +357,7 @@ func (c *PaymentHTTPClientImpl) QueryPayment(ctx context.Context, in *QueryPayme
 	return &out, nil
 }
 
-// RefundPayment 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
+// RefundPayment 管理员对指定支付发起整笔全额退款。
 func (c *PaymentHTTPClientImpl) RefundPayment(ctx context.Context, in *RefundPaymentRequest, opts ...http.CallOption) (*RefundPaymentReply, error) {
 	var out RefundPaymentReply
 	pattern := "/v1/payments/{id}/refund"
