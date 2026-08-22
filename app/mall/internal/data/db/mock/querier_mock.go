@@ -767,36 +767,6 @@ func (mr *MockQuerierMockRecorder) HasOngoingOrders(ctx, userID interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasOngoingOrders", reflect.TypeOf((*MockQuerier)(nil).HasOngoingOrders), ctx, userID)
 }
 
-// HasOngoingPayments mocks base method.
-func (m *MockQuerier) HasOngoingPayments(ctx context.Context, userID int64) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HasOngoingPayments", ctx, userID)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// HasOngoingPayments indicates an expected call of HasOngoingPayments.
-func (mr *MockQuerierMockRecorder) HasOngoingPayments(ctx, userID interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasOngoingPayments", reflect.TypeOf((*MockQuerier)(nil).HasOngoingPayments), ctx, userID)
-}
-
-// HasSuccessfulPaymentByOrder mocks base method.
-func (m *MockQuerier) HasSuccessfulPaymentByOrder(ctx context.Context, orderID int64) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HasSuccessfulPaymentByOrder", ctx, orderID)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// HasSuccessfulPaymentByOrder indicates an expected call of HasSuccessfulPaymentByOrder.
-func (mr *MockQuerierMockRecorder) HasSuccessfulPaymentByOrder(ctx, orderID interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasSuccessfulPaymentByOrder", reflect.TypeOf((*MockQuerier)(nil).HasSuccessfulPaymentByOrder), ctx, orderID)
-}
-
 // IncrementProductStock mocks base method.
 func (m *MockQuerier) IncrementProductStock(ctx context.Context, arg db.IncrementProductStockParams) error {
 	m.ctrl.T.Helper()
@@ -1316,11 +1286,12 @@ func (mr *MockQuerierMockRecorder) UpdateEventStatus(ctx, arg interface{}) *gomo
 }
 
 // UpdatePaymentRefunded mocks base method.
-func (m *MockQuerier) UpdatePaymentRefunded(ctx context.Context, id int64) error {
+func (m *MockQuerier) UpdatePaymentRefunded(ctx context.Context, id int64) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdatePaymentRefunded", ctx, id)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // UpdatePaymentRefunded indicates an expected call of UpdatePaymentRefunded.

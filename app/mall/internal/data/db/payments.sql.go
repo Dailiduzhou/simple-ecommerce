@@ -532,34 +532,6 @@ func (q *Queries) GetPaymentForUpdate(ctx context.Context, id int64) (Payment, e
 	return i, err
 }
 
-const hasOngoingPayments = `-- name: HasOngoingPayments :one
-SELECT EXISTS (
-  SELECT 1 FROM payments
-  WHERE user_id = $1
-    AND (status IN ('creating', 'pending', 'close_pending') OR reconciliation_status = 'required')
-) AS has_ongoing
-`
-
-func (q *Queries) HasOngoingPayments(ctx context.Context, userID int64) (bool, error) {
-	row := q.db.QueryRow(ctx, hasOngoingPayments, userID)
-	var has_ongoing bool
-	err := row.Scan(&has_ongoing)
-	return has_ongoing, err
-}
-
-const hasSuccessfulPaymentByOrder = `-- name: HasSuccessfulPaymentByOrder :one
-SELECT EXISTS (
-  SELECT 1 FROM payments WHERE order_id = $1 AND status IN ('success', 'refunded')
-) AS has_successful
-`
-
-func (q *Queries) HasSuccessfulPaymentByOrder(ctx context.Context, orderID int64) (bool, error) {
-	row := q.db.QueryRow(ctx, hasSuccessfulPaymentByOrder, orderID)
-	var has_successful bool
-	err := row.Scan(&has_successful)
-	return has_successful, err
-}
-
 const listPaymentsByOrderForUpdate = `-- name: ListPaymentsByOrderForUpdate :many
 SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments
 WHERE order_id = $1
@@ -850,11 +822,14 @@ func (q *Queries) RequirePaymentReconciliation(ctx context.Context, arg RequireP
 	return i, err
 }
 
-const updatePaymentRefunded = `-- name: UpdatePaymentRefunded :exec
+const updatePaymentRefunded = `-- name: UpdatePaymentRefunded :execrows
 UPDATE payments SET status = 'refunded', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'success'
 `
 
-func (q *Queries) UpdatePaymentRefunded(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, updatePaymentRefunded, id)
-	return err
+func (q *Queries) UpdatePaymentRefunded(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePaymentRefunded, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang/mock/gomock"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
@@ -240,4 +241,56 @@ func TestOrderExpiry_CancelInvalidatesProductCaches(t *testing.T) {
 	repo := NewOrderExpiryRepo(d, testTxManager{q: q}, nil, log.DefaultLogger)
 	require.NoError(t, repo.ExpireOrder(context.Background(), 2))
 	require.True(t, redisServer.Exists("product:list:gen"))
+}
+
+func TestApplyPayQuery_RefundSettlesPendingRefundRecord(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	redisServer := miniredis.RunT(t)
+	payment := statePayment(biz.PaymentStatusSuccess)
+	result := stateResult(10000)
+	result.TradeState = biz.TradeStateRefund
+	refund := db.OrderRefund{ID: 11, OrderID: 2, UserID: 3, OutRefundNo: "rfnd_11", Status: biz.PaymentRefundStatusPending}
+	q.EXPECT().GetPayment(gomock.Any(), int64(1)).Return(payment, nil)
+	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{payment}, nil)
+	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), gomock.Any()).Return(refund, nil)
+	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.MarkOrderRefundSuccessParams) (db.OrderRefund, error) {
+		require.Equal(t, int64(11), args.ID)
+		settled := refund
+		settled.Status = biz.PaymentRefundStatusSuccess
+		return settled, nil
+	})
+	q.EXPECT().UpdatePaymentRefunded(gomock.Any(), int64(1)).Return(int64(1), nil)
+	q.EXPECT().GetOrder(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
+	d := newTestData(t, q, redisServer)
+	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	require.NoError(t, repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, result))
+}
+
+func TestApplyPayQuery_RefundWithoutLocalRecordRequiresReconciliation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	redisServer := miniredis.RunT(t)
+	payment := statePayment(biz.PaymentStatusSuccess)
+	reconciled := payment
+	reconciled.ReconciliationStatus = biz.ReconciliationStatusRequired
+	result := stateResult(10000)
+	result.TradeState = biz.TradeStateRefund
+	q.EXPECT().GetPayment(gomock.Any(), int64(1)).Return(payment, nil)
+	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{payment}, nil)
+	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), gomock.Any()).Return(db.OrderRefund{}, pgx.ErrNoRows)
+	q.EXPECT().RequirePaymentReconciliation(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.RequirePaymentReconciliationParams) (db.Payment, error) {
+		require.Equal(t, "provider_side_refund", args.ReconciliationReason.String)
+		return reconciled, nil
+	})
+	q.EXPECT().CreatePaymentReconciliationFailure(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.CreatePaymentReconciliationFailureParams) (db.PaymentReconciliationFailure, error) {
+		require.Equal(t, "provider_side_refund", args.Reason)
+		return db.PaymentReconciliationFailure{}, nil
+	})
+	q.EXPECT().GetOrder(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
+	d := newTestData(t, q, redisServer)
+	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	require.NoError(t, repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, result))
 }

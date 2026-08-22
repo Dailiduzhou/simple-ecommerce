@@ -1105,11 +1105,54 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 			if payment.Status != biz.PaymentStatusSuccess {
 				return biz.ErrPaymentStateConflict
 			}
-			if err := q.UpdatePaymentRefunded(ctx, payment.ID); err != nil {
+			refund, refundErr := q.GetOrderRefundByPaymentID(ctx, pgtype.Int8{Int64: payment.ID, Valid: true})
+			if refundErr != nil && !stderrors.Is(refundErr, pgx.ErrNoRows) {
+				return refundErr
+			}
+			if refundErr != nil {
+				// A refund we never initiated moved money outside our control;
+				// a human must reconcile it rather than silently flipping state.
+				changed, err = requirePaymentReconciliation(ctx, q, payment.ID, "provider_side_refund",
+					"provider reported a refund that was never initiated locally")
+				if err != nil {
+					return err
+				}
+				if err := createReconciliationFailure(ctx, q, biz.ReconciliationFailure{
+					PaymentID: payment.ID, NotificationID: args.NotificationID, Provider: method.Provider,
+					Attempt: max(1, args.PollCount), Reason: "provider_side_refund",
+					LastError: "provider reported a refund that was never initiated locally",
+				}); err != nil {
+					return err
+				}
+				return markNotificationProcessed(ctx, q, args.NotificationID)
+			}
+			// The provider confirmed a refund we initiated, but the original
+			// ApplyPaymentRefund may never have committed (crash between the
+			// gateway call and local bookkeeping). Settle both rows here so
+			// the pair can never stay half-refunded: a refunded payment with
+			// a pending order_refunds row blocks every retry path.
+			if _, err := q.MarkOrderRefundSuccess(ctx, db.MarkOrderRefundSuccessParams{
+				ID: refund.ID, PaymentID: pgtype.Int8{Int64: payment.ID, Valid: true},
+			}); err != nil {
 				return err
 			}
-			changed = payment
-			changed.Status = biz.PaymentStatusRefunded
+			rows, err := q.UpdatePaymentRefunded(ctx, payment.ID)
+			if err != nil {
+				return err
+			}
+			if rows == 0 {
+				current, loadErr := q.GetPayment(ctx, payment.ID)
+				if loadErr != nil {
+					return loadErr
+				}
+				if current.Status != biz.PaymentStatusRefunded {
+					return biz.ErrPaymentStateConflict
+				}
+				changed = current
+			} else {
+				changed = payment
+				changed.Status = biz.PaymentStatusRefunded
+			}
 		default:
 			provider, fromStatus, event = method.Provider, payment.Status, "unknown_provider_state"
 			changed, err = requirePaymentReconciliation(ctx, q, payment.ID, "unknown_provider_state", result.RawTradeState)
