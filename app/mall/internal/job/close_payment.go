@@ -44,11 +44,21 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	})
 	applyArgs := biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "close_pay"}
 	if errors.Is(err, biz.ErrProviderOrderNotExist) {
-		// The provider never saw this trade (prepay failed before reaching it),
-		// so there is nothing to close remotely; settle it as closed locally.
-		return w.repo.ApplyPayQuery(ctx, applyArgs, &biz.PaymentQueryResult{
-			Method: method, OutTradeNo: payment.OutTradeNo,
-			TradeState: biz.TradeStateClosed, Amount: payment.Amount, Currency: payment.Currency,
+		// "Order not exist" only proves the trade never reached the provider
+		// when prepay never finalized (no action recorded). A payment that did
+		// complete prepay must be visible to the provider — if it is not, the
+		// query may have hit the wrong merchant account or environment, and
+		// auto-closing could discard money the user actually paid. Reconcile.
+		if payment.Action.Type == "" {
+			return w.repo.ApplyPayQuery(ctx, applyArgs, &biz.PaymentQueryResult{
+				Method: method, OutTradeNo: payment.OutTradeNo,
+				TradeState: biz.TradeStateClosed, Amount: payment.Amount, Currency: payment.Currency,
+			})
+		}
+		return w.repo.MarkReconciliationRequired(ctx, biz.ReconciliationFailure{
+			PaymentID: payment.ID, Provider: method.Provider, Attempt: max(1, job.Attempt),
+			Reason:    "provider_order_not_exist",
+			LastError: "provider has no record of a payment whose prepay was finalized; possible gateway misconfiguration",
 		})
 	}
 	if err != nil {
