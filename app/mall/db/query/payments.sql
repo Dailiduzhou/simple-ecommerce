@@ -23,11 +23,6 @@ FOR UPDATE;
 -- name: GetPaymentByThirdPartyTxID :one
 SELECT * FROM payments WHERE third_party_tx_id = $1;
 
--- name: HasSuccessfulPaymentByOrder :one
-SELECT EXISTS (
-  SELECT 1 FROM payments WHERE order_id = $1 AND status IN ('success', 'refunded')
-) AS has_successful;
-
 -- name: MarkPaymentClosePending :one
 UPDATE payments SET status = 'close_pending', updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND status IN ('creating', 'pending')
@@ -51,15 +46,8 @@ SET reconciliation_status = 'required',
 WHERE id = $1 AND reconciliation_status NOT IN ('processing', 'resolved')
 RETURNING *;
 
--- name: UpdatePaymentRefunded :exec
+-- name: UpdatePaymentRefunded :execrows
 UPDATE payments SET status = 'refunded', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'success';
-
--- name: HasOngoingPayments :one
-SELECT EXISTS (
-  SELECT 1 FROM payments
-  WHERE user_id = $1
-    AND (status IN ('creating', 'pending', 'close_pending') OR reconciliation_status = 'required')
-) AS has_ongoing;
 
 -- name: CreatePaymentWithOutTradeNo :one
 INSERT INTO payments (

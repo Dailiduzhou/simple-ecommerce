@@ -62,8 +62,6 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id int64) (User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error)
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
-	HasOngoingPayments(ctx context.Context, userID int64) (bool, error)
-	HasSuccessfulPaymentByOrder(ctx context.Context, orderID int64) (bool, error)
 	IncrementProductStock(ctx context.Context, arg IncrementProductStockParams) error
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
 	ListEventsByStatus(ctx context.Context, arg ListEventsByStatusParams) ([]Event, error)
@@ -100,7 +98,7 @@ type Querier interface {
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event, error)
 	UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) error
-	UpdatePaymentRefunded(ctx context.Context, id int64) error
+	UpdatePaymentRefunded(ctx context.Context, id int64) (int64, error)
 	UpdateProduct(ctx context.Context, arg UpdateProductParams) (Product, error)
 	UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) error
 	UpdateShippingAddress(ctx context.Context, arg UpdateShippingAddressParams) (ShippingAddress, error)
