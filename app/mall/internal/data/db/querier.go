@@ -68,11 +68,15 @@ type Querier interface {
 	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)
 	ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error)
 	ListOrdersByUser(ctx context.Context, arg ListOrdersByUserParams) ([]Order, error)
+	// Backstop for expire_order jobs that were discarded after exhausting retries;
+	// the partial index idx_orders_pending_expiry keeps this scan cheap.
+	ListOverduePendingOrders(ctx context.Context, arg ListOverduePendingOrdersParams) ([]int64, error)
 	ListPaymentsByOrderForUpdate(ctx context.Context, orderID int64) ([]Payment, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]Product, error)
 	// 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
 	ListProductsByCategory(ctx context.Context, arg ListProductsByCategoryParams) ([]Product, error)
 	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
+	ListStalePendingRefunds(ctx context.Context, arg ListStalePendingRefundsParams) ([]OrderRefund, error)
 	ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error)
 	ListTopCategories(ctx context.Context) ([]Category, error)
 	ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error)
@@ -85,6 +89,9 @@ type Querier interface {
 	MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedParams) (Payment, error)
 	MarkPaymentNotificationFailed(ctx context.Context, arg MarkPaymentNotificationFailedParams) (int64, error)
 	MarkPaymentNotificationProcessed(ctx context.Context, id int64) (int64, error)
+	// Expiry decisions must use the database clock, not the application server's,
+	// so instances with skewed clocks cannot extend or shrink the payment window.
+	OrderIsExpired(ctx context.Context, id int64) (bool, error)
 	RecordOrderRefundError(ctx context.Context, arg RecordOrderRefundErrorParams) (OrderRefund, error)
 	RecordPaymentNotificationError(ctx context.Context, arg RecordPaymentNotificationErrorParams) (int64, error)
 	RecordPaymentPrepayError(ctx context.Context, arg RecordPaymentPrepayErrorParams) (int64, error)

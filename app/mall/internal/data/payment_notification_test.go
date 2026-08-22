@@ -34,6 +34,12 @@ func (m *notificationMQ) EnqueueClosePay(context.Context, biz.ClosePayArgs, time
 func (m *notificationMQ) EnqueueClosePayTx(context.Context, biz.ClosePayArgs, time.Time) (*biz.MQJob, error) {
 	return &biz.MQJob{ID: 2}, nil
 }
+func (m *notificationMQ) EnqueueExpireOrder(context.Context, biz.ExpireOrderArgs, time.Time) (*biz.MQJob, error) {
+	return &biz.MQJob{ID: 3}, nil
+}
+func (m *notificationMQ) EnqueueExpireOrderTx(context.Context, biz.ExpireOrderArgs, time.Time) (*biz.MQJob, error) {
+	return &biz.MQJob{ID: 3}, nil
+}
 func (m *notificationMQ) GetMQJob(context.Context, int64) (*biz.MQJob, error) { return nil, nil }
 
 func TestPaymentNotificationInboxAndRiverEnqueueShareTransaction(t *testing.T) {

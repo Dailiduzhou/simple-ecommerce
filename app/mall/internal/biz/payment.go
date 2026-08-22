@@ -286,6 +286,11 @@ type PaymentGateway interface {
 	Prepay(context.Context, PaymentPrepayRequest) (*PaymentPrepayResult, error)
 	Query(context.Context, PaymentQueryRequest) (*PaymentQueryResult, error)
 	Close(context.Context, PaymentCloseRequest) (*PaymentCloseResult, error)
+	// Refund requests a refund identified by OutRefundNo. Implementations MUST
+	// be idempotent per OutRefundNo: re-issuing a refund whose OutRefundNo was
+	// already accepted by the provider must confirm the original result without
+	// moving money again. Admin retries and the pending-refund reconciliation
+	// worker both rely on this contract.
 	Refund(context.Context, PaymentRefundRequest) (*PaymentRefundResult, error)
 	ParseAndVerifyNotification(string, *http.Request) (*PaymentNotification, error)
 	NotificationAck(string, bool) (PaymentNotificationAck, error)
@@ -293,6 +298,11 @@ type PaymentGateway interface {
 
 const CheckPayJobKind = "check_pay"
 const ClosePayJobKind = "close_pay"
+const ReconcileRefundsJobKind = "reconcile_refunds"
+
+type ReconcileRefundsArgs struct{}
+
+func (ReconcileRefundsArgs) Kind() string { return ReconcileRefundsJobKind }
 
 type CheckPayArgs struct {
 	PaymentID           int64  `json:"payment_id" river:"unique"`
@@ -389,6 +399,7 @@ type PaymentRepo interface {
 	PreparePaymentRefund(context.Context, int64, string) (*PaymentDO, *PaymentRefund, error)
 	RecordPaymentRefundError(context.Context, int64, string, bool) error
 	ApplyPaymentRefund(context.Context, int64, int64) error
+	ListStalePendingRefunds(context.Context, time.Duration, int) ([]PaymentRefund, error)
 	MarkReconciliationRequired(context.Context, ReconciliationFailure) error
 	RecordReconciliationFailure(context.Context, ReconciliationFailure) error
 }
@@ -408,6 +419,8 @@ type PaymentMQRepo interface {
 	EnqueueCheckPayTx(context.Context, CheckPayArgs, time.Time) (*MQJob, error)
 	EnqueueClosePay(context.Context, ClosePayArgs, time.Time) (*MQJob, error)
 	EnqueueClosePayTx(context.Context, ClosePayArgs, time.Time) (*MQJob, error)
+	EnqueueExpireOrder(context.Context, ExpireOrderArgs, time.Time) (*MQJob, error)
+	EnqueueExpireOrderTx(context.Context, ExpireOrderArgs, time.Time) (*MQJob, error)
 	GetMQJob(context.Context, int64) (*MQJob, error)
 }
 
@@ -490,6 +503,10 @@ func (uc *paymentJobUsecase) EnqueueClosePayTx(ctx context.Context, args ClosePa
 
 type OrderExpiryRepo interface {
 	ExpireOrder(context.Context, int64) error
+	// ReapOverdueOrders re-enqueues expiry for pending_payment orders whose
+	// payment window ended more than the given grace ago. It is the backstop
+	// for expire_order jobs discarded after exhausting retries.
+	ReapOverdueOrders(context.Context, time.Duration, int) ([]int64, error)
 }
 
 type PrepayForOrderArgs struct {
@@ -512,6 +529,7 @@ type PaymentUsecase interface {
 	QueryPayment(context.Context, string, int64) (*PaymentQueryResult, error)
 	ClosePayment(context.Context, string, int64) (*PaymentCloseResult, error)
 	RefundPayment(context.Context, int64) (*PaymentRefundResult, error)
+	ReconcilePendingRefunds(context.Context, time.Duration, int) (int, error)
 	CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*MQJob, error)
 	HandleNotification(context.Context, string, *http.Request) error
 }
@@ -904,4 +922,59 @@ func validateOutTradeNo(value string) error {
 		return errors.BadRequest("OUT_TRADE_NO_INVALID", "out_trade_no contains invalid characters")
 	}
 	return nil
+}
+
+// ReconcilePendingRefunds retries refunds stuck in pending for longer than
+// olderThan — for example when the gateway accepted the refund but the process
+// crashed before ApplyPaymentRefund committed. Each record is re-prepared
+// under the payment row lock and re-issued with the same OutRefundNo.
+func (uc *paymentUsecase) ReconcilePendingRefunds(ctx context.Context, olderThan time.Duration, limit int) (int, error) {
+	if olderThan <= 0 {
+		olderThan = 10 * time.Minute
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	refunds, err := uc.paymentRepo.ListStalePendingRefunds(ctx, olderThan, limit)
+	if err != nil {
+		return 0, err
+	}
+	settled := 0
+	for _, refund := range refunds {
+		if err := uc.reconcileRefund(ctx, refund); err != nil {
+			uc.log.WithContext(ctx).Errorw("msg", "reconcile pending refund failed", "payment_id", refund.PaymentID, "refund_id", refund.ID, "out_refund_no", refund.OutRefundNo, "error", err)
+			continue
+		}
+		settled++
+	}
+	return settled, nil
+}
+
+func (uc *paymentUsecase) reconcileRefund(ctx context.Context, refund PaymentRefund) error {
+	payment, err := uc.paymentRepo.GetPayment(ctx, refund.PaymentID)
+	if err != nil {
+		return err
+	}
+	method, err := ParsePaymentMethod(payment.Method)
+	if err != nil {
+		return err
+	}
+	capabilities, err := uc.gateway.Capabilities(method)
+	if err != nil {
+		return err
+	}
+	if !capabilities.SupportsRefund {
+		return fmt.Errorf("provider %s does not support refund", method.Provider)
+	}
+	// Re-preparing under the payment lock re-validates amounts and state, and
+	// returns the existing refund record instead of creating a new one.
+	current, prepared, err := uc.paymentRepo.PreparePaymentRefund(ctx, refund.PaymentID, refund.OutRefundNo)
+	if err != nil {
+		return err
+	}
+	if prepared.ID != refund.ID {
+		return ErrPaymentStateConflict
+	}
+	_, err = uc.executeRefund(ctx, method, current, prepared)
+	return err
 }

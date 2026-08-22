@@ -147,3 +147,40 @@ func (r *OrderExpiryRepo) ExpireOrder(ctx context.Context, orderID int64) error 
 	}
 	return nil
 }
+
+// ReapOverdueOrders re-enqueues expiry jobs for pending_payment orders whose
+// payment window ended more than grace ago. River's ByArgs uniqueness skips
+// inserts while an active expire_order job for the same order exists, so this
+// is safe to run repeatedly and heals jobs lost to queue errors or discard.
+func (r *OrderExpiryRepo) ReapOverdueOrders(ctx context.Context, grace time.Duration, limit int) ([]int64, error) {
+	if grace <= 0 {
+		grace = 5 * time.Minute
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if r.jobs == nil {
+		return nil, fmt.Errorf("order mq is not configured")
+	}
+	orderIDs, err := r.data.q.ListOverduePendingOrders(ctx, db.ListOverduePendingOrdersParams{
+		GraceSeconds: grace.Seconds(), LimitRows: int32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	requeued := make([]int64, 0, len(orderIDs))
+	for _, id := range orderIDs {
+		job, err := r.jobs.EnqueueExpireOrder(ctx, biz.ExpireOrderArgs{OrderID: id}, time.Time{})
+		if err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "re-enqueue overdue expire order failed", "order_id", id, "error", err)
+			continue
+		}
+		if !job.Deduplicated {
+			requeued = append(requeued, id)
+		}
+	}
+	if len(requeued) > 0 {
+		r.log.WithContext(ctx).Warnw("msg", "reaper found overdue pending orders", "count", len(requeued), "grace", grace.String())
+	}
+	return requeued, nil
+}

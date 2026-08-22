@@ -95,7 +95,7 @@ func newCorrectnessFixture(t *testing.T) *correctnessFixture {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, integrationCheckPayWorker{})
 	river.AddWorker(workers, integrationExpireOrderWorker{})
-	riverClient, err := NewRiverClient(pool, workers, handler)
+	riverClient, err := NewRiverClient(pool, workers, nil, handler)
 	require.NoError(t, err)
 
 	prefix := fmt.Sprintf("it_%d", time.Now().UnixNano())
@@ -194,6 +194,12 @@ func (r failingPaymentMQRepo) EnqueueClosePay(context.Context, biz.ClosePayArgs,
 	return nil, r.err
 }
 func (r failingPaymentMQRepo) EnqueueClosePayTx(context.Context, biz.ClosePayArgs, time.Time) (*biz.MQJob, error) {
+	return nil, r.err
+}
+func (r failingPaymentMQRepo) EnqueueExpireOrder(context.Context, biz.ExpireOrderArgs, time.Time) (*biz.MQJob, error) {
+	return nil, r.err
+}
+func (r failingPaymentMQRepo) EnqueueExpireOrderTx(context.Context, biz.ExpireOrderArgs, time.Time) (*biz.MQJob, error) {
 	return nil, r.err
 }
 func (r failingPaymentMQRepo) GetMQJob(context.Context, int64) (*biz.MQJob, error) {
@@ -303,6 +309,103 @@ func TestCorrectnessIntegration(t *testing.T) {
 			}
 		}
 		require.Equal(t, 1, terminalWinners)
+	})
+
+	t.Run("concurrent CreateOrder with one idempotency key creates exactly one order", func(t *testing.T) {
+		var stockBefore int32
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id = $1`, f.productID).Scan(&stockBefore))
+		mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
+		repo := NewOrderRepoWithJobs(f.data, f.tx, mq, log.DefaultLogger)
+		idempotencyKey := f.prefix + "_concurrent_key"
+
+		const workers = 8
+		orderIDs := make(chan int64, workers)
+		failures := make(chan error, workers)
+		var wg sync.WaitGroup
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				order, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{
+					UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_concurrent_order",
+					Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}},
+					IdempotencyKey: idempotencyKey, RequestHash: f.prefix + "_concurrent_hash",
+					ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+				})
+				if err != nil {
+					failures <- err
+					return
+				}
+				orderIDs <- order.ID
+			}()
+		}
+		wg.Wait()
+		close(orderIDs)
+		close(failures)
+		for err := range failures {
+			require.NoError(t, err)
+		}
+		var winner int64
+		seen := 0
+		for id := range orderIDs {
+			if seen == 0 {
+				winner = id
+			} else {
+				require.Equal(t, winner, id, "every replay must observe the same order")
+			}
+			seen++
+		}
+		require.Equal(t, workers, seen)
+
+		var orderCount int32
+		require.NoError(t, f.pool.QueryRow(f.ctx,
+			`SELECT count(*) FROM orders WHERE idempotency_key = $1`, idempotencyKey).Scan(&orderCount))
+		require.Equal(t, int32(1), orderCount, "the unique index plus recovery path must yield one row")
+		var stockAfter int32
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id = $1`, f.productID).Scan(&stockAfter))
+		require.Equal(t, stockBefore-1, stockAfter, "stock must be decremented exactly once")
+
+		_, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{
+			UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_conflict_order",
+			Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}},
+			IdempotencyKey: idempotencyKey, RequestHash: f.prefix + "_different_hash",
+			ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+		})
+		require.ErrorIs(t, err, biz.ErrIdempotencyKeyConflict)
+	})
+
+	t.Run("concurrent refund preparation yields a single refund record", func(t *testing.T) {
+		_, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+		repo := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
+
+		refundIDs := make(chan int64, 2)
+		failures := make(chan error, 2)
+		var wg sync.WaitGroup
+		for i := 0; i < 2; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				_, refund, err := repo.PreparePaymentRefund(f.ctx, paymentID, fmt.Sprintf("%s_rfnd_%d", f.prefix, i))
+				if err != nil {
+					failures <- err
+					return
+				}
+				refundIDs <- refund.ID
+			}(i)
+		}
+		wg.Wait()
+		close(refundIDs)
+		close(failures)
+		for err := range failures {
+			require.NoError(t, err)
+		}
+		first, second := <-refundIDs, <-refundIDs
+		require.Equal(t, first, second, "both callers must share the single refund record")
+
+		var refundCount int32
+		require.NoError(t, f.pool.QueryRow(f.ctx,
+			`SELECT count(*) FROM order_refunds WHERE payment_id = $1`, paymentID).Scan(&refundCount))
+		require.Equal(t, int32(1), refundCount, "the payment row lock must serialize refund creation")
 	})
 
 	t.Run("order creation uses database price and advances every related cache generation", func(t *testing.T) {

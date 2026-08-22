@@ -105,6 +105,9 @@ func (r *workerRepo) RecordPaymentRefundError(context.Context, int64, string, bo
 	return nil
 }
 func (r *workerRepo) ApplyPaymentRefund(context.Context, int64, int64) error { return nil }
+func (r *workerRepo) ListStalePendingRefunds(context.Context, time.Duration, int) ([]biz.PaymentRefund, error) {
+	return nil, nil
+}
 func (r *workerRepo) MarkReconciliationRequired(_ context.Context, failure biz.ReconciliationFailure) error {
 	failureCopy := failure
 	r.reconciled = &failureCopy
@@ -248,6 +251,35 @@ type reaperExpiryRepo struct {
 }
 
 func (r *reaperExpiryRepo) ExpireOrder(context.Context, int64) error { return nil }
+func (r *reaperExpiryRepo) ReapOverdueOrders(_ context.Context, grace time.Duration, limit int) ([]int64, error) {
+	r.calls++
+	r.grace = grace
+	r.limit = limit
+	if r.missing {
+		return nil, nil
+	}
+	return r.orders, r.err
+}
+
+func TestReapExpiredOrdersWorker_ReenqueuesOverdueOrders(t *testing.T) {
+	repo := &reaperExpiryRepo{orders: []int64{1, 2}}
+	worker := NewReapExpiredOrdersWorker(repo, log.DefaultLogger)
+	job := &river.Job[biz.ReapExpiredOrdersArgs]{JobRow: &rivertype.JobRow{}, Args: biz.ReapExpiredOrdersArgs{}}
+	require.NoError(t, worker.Work(context.Background(), job))
+	require.Equal(t, 1, repo.calls)
+	require.Equal(t, reapOrderGrace, repo.grace)
+	require.Equal(t, reapBatchLimit, repo.limit)
+}
+
+func TestReapExpiredOrdersWorker_RequiresRepo(t *testing.T) {
+	worker := NewReapExpiredOrdersWorker(&reaperExpiryRepo{missing: true}, log.DefaultLogger)
+	job := &river.Job[biz.ReapExpiredOrdersArgs]{JobRow: &rivertype.JobRow{}, Args: biz.ReapExpiredOrdersArgs{}}
+	require.NoError(t, worker.Work(context.Background(), job))
+	nilWorker := NewReapExpiredOrdersWorker(nil, log.DefaultLogger)
+	err := nilWorker.Work(context.Background(), job)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requires a repository")
+}
 
 type reaperPaymentUsecase struct {
 	olderThan time.Duration
@@ -274,9 +306,30 @@ func (u *reaperPaymentUsecase) ClosePayment(context.Context, string, int64) (*bi
 func (u *reaperPaymentUsecase) RefundPayment(context.Context, int64) (*biz.PaymentRefundResult, error) {
 	return nil, nil
 }
+func (u *reaperPaymentUsecase) ReconcilePendingRefunds(_ context.Context, olderThan time.Duration, limit int) (int, error) {
+	u.olderThan = olderThan
+	u.limit = limit
+	return u.settled, u.err
+}
 func (u *reaperPaymentUsecase) CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*biz.MQJob, error) {
 	return nil, nil
 }
 func (u *reaperPaymentUsecase) HandleNotification(context.Context, string, *http.Request) error {
 	return nil
+}
+
+func TestReconcileRefundsWorker_RetriesPendingRefunds(t *testing.T) {
+	uc := &reaperPaymentUsecase{settled: 2}
+	worker := NewReconcileRefundsWorker(uc, log.DefaultLogger)
+	job := &river.Job[biz.ReconcileRefundsArgs]{JobRow: &rivertype.JobRow{}, Args: biz.ReconcileRefundsArgs{}}
+	require.NoError(t, worker.Work(context.Background(), job))
+	require.Equal(t, refundReconcileGrace, uc.olderThan)
+	require.Equal(t, reapBatchLimit, uc.limit)
+}
+
+func TestPeriodicJobsCoverBothBackstops(t *testing.T) {
+	// One periodic schedule per backstop sweep; the args kinds are asserted by
+	// the workers themselves, here we only guard the schedule count so a new
+	// sweep cannot be added without extending this test.
+	require.Len(t, NewPeriodicJobs(), 2)
 }

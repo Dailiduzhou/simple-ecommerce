@@ -29,6 +29,14 @@ func NewPaymentRiverErrorHandler(pool *pgxpool.Pool, rdb *redis.Client, logger l
 }
 
 func (h *PaymentRiverErrorHandler) HandleError(ctx context.Context, job *rivertype.JobRow, workErr error) *river.ErrorHandlerResult {
+	if job != nil && job.Attempt >= job.MaxAttempts && job.Kind == biz.ExpireOrderJobKind {
+		// There is no payment state to reconcile here, and the overdue-order
+		// reaper re-enqueues expiry within minutes, but the discard must stay
+		// observable so persistent queue failures surface in metrics.
+		observability.RiverJobDiscarded(ctx, job.Kind)
+		h.log.WithContext(ctx).Errorw("msg", "expire order job discarded; the reaper will re-enqueue it", "event", "river_job_discarded", "job_id", job.ID)
+		return nil
+	}
 	if job == nil || job.Attempt < job.MaxAttempts ||
 		(job.Kind != biz.CheckPayJobKind && job.Kind != biz.ClosePayJobKind) {
 		return nil

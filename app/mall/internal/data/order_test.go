@@ -23,6 +23,15 @@ type orderTestMQ struct {
 	err  error
 }
 
+func (m *orderTestMQ) EnqueueExpireOrder(_ context.Context, args biz.ExpireOrderArgs, at time.Time) (*biz.MQJob, error) {
+	m.args = args
+	m.at = at
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &biz.MQJob{ID: 1}, nil
+}
+
 func (m *orderTestMQ) EnqueueExpireOrderTx(_ context.Context, args biz.ExpireOrderArgs, at time.Time) (*biz.MQJob, error) {
 	m.args = args
 	m.at = at

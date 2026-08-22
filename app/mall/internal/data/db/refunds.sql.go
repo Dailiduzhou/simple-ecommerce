@@ -135,6 +135,54 @@ func (q *Queries) GetOrderRefundByPaymentID(ctx context.Context, paymentID pgtyp
 	return i, err
 }
 
+const listStalePendingRefunds = `-- name: ListStalePendingRefunds :many
+SELECT id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, status, last_error, created_at, updated_at
+FROM order_refunds
+WHERE status = 'pending'
+  AND updated_at < now() - make_interval(secs => $1::double precision)
+ORDER BY updated_at
+LIMIT $2
+`
+
+type ListStalePendingRefundsParams struct {
+	OlderThanSeconds float64
+	LimitRows        int32
+}
+
+func (q *Queries) ListStalePendingRefunds(ctx context.Context, arg ListStalePendingRefundsParams) ([]OrderRefund, error) {
+	rows, err := q.db.Query(ctx, listStalePendingRefunds, arg.OlderThanSeconds, arg.LimitRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrderRefund
+	for rows.Next() {
+		var i OrderRefund
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrderID,
+			&i.UserID,
+			&i.PaymentID,
+			&i.OutRefundNo,
+			&i.TotalAmountMinor,
+			&i.RefundAmountMinor,
+			&i.Currency,
+			&i.Reason,
+			&i.Status,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markOrderRefundSuccess = `-- name: MarkOrderRefundSuccess :one
 UPDATE order_refunds
 SET status = 'success',

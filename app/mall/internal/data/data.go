@@ -161,7 +161,7 @@ func NewPgxPool(c *conf.Data) (*pgxpool.Pool, func(), error) {
 	return pool, cleanup, nil
 }
 
-func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers, errorHandler *PaymentRiverErrorHandler) (*river.Client[pgx.Tx], error) {
+func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers, periodicJobs []*river.PeriodicJob, errorHandler *PaymentRiverErrorHandler) (*river.Client[pgx.Tx], error) {
 	driver := riverpgxv5.New(pool)
 	migrator, err := rivermigrate.New(driver, nil)
 	if err != nil {
@@ -177,6 +177,7 @@ func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers, errorHandler *Pa
 			"orders":   {MaxWorkers: 10},
 		},
 		Workers:      workers,
+		PeriodicJobs: periodicJobs,
 		ErrorHandler: errorHandler,
 	})
 	if err != nil {

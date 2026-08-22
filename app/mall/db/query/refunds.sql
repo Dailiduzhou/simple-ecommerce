@@ -47,3 +47,11 @@ SET status = 'refunded',
 WHERE id = $1
   AND status IN ('success', 'refunded')
 RETURNING *;
+
+-- name: ListStalePendingRefunds :many
+SELECT *
+FROM order_refunds
+WHERE status = 'pending'
+  AND updated_at < now() - make_interval(secs => sqlc.arg(older_than_seconds)::double precision)
+ORDER BY updated_at
+LIMIT sqlc.arg(limit_rows);

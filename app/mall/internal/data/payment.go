@@ -809,6 +809,26 @@ func (r *PaymentRepo) RecordPaymentRefundError(ctx context.Context, refundID int
 	return err
 }
 
+func (r *PaymentRepo) ListStalePendingRefunds(ctx context.Context, olderThan time.Duration, limit int) ([]biz.PaymentRefund, error) {
+	if olderThan <= 0 {
+		olderThan = 10 * time.Minute
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := querierFromContext(ctx, r.data.q).ListStalePendingRefunds(ctx, db.ListStalePendingRefundsParams{
+		OlderThanSeconds: olderThan.Seconds(), LimitRows: int32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	refunds := make([]biz.PaymentRefund, 0, len(rows))
+	for _, row := range rows {
+		refunds = append(refunds, *toBizPaymentRefund(row))
+	}
+	return refunds, nil
+}
+
 func (r *PaymentRepo) ApplyPaymentRefund(ctx context.Context, paymentID, refundID int64) error {
 	var changed db.Payment
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
@@ -1546,11 +1566,36 @@ func (r *PaymentMQRepo) EnqueueCheckPayTx(ctx context.Context, args biz.CheckPay
 	}
 	return r.insert(ctx, args, at, tx)
 }
+func (r *PaymentMQRepo) EnqueueExpireOrder(ctx context.Context, args biz.ExpireOrderArgs, at time.Time) (*biz.MQJob, error) {
+	opts := expireOrderInsertOpts(args, at)
+	result, err := r.client.Insert(ctx, args, opts)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.Job == nil {
+		return nil, fmt.Errorf("river expire order insert returned no job")
+	}
+	job := toBizMQJob(result.Job)
+	job.Deduplicated = result.UniqueSkippedAsDuplicate
+	return job, nil
+}
 func (r *PaymentMQRepo) EnqueueExpireOrderTx(ctx context.Context, args biz.ExpireOrderArgs, at time.Time) (*biz.MQJob, error) {
 	tx := pgTxFromContext(ctx)
 	if tx == nil {
 		return nil, fmt.Errorf("missing transaction")
 	}
+	result, err := r.client.InsertTx(ctx, tx, args, expireOrderInsertOpts(args, at))
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || result.Job == nil {
+		return nil, fmt.Errorf("river expire order insert returned no job")
+	}
+	job := toBizMQJob(result.Job)
+	job.Deduplicated = result.UniqueSkippedAsDuplicate
+	return job, nil
+}
+func expireOrderInsertOpts(args biz.ExpireOrderArgs, at time.Time) *river.InsertOpts {
 	opts := &river.InsertOpts{
 		MaxAttempts: 8,
 		Queue:       "orders",
@@ -1567,16 +1612,7 @@ func (r *PaymentMQRepo) EnqueueExpireOrderTx(ctx context.Context, args biz.Expir
 	if !at.IsZero() {
 		opts.ScheduledAt = at
 	}
-	result, err := r.client.InsertTx(ctx, tx, args, opts)
-	if err != nil {
-		return nil, err
-	}
-	if result == nil || result.Job == nil {
-		return nil, fmt.Errorf("river expire order insert returned no job")
-	}
-	job := toBizMQJob(result.Job)
-	job.Deduplicated = result.UniqueSkippedAsDuplicate
-	return job, nil
+	return opts
 }
 func (r *PaymentMQRepo) EnqueueClosePay(ctx context.Context, args biz.ClosePayArgs, at time.Time) (*biz.MQJob, error) {
 	return r.insertClosePay(ctx, args, at, nil)

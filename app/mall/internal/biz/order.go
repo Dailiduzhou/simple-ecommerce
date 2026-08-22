@@ -90,7 +90,16 @@ type ExpireOrderArgs struct {
 
 func (ExpireOrderArgs) Kind() string { return ExpireOrderJobKind }
 
+// ReapExpiredOrdersJobKind periodically re-enqueues expiry for overdue
+// pending_payment orders whose expire_order job was lost or discarded.
+const ReapExpiredOrdersJobKind = "reap_expired_orders"
+
+type ReapExpiredOrdersArgs struct{}
+
+func (ReapExpiredOrdersArgs) Kind() string { return ReapExpiredOrdersJobKind }
+
 type OrderMQRepo interface {
+	EnqueueExpireOrder(context.Context, ExpireOrderArgs, time.Time) (*MQJob, error)
 	EnqueueExpireOrderTx(context.Context, ExpireOrderArgs, time.Time) (*MQJob, error)
 }
 
