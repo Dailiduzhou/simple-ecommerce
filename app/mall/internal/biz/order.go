@@ -33,6 +33,8 @@ var (
 	ErrOrderHasActivePayment  = errors.Conflict("ORDER_HAS_ACTIVE_PAYMENT", "close the active payment before cancelling the order")
 	ErrOrderAlreadyPaid       = errors.Conflict("ORDER_ALREADY_PAID", "paid order must use the refund flow")
 	ErrOrderInputInvalid      = errors.BadRequest("ORDER_INPUT_INVALID", "order items are invalid")
+	ErrOrderAmountInvalid     = errors.Conflict("ORDER_AMOUNT_INVALID", "order total must be greater than zero")
+	ErrOrderNotExpired        = errors.Conflict("ORDER_NOT_EXPIRED", "order payment window has not expired")
 	ErrIdempotencyKeyRequired = errors.BadRequest("IDEMPOTENCY_KEY_REQUIRED", "idempotency_key is required")
 	ErrIdempotencyKeyInvalid  = errors.BadRequest("IDEMPOTENCY_KEY_INVALID", "idempotency_key must be 8 to 64 characters")
 	ErrIdempotencyKeyConflict = errors.Conflict("IDEMPOTENCY_KEY_CONFLICT", "idempotency_key was already used for a different order request")

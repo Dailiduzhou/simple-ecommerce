@@ -30,7 +30,7 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewPaymentRiverErrorHandler, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepo, NewPaymentAdapters, NewPaymentRepo, NewPaymentMQRepo, NewPaymentNotificationRepo, NewTransaction, NewSnowflakeIDGenerator,
+	NewPgxPool, NewRiverClient, NewRiverInsertClient, NewPaymentRiverErrorHandler, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepoWithJobs, NewOrderPolicy, NewPaymentPolicy, NewPaymentAdapters, NewPaymentRepoWithJobs, NewPaymentMQRepoForWire, NewPaymentNotificationRepo, NewOrderExpiryRepo, NewTransaction, NewSnowflakeIDGenerator,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
@@ -38,11 +38,53 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.CategoryRepo), new(*CategoryRepo)),
 	wire.Bind(new(biz.EventRepo), new(*EventRepo)),
 	wire.Bind(new(biz.OrderRepo), new(*OrderRepo)),
+	wire.Bind(new(biz.OrderMQRepo), new(*PaymentMQRepo)),
 	wire.Bind(new(biz.PaymentRepo), new(*PaymentRepo)),
 	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
 	wire.Bind(new(biz.PaymentNotificationRepo), new(*PaymentNotificationRepo)),
+	wire.Bind(new(biz.OrderExpiryRepo), new(*OrderExpiryRepo)),
 	wire.Bind(new(biz.IDGenerator), new(*snowflakeGenerator)),
 )
+
+type RiverInsertClient struct {
+	client *river.Client[pgx.Tx]
+}
+
+func NewRiverInsertClient(pool *pgxpool.Pool) (*RiverInsertClient, error) {
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("create river insert client: %w", err)
+	}
+	return &RiverInsertClient{client: client}, nil
+}
+
+func NewOrderPolicy(c *conf.Payment) biz.OrderPolicy {
+	if c == nil {
+		return biz.OrderPolicy{PaymentTimeout: 30 * time.Minute}
+	}
+	return biz.OrderPolicy{PaymentTimeout: durationOrDefault(c.OrderPaymentTimeout, 30*time.Minute)}
+}
+
+func NewPaymentPolicy(c *conf.Payment) biz.PaymentPolicy {
+	policy := biz.PaymentPolicy{
+		PrepayLeaseDuration: 30 * time.Second,
+		PollInitialDelay:    5 * time.Second,
+		PollInterval:        10 * time.Second,
+		PollMaxCount:        30,
+	}
+	if c == nil {
+		return policy
+	}
+	policy.PrepayLeaseDuration = durationOrDefault(c.PrepayLeaseDuration, policy.PrepayLeaseDuration)
+	if c.CheckPayJob != nil {
+		policy.PollInitialDelay = durationOrDefault(c.CheckPayJob.InitialDelay, policy.PollInitialDelay)
+		policy.PollInterval = durationOrDefault(c.CheckPayJob.PollInterval, policy.PollInterval)
+		if c.CheckPayJob.MaxPolls > 0 {
+			policy.PollMaxCount = int(c.CheckPayJob.MaxPolls)
+		}
+	}
+	return policy
+}
 
 type (
 	ctxTxKey      struct{}
@@ -131,8 +173,8 @@ func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers, errorHandler *Pa
 
 	client, err := river.NewClient(driver, &river.Config{
 		Queues: map[string]river.QueueConfig{
-			river.QueueDefault: {MaxWorkers: 10},
-			"payments":         {MaxWorkers: 10},
+			"payments": {MaxWorkers: 10},
+			"orders":   {MaxWorkers: 10},
 		},
 		Workers:      workers,
 		ErrorHandler: errorHandler,

@@ -29,6 +29,9 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	if err != nil {
 		return err
 	}
+	if payment == nil {
+		return fmt.Errorf("payment repository returned an empty payment")
+	}
 	method, err := biz.ParsePaymentMethod(payment.Method)
 	if err != nil {
 		return river.JobCancel(err)
@@ -51,6 +54,9 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	if err != nil {
 		return err
 	}
+	if query == nil {
+		return fmt.Errorf("payment provider returned an empty query result")
+	}
 	if query.TradeState.IsTerminal() {
 		return w.repo.ApplyPayQuery(ctx, applyArgs, query)
 	}
@@ -69,6 +75,9 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	})
 	if err != nil {
 		return err
+	}
+	if closed == nil {
+		return fmt.Errorf("payment provider returned an empty close result")
 	}
 	if !closed.Success {
 		return fmt.Errorf("provider did not confirm payment close")

@@ -16,6 +16,8 @@ import (
 type servicePaymentUsecase struct {
 	prepayArgs biz.PrepayForOrderArgs
 	payment    *biz.PaymentDO
+	refundID   int64
+	refundErr  error
 }
 
 func (f *servicePaymentUsecase) PrepayForOrder(_ context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
@@ -36,6 +38,10 @@ func (f *servicePaymentUsecase) QueryPayment(context.Context, string, int64) (*b
 }
 func (f *servicePaymentUsecase) ClosePayment(context.Context, string, int64) (*biz.PaymentCloseResult, error) {
 	return nil, nil
+}
+func (f *servicePaymentUsecase) RefundPayment(_ context.Context, paymentID int64) (*biz.PaymentRefundResult, error) {
+	f.refundID = paymentID
+	return &biz.PaymentRefundResult{Success: f.refundErr == nil}, f.refundErr
 }
 func (f *servicePaymentUsecase) CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*biz.MQJob, error) {
 	return nil, nil
