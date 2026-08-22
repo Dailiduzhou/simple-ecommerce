@@ -55,6 +55,7 @@ type workerRepo struct {
 	skipNotification     bool
 	notificationError    string
 	notificationFailed   string
+	reconciled           *biz.ReconciliationFailure
 }
 
 func (r *workerRepo) CreatePayment(context.Context, biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
@@ -104,7 +105,9 @@ func (r *workerRepo) RecordPaymentRefundError(context.Context, int64, string, bo
 	return nil
 }
 func (r *workerRepo) ApplyPaymentRefund(context.Context, int64, int64) error { return nil }
-func (r *workerRepo) MarkReconciliationRequired(context.Context, biz.ReconciliationFailure) error {
+func (r *workerRepo) MarkReconciliationRequired(_ context.Context, failure biz.ReconciliationFailure) error {
+	failureCopy := failure
+	r.reconciled = &failureCopy
 	return nil
 }
 func (r *workerRepo) RecordReconciliationFailure(context.Context, biz.ReconciliationFailure) error {
@@ -211,4 +214,69 @@ func TestClosePayWorker_ProviderOrderNotExistSettlesAsClosed(t *testing.T) {
 	require.Equal(t, biz.TradeStateClosed, repo.appliedResult.TradeState)
 	require.Equal(t, payment.Amount, repo.appliedResult.Amount)
 	require.Equal(t, 1, gateway.queries)
+}
+
+func TestClosePayWorker_ProviderOrderNotExistAfterPrepayRequiresReconciliation(t *testing.T) {
+	method := biz.PaymentMethod{Provider: "wechat", Product: "native"}
+	payment := &biz.PaymentDO{
+		ID: 8, Method: method.String(), OutTradeNo: "pay_8", Amount: 10000, Currency: "CNY",
+		// Prepay finalized: the provider must know this trade, so "order not
+		// exist" points at a configuration error and must never auto-close.
+		Action: biz.PaymentAction{Type: biz.PaymentActionInvoke},
+	}
+	gateway := &workerGateway{err: biz.ErrProviderOrderNotExist}
+	repo := &workerRepo{payment: payment}
+	worker := NewClosePayWorker(gateway, repo)
+	job := &river.Job[biz.ClosePayArgs]{
+		JobRow: &rivertype.JobRow{Attempt: 1},
+		Args:   biz.ClosePayArgs{PaymentID: 8, Provider: "wechat", Reason: "order_expired"},
+	}
+	require.NoError(t, worker.Work(context.Background(), job))
+	require.False(t, repo.applied)
+	require.NotNil(t, repo.reconciled)
+	require.Equal(t, "provider_order_not_exist", repo.reconciled.Reason)
+	require.Equal(t, int64(8), repo.reconciled.PaymentID)
+}
+
+type reaperExpiryRepo struct {
+	grace   time.Duration
+	limit   int
+	orders  []int64
+	err     error
+	calls   int
+	missing bool
+}
+
+func (r *reaperExpiryRepo) ExpireOrder(context.Context, int64) error { return nil }
+
+type reaperPaymentUsecase struct {
+	olderThan time.Duration
+	limit     int
+	settled   int
+	err       error
+}
+
+func (u *reaperPaymentUsecase) PrepayForOrder(context.Context, biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
+	return nil, nil
+}
+func (u *reaperPaymentUsecase) GetPayment(context.Context, int64, int64) (*biz.PaymentDO, error) {
+	return nil, nil
+}
+func (u *reaperPaymentUsecase) GetPaymentByOrder(context.Context, int64, int64) (*biz.PaymentDO, error) {
+	return nil, nil
+}
+func (u *reaperPaymentUsecase) QueryPayment(context.Context, string, int64) (*biz.PaymentQueryResult, error) {
+	return nil, nil
+}
+func (u *reaperPaymentUsecase) ClosePayment(context.Context, string, int64) (*biz.PaymentCloseResult, error) {
+	return nil, nil
+}
+func (u *reaperPaymentUsecase) RefundPayment(context.Context, int64) (*biz.PaymentRefundResult, error) {
+	return nil, nil
+}
+func (u *reaperPaymentUsecase) CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*biz.MQJob, error) {
+	return nil, nil
+}
+func (u *reaperPaymentUsecase) HandleNotification(context.Context, string, *http.Request) error {
+	return nil
 }
