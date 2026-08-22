@@ -71,10 +71,16 @@ func TestPaymentService_CreatePaymentRequiresAuthentication(t *testing.T) {
 	require.True(t, errors.IsUnauthorized(err))
 }
 
-func TestPaymentService_RefundReturnsNotImplementedAfterOwnershipCheck(t *testing.T) {
-	service := NewPaymentService(&servicePaymentUsecase{payment: &biz.PaymentDO{ID: 1, UserID: 42}}, nil, log.DefaultLogger)
+func TestPaymentService_RefundRequiresAdminAndDelegates(t *testing.T) {
+	uc := &servicePaymentUsecase{}
+	service := NewPaymentService(uc, nil, log.DefaultLogger)
 	_, err := service.RefundPayment(authenticatedPaymentContext(42, "user"), &pb.RefundPaymentRequest{Id: 1})
-	require.Equal(t, int32(501), errors.FromError(err).Code)
+	require.True(t, errors.IsForbidden(err))
+
+	reply, err := service.RefundPayment(authenticatedPaymentContext(7, "admin"), &pb.RefundPaymentRequest{Id: 1})
+	require.NoError(t, err)
+	require.NotNil(t, reply)
+	require.Equal(t, int64(1), uc.refundID)
 }
 
 func TestProviderCallbackLimiterIsScopedAndBounded(t *testing.T) {
