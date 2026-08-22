@@ -50,6 +50,11 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			if existing.RequestHash != args.RequestHash {
 				return biz.ErrIdempotencyKeyConflict
 			}
+			if existing.Status == biz.OrderStatusCancelled {
+				// Returning a cancelled order would silently swallow the new
+				// intent behind a "successful" response; force a fresh key.
+				return biz.ErrIdempotencyKeyReused
+			}
 			result = toBizOrder(existing)
 			result.Items, err = r.loadItemsWithQuerier(ctx, q, existing.ID)
 			return err
@@ -138,10 +143,19 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 				UserID: args.UserID, IdempotencyKey: args.IdempotencyKey,
 			})
 			if loadErr != nil {
+				// Under read committed the winning transaction has committed
+				// before the unique violation surfaces, so the row must exist;
+				// a miss would mean the key was concurrently freed.
+				if stderrors.Is(loadErr, pgx.ErrNoRows) {
+					return biz.Order{}, biz.ErrIdempotencyKeyConflict
+				}
 				return biz.Order{}, loadErr
 			}
 			if existing.RequestHash != args.RequestHash {
 				return biz.Order{}, biz.ErrIdempotencyKeyConflict
+			}
+			if existing.Status == biz.OrderStatusCancelled {
+				return biz.Order{}, biz.ErrIdempotencyKeyReused
 			}
 			result = toBizOrder(existing)
 			result.Items, loadErr = r.loadItems(ctx, existing.ID)
