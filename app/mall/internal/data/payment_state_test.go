@@ -340,3 +340,31 @@ func TestApplyPayQuery_DuplicateThirdPartyTxSettlesInFreshTransaction(t *testing
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
 	require.NoError(t, repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, stateResult(10000)))
 }
+
+func TestOrderExpiryRepo_ReapOverdueOrdersReenqueuesAndReportsGrace(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	redisServer := miniredis.RunT(t)
+	q.EXPECT().ListOverduePendingOrders(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.ListOverduePendingOrdersParams) ([]int64, error) {
+		require.InDelta(t, (5 * time.Minute).Seconds(), args.GraceSeconds, 0.001)
+		require.Equal(t, int32(50), args.LimitRows)
+		return []int64{5, 9}, nil
+	})
+	d := newTestData(t, q, redisServer)
+	mq := &reaperMQ{}
+	repo := NewOrderExpiryRepo(d, testTxManager{q: q}, mq, log.DefaultLogger)
+	requeued, err := repo.ReapOverdueOrders(context.Background(), 5*time.Minute, 50)
+	require.NoError(t, err)
+	require.Equal(t, []int64{5, 9}, requeued)
+	require.Equal(t, []biz.ExpireOrderArgs{{OrderID: 5}, {OrderID: 9}}, mq.enqueued)
+}
+
+type reaperMQ struct {
+	biz.PaymentMQRepo
+	enqueued []biz.ExpireOrderArgs
+}
+
+func (m *reaperMQ) EnqueueExpireOrder(_ context.Context, args biz.ExpireOrderArgs, _ time.Time) (*biz.MQJob, error) {
+	m.enqueued = append(m.enqueued, args)
+	return &biz.MQJob{ID: 1}, nil
+}

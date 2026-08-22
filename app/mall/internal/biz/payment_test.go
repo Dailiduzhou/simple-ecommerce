@@ -72,6 +72,7 @@ type paymentTestRepo struct {
 	refundApplied         bool
 	refundError           string
 	refundDefinitive      *bool
+	staleRefunds          []PaymentRefund
 	reconciliationFailure *ReconciliationFailure
 }
 
@@ -145,6 +146,9 @@ func (r *paymentTestRepo) ApplyPaymentRefund(context.Context, int64, int64) erro
 	r.payment.Status = PaymentStatusRefunded
 	r.refund.Status = PaymentRefundStatusSuccess
 	return nil
+}
+func (r *paymentTestRepo) ListStalePendingRefunds(context.Context, time.Duration, int) ([]PaymentRefund, error) {
+	return r.staleRefunds, nil
 }
 
 func (r *paymentTestRepo) MarkReconciliationRequired(_ context.Context, failure ReconciliationFailure) error {
@@ -428,4 +432,35 @@ func TestRefundPayment_BusinessRejectionMarksDefinitiveFailure(t *testing.T) {
 	require.Error(t, err)
 	require.NotNil(t, repo.refundDefinitive)
 	require.True(t, *repo.refundDefinitive)
+}
+
+func TestReconcilePendingRefunds_RetriesStuckRefundWithOriginalNumber(t *testing.T) {
+	payment, refund := refundFixture(PaymentRefundStatusPending)
+	repo := &paymentTestRepo{payment: payment, refund: refund, staleRefunds: []PaymentRefund{*refund}}
+	gateway := &paymentTestGateway{
+		capabilities: PaymentCapabilities{SupportsRefund: true},
+		refundResult: &PaymentRefundResult{Success: true, OutRefundNo: refund.OutRefundNo},
+	}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	settled, err := uc.ReconcilePendingRefunds(context.Background(), 10*time.Minute, 100)
+	require.NoError(t, err)
+	require.Equal(t, 1, settled)
+	require.True(t, gateway.refundCalled)
+	require.Equal(t, refund.OutRefundNo, gateway.refundReq.OutRefundNo)
+	require.True(t, repo.refundApplied)
+}
+
+func TestReconcilePendingRefunds_SkipsConflictWithoutSettling(t *testing.T) {
+	_, refund := refundFixture(PaymentRefundStatusPending)
+	// The stored refund points at a different payment record than the one
+	// re-preparation returns, so the reconciler must skip it.
+	conflicting := *refund
+	conflicting.ID = 99
+	repo := &paymentTestRepo{payment: &PaymentDO{ID: 7, OrderID: 5, UserID: 42, Method: "alipay:wap", Status: PaymentStatusSuccess}, refund: &conflicting, staleRefunds: []PaymentRefund{*refund}}
+	gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsRefund: true}}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	settled, err := uc.ReconcilePendingRefunds(context.Background(), 10*time.Minute, 100)
+	require.NoError(t, err)
+	require.Equal(t, 0, settled)
+	require.False(t, gateway.refundCalled)
 }

@@ -39,6 +39,9 @@ func (u *callbackPaymentUsecase) ClosePayment(context.Context, string, int64) (*
 func (u *callbackPaymentUsecase) RefundPayment(context.Context, int64) (*biz.PaymentRefundResult, error) {
 	return nil, nil
 }
+func (u *callbackPaymentUsecase) ReconcilePendingRefunds(context.Context, time.Duration, int) (int, error) {
+	return 0, nil
+}
 func (u *callbackPaymentUsecase) CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*biz.MQJob, error) {
 	return nil, nil
 }

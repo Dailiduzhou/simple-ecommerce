@@ -43,6 +43,9 @@ func (f *servicePaymentUsecase) RefundPayment(_ context.Context, paymentID int64
 	f.refundID = paymentID
 	return &biz.PaymentRefundResult{Success: f.refundErr == nil}, f.refundErr
 }
+func (f *servicePaymentUsecase) ReconcilePendingRefunds(context.Context, time.Duration, int) (int, error) {
+	return 0, nil
+}
 func (f *servicePaymentUsecase) CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*biz.MQJob, error) {
 	return nil, nil
 }

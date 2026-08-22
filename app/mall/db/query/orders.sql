@@ -58,3 +58,17 @@ SELECT EXISTS (SELECT 1 FROM orders WHERE user_id = $1 AND is_completed = FALSE)
 
 -- name: CountOrdersByUser :one
 SELECT COUNT(*) FROM orders WHERE user_id = $1;
+
+-- name: OrderIsExpired :one
+-- Expiry decisions must use the database clock, not the application server's,
+-- so instances with skewed clocks cannot extend or shrink the payment window.
+SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired FROM orders WHERE id = $1;
+
+-- name: ListOverduePendingOrders :many
+-- Backstop for expire_order jobs that were discarded after exhausting retries;
+-- the partial index idx_orders_pending_expiry keeps this scan cheap.
+SELECT id FROM orders
+WHERE status = 'pending_payment'
+  AND expires_at <= now() - make_interval(secs => sqlc.arg(grace_seconds)::double precision)
+ORDER BY expires_at
+LIMIT sqlc.arg(limit_rows);

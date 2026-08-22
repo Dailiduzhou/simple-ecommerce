@@ -332,6 +332,41 @@ func (q *Queries) ListOrdersByUser(ctx context.Context, arg ListOrdersByUserPara
 	return items, nil
 }
 
+const listOverduePendingOrders = `-- name: ListOverduePendingOrders :many
+SELECT id FROM orders
+WHERE status = 'pending_payment'
+  AND expires_at <= now() - make_interval(secs => $1::double precision)
+ORDER BY expires_at
+LIMIT $2
+`
+
+type ListOverduePendingOrdersParams struct {
+	GraceSeconds float64
+	LimitRows    int32
+}
+
+// Backstop for expire_order jobs that were discarded after exhausting retries;
+// the partial index idx_orders_pending_expiry keeps this scan cheap.
+func (q *Queries) ListOverduePendingOrders(ctx context.Context, arg ListOverduePendingOrdersParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listOverduePendingOrders, arg.GraceSeconds, arg.LimitRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markOrderCancelled = `-- name: MarkOrderCancelled :one
 UPDATE orders SET is_completed = TRUE, status = 'cancelled', updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND status = 'cancelling'
@@ -411,4 +446,17 @@ func (q *Queries) MarkOrderPaid(ctx context.Context, id int64) (Order, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const orderIsExpired = `-- name: OrderIsExpired :one
+SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired FROM orders WHERE id = $1
+`
+
+// Expiry decisions must use the database clock, not the application server's,
+// so instances with skewed clocks cannot extend or shrink the payment window.
+func (q *Queries) OrderIsExpired(ctx context.Context, id int64) (bool, error) {
+	row := q.db.QueryRow(ctx, orderIsExpired, id)
+	var expired bool
+	err := row.Scan(&expired)
+	return expired, err
 }
