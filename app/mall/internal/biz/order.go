@@ -38,6 +38,10 @@ var (
 	ErrIdempotencyKeyRequired = errors.BadRequest("IDEMPOTENCY_KEY_REQUIRED", "idempotency_key is required")
 	ErrIdempotencyKeyInvalid  = errors.BadRequest("IDEMPOTENCY_KEY_INVALID", "idempotency_key must be 8 to 64 characters")
 	ErrIdempotencyKeyConflict = errors.Conflict("IDEMPOTENCY_KEY_CONFLICT", "idempotency_key was already used for a different order request")
+	// ErrIdempotencyKeyReused is returned when a replayed idempotency key maps
+	// to a cancelled order: returning the dead order would silently swallow the
+	// new intent, so the client must mint a fresh key instead.
+	ErrIdempotencyKeyReused = errors.Conflict("IDEMPOTENCY_KEY_REUSED", "idempotency_key was already used for a cancelled order; submit again with a new key")
 )
 
 type Order struct {

@@ -279,3 +279,21 @@ func TestOrderRepo_CancelRestoresStockOnlyAfterCASAndRejectsPaidOrder(t *testing
 		require.ErrorIs(t, repo.CancelOrderByUser(context.Background(), 1, 42), biz.ErrOrderHasActivePayment)
 	})
 }
+
+func TestOrderRepo_ReplayAgainstCancelledOrderRequiresNewKey(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	redisServer := miniredis.RunT(t)
+	cancelled := db.Order{ID: 7, UserID: 42, Status: biz.OrderStatusCancelled,
+		IdempotencyKey: "checkout-42", RequestHash: "same-hash"}
+	q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), db.GetOrderByUserIdempotencyParams{
+		UserID: 42, IdempotencyKey: "checkout-42",
+	}).Return(cancelled, nil)
+	d := newTestData(t, q, redisServer)
+	repo := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger)
+	_, err := repo.CreateOrder(context.Background(), biz.CreateOrderArgs{
+		UserID: 42, AddressID: 9, IdempotencyKey: "checkout-42", RequestHash: "same-hash",
+		Items: []biz.OrderItemInput{{ProductID: 3, Quantity: 2}},
+	})
+	require.ErrorIs(t, err, biz.ErrIdempotencyKeyReused)
+}
