@@ -46,10 +46,14 @@ func (r *OrderExpiryRepo) ExpireOrder(ctx context.Context, orderID int64) error 
 			return nil
 		}
 		// River normally schedules this job at expires_at, but workers must not
-		// trust queue timing alone. Re-check under the order row lock so clock
-		// skew, a manually inserted job, or an early delivery cannot cancel a
-		// still-payable order.
-		if order.ExpiresAt.Valid && order.ExpiresAt.Time.After(time.Now()) {
+		// trust queue timing alone. Re-check under the order row lock so an
+		// early delivery cannot cancel a still-payable order. The comparison
+		// runs in SQL so all instances agree with the database clock.
+		expired, err := q.OrderIsExpired(ctx, orderID)
+		if err != nil {
+			return err
+		}
+		if !expired {
 			return biz.ErrOrderNotExpired
 		}
 		payments, err := q.ListPaymentsByOrderForUpdate(ctx, orderID)
