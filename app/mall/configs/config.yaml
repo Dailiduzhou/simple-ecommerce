@@ -33,19 +33,19 @@ payment:
   order_payment_timeout: 30m
   prepay_lease_duration: 30s
   alipay:
-    enabled: false
-    app_id: 9021000164669272
+    enabled: "${PAYMENT_ALIPAY_ENABLED}"
+    app_id: "${ALIPAY_APP_ID}"
     private_key: "${ALIPAY_PRIVATE_KEY}"
-    is_production: false
+    is_production: "${ALIPAY_IS_PRODUCTION}"
     app_cert_path: "${ALIPAY_APP_CERT_PATH}"
     alipay_public_cert_path: "${ALIPAY_PUBLIC_KEY_PATH}"
     alipay_root_cert_path: "${ALIPAY_ROOT_KEY_PATH}"
   wechat:
-    enabled: false
+    enabled: "${PAYMENT_WECHAT_ENABLED}"
     app_id: "${WECHAT_APP_ID}"
     mch_id: "${WECHAT_MCH_ID}"
     api_key: "${WECHAT_API_KEY}"
-    is_production: false
+    is_production: "${WECHAT_IS_PRODUCTION}"
   check_pay_job:
     initial_delay: 5s
     max_polls: 30
