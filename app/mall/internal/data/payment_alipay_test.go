@@ -133,6 +133,21 @@ func TestAlipayRefundReturnsProviderCode(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Equal(t, "ACQ.TRADE_NOT_EXIST", result.RawCode)
+	require.True(t, result.Rejection, "a 4xx business rejection is definitive")
+}
+
+func TestAlipayRefundSystemErrorIsNotDefinitive(t *testing.T) {
+	requester := &fakeAlipayTradeRequester{refundRsp: &alipayv3.TradeRefundRsp{
+		StatusCode:  http.StatusServiceUnavailable,
+		ErrResponse: alipayv3.ErrResponse{Code: "2000", Message: "system busy"},
+	}}
+	adapter := newAlipayPaymentAdapterForTest(nil, requester, log.DefaultLogger)
+	result, err := adapter.Refund(context.Background(), biz.PaymentRefundRequest{
+		OutTradeNo: "payment_1", OutRefundNo: "refund_1", Amount: 10000, Currency: "CNY",
+	})
+	require.Error(t, err)
+	require.Equal(t, "2000", result.RawCode)
+	require.False(t, result.Rejection, "5xx system errors are transient and must stay retryable")
 }
 
 func TestAlipayRefundKeepsUncertainGopayErrorRetryable(t *testing.T) {

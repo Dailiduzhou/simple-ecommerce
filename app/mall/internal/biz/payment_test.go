@@ -71,6 +71,7 @@ type paymentTestRepo struct {
 	refund                *PaymentRefund
 	refundApplied         bool
 	refundError           string
+	refundDefinitive      *bool
 	reconciliationFailure *ReconciliationFailure
 }
 
@@ -134,8 +135,9 @@ func (r *paymentTestRepo) PreparePaymentRefund(_ context.Context, paymentID int6
 	}
 	return r.payment, r.refund, nil
 }
-func (r *paymentTestRepo) RecordPaymentRefundError(_ context.Context, _ int64, lastError string, _ bool) error {
+func (r *paymentTestRepo) RecordPaymentRefundError(_ context.Context, _ int64, lastError string, definitive bool) error {
 	r.refundError = lastError
+	r.refundDefinitive = &definitive
 	return nil
 }
 func (r *paymentTestRepo) ApplyPaymentRefund(context.Context, int64, int64) error {
@@ -381,3 +383,49 @@ func TestPaymentGatewayWithoutProvidersReturnsAvailabilityError(t *testing.T) {
 }
 
 var _ = time.Second
+
+func refundFixture(status string) (*PaymentDO, *PaymentRefund) {
+	payment := &PaymentDO{
+		ID: 7, OrderID: 5, UserID: 42, Amount: 10000, Currency: "CNY",
+		Method: "alipay:wap", OutTradeNo: "payment_7", Status: PaymentStatusSuccess,
+	}
+	refund := &PaymentRefund{
+		ID: 11, PaymentID: payment.ID, OrderID: payment.OrderID, UserID: payment.UserID,
+		OutRefundNo: "refund_11", TotalAmount: payment.Amount, RefundAmount: payment.Amount,
+		Currency: payment.Currency, Status: status,
+	}
+	return payment, refund
+}
+
+func TestRefundPayment_TransientErrorKeepsRefundPending(t *testing.T) {
+	payment, refund := refundFixture(PaymentRefundStatusPending)
+	repo := &paymentTestRepo{payment: payment, refund: refund}
+	gateway := &paymentTestGateway{
+		capabilities: PaymentCapabilities{SupportsRefund: true},
+		// A 5xx-shaped provider failure carries a RawCode but no Rejection:
+		// it must not be recorded as a definitive failure.
+		refundResult: &PaymentRefundResult{RawCode: "2000"},
+		refundErr:    stderrors.New("alipay system busy"),
+	}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	require.Error(t, err)
+	require.NotNil(t, repo.refundDefinitive)
+	require.False(t, *repo.refundDefinitive)
+	require.False(t, repo.refundApplied)
+}
+
+func TestRefundPayment_BusinessRejectionMarksDefinitiveFailure(t *testing.T) {
+	payment, refund := refundFixture(PaymentRefundStatusPending)
+	repo := &paymentTestRepo{payment: payment, refund: refund}
+	gateway := &paymentTestGateway{
+		capabilities: PaymentCapabilities{SupportsRefund: true},
+		refundResult: &PaymentRefundResult{RawCode: "ACQ.TRADE_STATUS_ERROR", Rejection: true},
+		refundErr:    stderrors.New("refund rejected"),
+	}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	require.Error(t, err)
+	require.NotNil(t, repo.refundDefinitive)
+	require.True(t, *repo.refundDefinitive)
+}
