@@ -32,6 +32,7 @@ func TestOrderExpiry_RejectsEarlyDelivery(t *testing.T) {
 		Status:    biz.OrderStatusPendingPayment,
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	}, nil)
+	q.EXPECT().OrderIsExpired(gomock.Any(), int64(2)).Return(false, nil)
 	repo := NewOrderExpiryRepo(nil, testTxManager{q: q}, nil, log.DefaultLogger)
 	require.ErrorIs(t, repo.ExpireOrder(context.Background(), 2), biz.ErrOrderNotExpired)
 }
@@ -208,6 +209,7 @@ func TestOrderExpiry_RefundedPaymentOnPendingOrderRequiresReconciliation(t *test
 	redisServer := miniredis.RunT(t)
 	refunded := statePayment(biz.PaymentStatusRefunded)
 	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPendingPayment}, nil)
+	q.EXPECT().OrderIsExpired(gomock.Any(), int64(2)).Return(true, nil)
 	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{refunded}, nil)
 	q.EXPECT().RequirePaymentReconciliation(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.RequirePaymentReconciliationParams) (db.Payment, error) {
 		require.Equal(t, "refunded_on_pending_order", args.ReconciliationReason.String)
@@ -232,6 +234,7 @@ func TestOrderExpiry_CancelInvalidatesProductCaches(t *testing.T) {
 	redisServer := miniredis.RunT(t)
 	failed := statePayment(biz.PaymentStatusFailed)
 	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPendingPayment}, nil)
+	q.EXPECT().OrderIsExpired(gomock.Any(), int64(2)).Return(true, nil)
 	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{failed}, nil)
 	q.EXPECT().MarkOrderCancelling(gomock.Any(), int64(2)).Return(db.Order{ID: 2, Status: biz.OrderStatusCancelling}, nil)
 	q.EXPECT().RestoreOrderItemStock(gomock.Any(), int64(2)).Return(nil)
