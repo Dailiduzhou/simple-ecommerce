@@ -205,6 +205,10 @@ type PaymentRefundResult struct {
 	FundChanged   bool
 	Success       bool
 	RawCode       string
+	// Rejection reports a definitive business rejection from the provider, as
+	// opposed to a transient transport or system error that may be retried.
+	// Only a Rejection may mark the local refund record as definitively failed.
+	Rejection bool
 }
 
 const (
@@ -761,6 +765,14 @@ func (uc *paymentUsecase) RefundPayment(ctx context.Context, paymentID int64) (*
 	if err != nil {
 		return nil, err
 	}
+	return uc.executeRefund(ctx, method, payment, refund)
+}
+
+// executeRefund drives the gateway call and local settlement for a prepared
+// refund record. It is shared by the admin refund API and the pending-refund
+// reconciliation worker; both rely on the gateway's per-OutRefundNo
+// idempotency to make re-issuing the same refund safe.
+func (uc *paymentUsecase) executeRefund(ctx context.Context, method PaymentMethod, payment *PaymentDO, refund *PaymentRefund) (*PaymentRefundResult, error) {
 	result := &PaymentRefundResult{
 		Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID,
 		OutRefundNo: refund.OutRefundNo, Amount: refund.RefundAmount, Currency: refund.Currency,
@@ -769,26 +781,29 @@ func (uc *paymentUsecase) RefundPayment(ctx context.Context, paymentID int64) (*
 		result.Success = true
 		return result, nil
 	}
-	result, err = uc.gateway.Refund(ctx, PaymentRefundRequest{
+	result, err := uc.gateway.Refund(ctx, PaymentRefundRequest{
 		Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID,
 		OutRefundNo: refund.OutRefundNo, Amount: refund.RefundAmount, Currency: refund.Currency,
 		Reason: refund.Reason,
 	})
 	if err != nil {
-		definitive := result != nil && result.RawCode != ""
+		// Only an explicit provider business rejection is definitive. Transient
+		// transport or system errors keep the record pending so the
+		// reconciliation worker can retry it with the same OutRefundNo.
+		definitive := result != nil && result.Rejection
 		if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), definitive); recordErr != nil {
-			uc.log.WithContext(ctx).Errorw("msg", "record payment refund error failed", "payment_id", paymentID, "refund_id", refund.ID, "error", recordErr)
+			uc.log.WithContext(ctx).Errorw("msg", "record payment refund error failed", "payment_id", payment.ID, "refund_id", refund.ID, "error", recordErr)
 		}
 		return result, err
 	}
 	if result == nil || !result.Success {
 		err = errors.New(502, "PAYMENT_REFUND_FAILED", "payment provider did not confirm refund")
-		if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), true); recordErr != nil {
-			uc.log.WithContext(ctx).Errorw("msg", "record payment refund rejection failed", "payment_id", paymentID, "refund_id", refund.ID, "error", recordErr)
+		if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), false); recordErr != nil {
+			uc.log.WithContext(ctx).Errorw("msg", "record payment refund rejection failed", "payment_id", payment.ID, "refund_id", refund.ID, "error", recordErr)
 		}
 		return result, err
 	}
-	if err := uc.paymentRepo.ApplyPaymentRefund(ctx, paymentID, refund.ID); err != nil {
+	if err := uc.paymentRepo.ApplyPaymentRefund(ctx, payment.ID, refund.ID); err != nil {
 		return nil, err
 	}
 	return result, nil

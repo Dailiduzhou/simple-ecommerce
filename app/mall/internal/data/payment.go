@@ -458,6 +458,9 @@ func (a *AlipayPaymentAdapter) Refund(ctx context.Context, req biz.PaymentRefund
 			TransactionID: orEmpty(response.TradeNo, req.TransactionID), OutRefundNo: req.OutRefundNo,
 			Currency: req.Currency, FundChanged: strings.EqualFold(response.FundChange, "Y"),
 			RawCode: response.ErrResponse.Code,
+			// Only a parsed 4xx counts as a definitive business rejection;
+			// 5xx and transport errors are transient and may be retried.
+			Rejection: response.StatusCode >= 400 && response.StatusCode < 500,
 		}
 	}
 	if err != nil {
