@@ -135,16 +135,9 @@ func (h *PaymentRiverErrorHandler) invalidatePaymentCaches(ctx context.Context, 
 	if h.rdb == nil || payment.ID == 0 {
 		return
 	}
-	keys := []string{
-		redisKey("payment", payment.ID),
-		redisKey("payment", "order", payment.OrderID),
-		redisKey("payment", "order", payment.OrderID, "active", payment.PayChannel),
-		redisKey("order", payment.OrderID),
-	}
-	if payment.OutTradeNo != "" {
-		keys = append(keys, redisKey("payment", "out_trade_no", payment.OutTradeNo))
-	}
+	keys := paymentCacheKeysFor(payment, paymentCacheGeneration(ctx, h.rdb, h.log))
 	if order, err := db.New(h.pool).GetOrder(ctx, payment.OrderID); err == nil {
+		keys = append(keys, redisKey("order", payment.OrderID))
 		keys = append(keys, redisKey("order", "user", order.ID, order.UserID))
 		if order.OutTradeNo != "" {
 			keys = append(keys, redisKey("order", "no", order.OutTradeNo))
@@ -154,6 +147,9 @@ func (h *PaymentRiverErrorHandler) invalidatePaymentCaches(ctx context.Context, 
 	}
 	if err := h.rdb.Unlink(ctx, keys...).Err(); err != nil {
 		h.log.WithContext(ctx).Errorw("msg", "invalidate discarded payment caches failed", "payment_id", payment.ID, "error", err)
+	}
+	if err := h.rdb.Incr(ctx, redisKey("payment", "gen")).Err(); err != nil {
+		h.log.WithContext(ctx).Errorw("msg", "advance payment cache generation failed", "payment_id", payment.ID, "error", err)
 	}
 }
 

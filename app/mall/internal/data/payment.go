@@ -710,7 +710,7 @@ func (r *PaymentRepo) RecordPaymentPrepayError(ctx context.Context, id int64, to
 }
 
 func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
-	return r.getPayment(ctx, redisKey("payment", id), func() (db.Payment, error) { return querierFromContext(ctx, r.data.q).GetPayment(ctx, id) })
+	return r.getPayment(ctx, func(gen int64) string { return redisKey("payment", id, "g", gen) }, func() (db.Payment, error) { return querierFromContext(ctx, r.data.q).GetPayment(ctx, id) })
 }
 func (r *PaymentRepo) GetPaymentByUser(ctx context.Context, id, userID int64) (*biz.PaymentDO, error) {
 	payment, err := r.GetPayment(ctx, id)
@@ -723,12 +723,12 @@ func (r *PaymentRepo) GetPaymentByUser(ctx context.Context, id, userID int64) (*
 	return payment, nil
 }
 func (r *PaymentRepo) GetLatestPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
-	return r.getPayment(ctx, redisKey("payment", "order", orderID), func() (db.Payment, error) {
+	return r.getPayment(ctx, func(gen int64) string { return redisKey("payment", "order", orderID, "g", gen) }, func() (db.Payment, error) {
 		return querierFromContext(ctx, r.data.q).GetLatestPaymentByOrder(ctx, orderID)
 	})
 }
 func (r *PaymentRepo) GetActivePaymentByOrderMethod(ctx context.Context, orderID int64, method string) (*biz.PaymentDO, error) {
-	return r.getPayment(ctx, redisKey("payment", "order", orderID, "active", method), func() (db.Payment, error) {
+	return r.getPayment(ctx, func(gen int64) string { return redisKey("payment", "order", orderID, "active", method, "g", gen) }, func() (db.Payment, error) {
 		return querierFromContext(ctx, r.data.q).GetActivePaymentByOrderChannel(ctx, db.GetActivePaymentByOrderChannelParams{OrderID: orderID, PayChannel: method})
 	})
 }
@@ -743,7 +743,7 @@ func (r *PaymentRepo) getActivePaymentByOrder(ctx context.Context, orderID int64
 	return toBizPayment(row), nil
 }
 func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*biz.PaymentDO, error) {
-	return r.getPayment(ctx, redisKey("payment", "out_trade_no", outTradeNo), func() (db.Payment, error) {
+	return r.getPayment(ctx, func(gen int64) string { return redisKey("payment", "out_trade_no", outTradeNo, "g", gen) }, func() (db.Payment, error) {
 		return querierFromContext(ctx, r.data.q).GetPaymentByOutTradeNo(ctx, outTradeNo)
 	})
 }
@@ -921,7 +921,14 @@ func (r *PaymentRepo) MarkPaymentNotificationFailed(ctx context.Context, id int6
 func notificationErrorText(value string) pgtype.Text {
 	return pgtype.Text{String: value, Valid: value != ""}
 }
-func (r *PaymentRepo) getPayment(ctx context.Context, key string, load func() (db.Payment, error)) (*biz.PaymentDO, error) {
+
+// getPayment reads through the cache using keys versioned by a generation
+// counter. Writers bump the generation after commit, so a reader that loaded a
+// row just before a state change can only repopulate keys under the old
+// generation, which no future read will ever consult.
+func (r *PaymentRepo) getPayment(ctx context.Context, keyForGen func(int64) string, load func() (db.Payment, error)) (*biz.PaymentDO, error) {
+	gen := r.paymentGeneration(ctx)
+	key := keyForGen(gen)
 	if cached, err := r.getCache(ctx, key); err == nil {
 		return cached, nil
 	} else if !stderrors.Is(err, redis.Nil) {
@@ -1454,19 +1461,41 @@ func (r *PaymentRepo) setCache(ctx context.Context, key string, payment *biz.Pay
 		}
 	})
 }
+func (r *PaymentRepo) paymentGeneration(ctx context.Context) int64 {
+	return paymentCacheGeneration(ctx, r.data.rdb, r.log)
+}
+func paymentCacheGeneration(ctx context.Context, rdb *redis.Client, logger *log.Helper) int64 {
+	return cacheGeneration(ctx, rdb, logger, redisKey("payment", "gen"))
+}
+func paymentCacheKeysFor(payment db.Payment, gen int64) []string {
+	keys := []string{
+		redisKey("payment", payment.ID, "g", gen),
+		redisKey("payment", "order", payment.OrderID, "g", gen),
+		redisKey("payment", "order", payment.OrderID, "active", payment.PayChannel, "g", gen),
+	}
+	if payment.OutTradeNo != "" {
+		keys = append(keys, redisKey("payment", "out_trade_no", payment.OutTradeNo, "g", gen))
+	}
+	return keys
+}
 func (r *PaymentRepo) cachePayment(ctx context.Context, payment *biz.PaymentDO) {
-	r.setCache(ctx, redisKey("payment", payment.ID), payment)
-	r.setCache(ctx, redisKey("payment", "out_trade_no", payment.OutTradeNo), payment)
-	r.setCache(ctx, redisKey("payment", "order", payment.OrderID), payment)
-	r.setCache(ctx, redisKey("payment", "order", payment.OrderID, "active", payment.Method), payment)
+	gen := r.paymentGeneration(ctx)
+	for _, key := range paymentCacheKeysFor(db.Payment{ID: payment.ID, OrderID: payment.OrderID, PayChannel: payment.Method, OutTradeNo: payment.OutTradeNo}, gen) {
+		r.setCache(ctx, key, payment)
+	}
 }
 func (r *PaymentRepo) invalidatePayment(ctx context.Context, payment db.Payment) {
-	r.deleteCache(ctx, redisKey("payment", payment.ID))
-	r.deleteCache(ctx, redisKey("payment", "order", payment.OrderID))
-	r.deleteCache(ctx, redisKey("payment", "order", payment.OrderID, "active", payment.PayChannel))
-	if payment.OutTradeNo != "" {
-		r.deleteCache(ctx, redisKey("payment", "out_trade_no", payment.OutTradeNo))
-	}
+	keys := paymentCacheKeysFor(payment, r.paymentGeneration(ctx))
+	afterCommit(ctx, func() {
+		if err := r.data.rdb.Unlink(ctx, keys...).Err(); err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "delete payment cache failed", "error", err)
+		}
+		// Advance the generation so a concurrent reader that already loaded the
+		// old row cannot repopulate stale state under the next generation.
+		if err := r.data.rdb.Incr(ctx, redisKey("payment", "gen")).Err(); err != nil {
+			r.log.WithContext(ctx).Errorw("msg", "advance payment cache generation failed", "error", err)
+		}
+	})
 }
 func (r *PaymentRepo) invalidateOrder(ctx context.Context, orderID int64) {
 	order, err := querierFromContext(ctx, r.data.q).GetOrder(ctx, orderID)
