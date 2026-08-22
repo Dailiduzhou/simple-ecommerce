@@ -1169,6 +1169,21 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 		}
 		return markNotificationProcessed(ctx, q, args.NotificationID)
 	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if stderrors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_payments_third_party_tx_id_channel" {
+			// The provider reported this transaction id for another payment;
+			// both cannot be the same money movement. The unique violation
+			// aborted the transaction, so settle state in a fresh one instead
+			// of letting the job retry the doomed UPDATE forever.
+			return r.MarkReconciliationRequired(ctx, biz.ReconciliationFailure{
+				PaymentID: args.PaymentID, NotificationID: args.NotificationID, Provider: provider,
+				Attempt: max(1, args.PollCount), Reason: "duplicate_third_party_tx",
+				LastError: "third party transaction id is already recorded on another payment",
+			})
+		}
+		return err
+	}
 	if err == nil && changed.ID > 0 {
 		observability.PaymentTransition(ctx, fromStatus, changed.Status, event, provider)
 		r.invalidatePayment(ctx, changed)
@@ -1240,11 +1255,22 @@ func reconciliationReasonForMismatch(mismatch string) string {
 }
 
 func requirePaymentReconciliation(ctx context.Context, q db.Querier, paymentID int64, reason, detail string) (db.Payment, error) {
-	return q.RequirePaymentReconciliation(ctx, db.RequirePaymentReconciliationParams{
+	payment, err := q.RequirePaymentReconciliation(ctx, db.RequirePaymentReconciliationParams{
 		ID:                   paymentID,
 		ReconciliationReason: pgtype.Text{String: reason, Valid: reason != ""},
 		ReconciliationDetail: pgtype.Text{String: detail, Valid: detail != ""},
 	})
+	if stderrors.Is(err, pgx.ErrNoRows) {
+		// The guard excludes payments already in processing/resolved; re-entering
+		// here is an idempotent no-op, not a failure. Returning the current row
+		// lets the surrounding transaction commit instead of retrying forever.
+		current, loadErr := q.GetPayment(ctx, paymentID)
+		if loadErr != nil {
+			return db.Payment{}, loadErr
+		}
+		return current, nil
+	}
+	return payment, err
 }
 
 func validateProviderResult(payment db.Payment, method biz.PaymentMethod, result *biz.PaymentQueryResult) string {
