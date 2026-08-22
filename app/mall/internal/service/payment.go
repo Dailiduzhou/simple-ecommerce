@@ -228,6 +228,12 @@ func (l *providerCallbackLimiter) Allow(key string, now time.Time) bool {
 	return true
 }
 
+// callbackLimiterKey deliberately uses the transport-level RemoteAddr and
+// ignores proxy headers like X-Forwarded-For, which callers could forge to
+// bypass the limiter. Consequence: behind a load balancer all callbacks share
+// one bucket and are limited as a whole. If this service is ever deployed
+// behind a trusted proxy, plumb the real client IP through a configured,
+// trusted proxy list instead of changing this function to read headers.
 func callbackLimiterKey(provider, remoteAddr string) string {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err == nil {

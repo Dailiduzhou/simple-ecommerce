@@ -6,7 +6,6 @@ import (
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
-	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,8 +48,14 @@ func TestOrderService_AllOperationsUseAuthenticatedOwner(t *testing.T) {
 	require.Equal(t, int64(42), uc.cancelledUser)
 }
 
-func TestOrderService_RequiresIdempotencyKey(t *testing.T) {
-	service := NewOrderService(&orderServiceUsecase{order: &biz.Order{}})
-	_, err := service.CreateOrder(authenticatedPaymentContext(42, "user"), &pb.CreateOrderRequest{AddressId: 1, Items: []*pb.OrderItemInput{{ProductId: 1, Quantity: 1}}})
-	require.True(t, errors.IsBadRequest(err))
+func TestOrderService_PassesTrimmedIdempotencyKeyToUsecase(t *testing.T) {
+	// Key validation lives in the biz layer; the service only forwards the
+	// trimmed value so the two layers cannot drift apart.
+	uc := &orderServiceUsecase{order: &biz.Order{}}
+	service := NewOrderService(uc)
+	_, err := service.CreateOrder(authenticatedPaymentContext(42, "user"), &pb.CreateOrderRequest{
+		AddressId: 1, IdempotencyKey: "  checkout-42  ", Items: []*pb.OrderItemInput{{ProductId: 1, Quantity: 1}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "checkout-42", uc.createReq.IdempotencyKey)
 }

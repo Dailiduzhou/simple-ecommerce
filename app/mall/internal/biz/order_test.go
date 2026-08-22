@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,4 +77,15 @@ func TestOrderUsecase_RejectsInvalidAndDuplicateItems(t *testing.T) {
 	require.Error(t, err)
 	_, err = uc.CreateOrder(context.Background(), &CreateOrderReq{UserID: 1, AddressID: 1, Items: []OrderItemInput{{ProductID: 2, Quantity: 1}, {ProductID: 2, Quantity: 1}}})
 	require.Error(t, err)
+}
+
+func TestOrderUsecase_ValidatesIdempotencyKey(t *testing.T) {
+	uc := NewOrderUsecase(&orderUsecaseRepo{}, paymentTestID{}, log.DefaultLogger)
+	items := []OrderItemInput{{ProductID: 2, Quantity: 1}}
+	_, err := uc.CreateOrder(context.Background(), &CreateOrderReq{UserID: 1, AddressID: 1, Items: items})
+	require.ErrorIs(t, err, ErrIdempotencyKeyRequired)
+	_, err = uc.CreateOrder(context.Background(), &CreateOrderReq{UserID: 1, AddressID: 1, IdempotencyKey: "short", Items: items})
+	require.ErrorIs(t, err, ErrIdempotencyKeyInvalid)
+	_, err = uc.CreateOrder(context.Background(), &CreateOrderReq{UserID: 1, AddressID: 1, IdempotencyKey: strings.Repeat("k", 65), Items: items})
+	require.ErrorIs(t, err, ErrIdempotencyKeyInvalid)
 }

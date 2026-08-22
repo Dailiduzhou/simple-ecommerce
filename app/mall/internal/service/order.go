@@ -27,12 +27,6 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *pb.CreateOrderReque
 		return nil, errors.BadRequest("ORDER_REQUEST_REQUIRED", "request is required")
 	}
 	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
-	if idempotencyKey == "" {
-		return nil, biz.ErrIdempotencyKeyRequired
-	}
-	if len(idempotencyKey) < 8 || len(idempotencyKey) > 64 {
-		return nil, biz.ErrIdempotencyKeyInvalid
-	}
 	items := make([]biz.OrderItemInput, len(req.Items))
 	for i, item := range req.Items {
 		if item == nil {
