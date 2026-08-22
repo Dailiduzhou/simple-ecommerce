@@ -12,6 +12,7 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang/mock/gomock"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
@@ -293,4 +294,49 @@ func TestApplyPayQuery_RefundWithoutLocalRecordRequiresReconciliation(t *testing
 	d := newTestData(t, q, redisServer)
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
 	require.NoError(t, repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, result))
+}
+
+func TestApplyPayQuery_ReconciliationAlreadyProcessingIsIdempotent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	redisServer := miniredis.RunT(t)
+	payment := statePayment(biz.PaymentStatusPending)
+	q.EXPECT().GetPayment(gomock.Any(), int64(1)).Times(2).DoAndReturn(func(_ context.Context, _ int64) (db.Payment, error) {
+		// First call snapshots the payment; the second is the reentry read
+		// after RequirePaymentReconciliation matched no rows.
+		return payment, nil
+	})
+	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPendingPayment}, nil)
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{payment}, nil)
+	q.EXPECT().RequirePaymentReconciliation(gomock.Any(), gomock.Any()).Return(db.Payment{}, pgx.ErrNoRows)
+	q.EXPECT().CreatePaymentReconciliationFailure(gomock.Any(), gomock.Any()).Return(db.PaymentReconciliationFailure{}, nil)
+	q.EXPECT().GetOrder(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPendingPayment}, nil)
+	d := newTestData(t, q, redisServer)
+	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	// The amount mismatch path must not blow up when reconciliation was
+	// already marked processing/resolved: the transaction still commits.
+	require.NoError(t, repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, stateResult(9999)))
+}
+
+func TestApplyPayQuery_DuplicateThirdPartyTxSettlesInFreshTransaction(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	redisServer := miniredis.RunT(t)
+	payment := statePayment(biz.PaymentStatusPending)
+	reconciled := payment
+	reconciled.ReconciliationStatus = biz.ReconciliationStatusRequired
+	q.EXPECT().GetPayment(gomock.Any(), int64(1)).Return(payment, nil)
+	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPendingPayment}, nil)
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{payment}, nil)
+	q.EXPECT().RecordPaymentSuccess(gomock.Any(), gomock.Any()).Return(db.Payment{}, &pgconn.PgError{
+		Code: "23505", ConstraintName: "idx_payments_third_party_tx_id_channel",
+	})
+	q.EXPECT().RequirePaymentReconciliation(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.RequirePaymentReconciliationParams) (db.Payment, error) {
+		require.Equal(t, "duplicate_third_party_tx", args.ReconciliationReason.String)
+		return reconciled, nil
+	})
+	q.EXPECT().CreatePaymentReconciliationFailure(gomock.Any(), gomock.Any()).Return(db.PaymentReconciliationFailure{}, nil)
+	d := newTestData(t, q, redisServer)
+	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	require.NoError(t, repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, stateResult(10000)))
 }
