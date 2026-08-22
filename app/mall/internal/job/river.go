@@ -40,6 +40,9 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	if err != nil {
 		return err
 	}
+	if payment == nil {
+		return w.retryable(ctx, args, fmt.Errorf("payment repository returned an empty payment"))
+	}
 	method, err := biz.ParsePaymentMethod(payment.Method)
 	if err != nil {
 		return w.cancel(ctx, args, err)
@@ -62,6 +65,9 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	if err != nil {
 		observability.PaymentReconcileJob(ctx, args.Provider, "technical_error")
 		return w.retryable(ctx, args, err)
+	}
+	if result == nil {
+		return w.retryable(ctx, args, fmt.Errorf("payment provider returned an empty query result"))
 	}
 	if result.TradeState.IsTerminal() {
 		err := w.paymentRepo.ApplyPayQuery(ctx, args, result)

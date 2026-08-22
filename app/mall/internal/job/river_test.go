@@ -35,6 +35,9 @@ func (g *workerGateway) Query(_ context.Context, req biz.PaymentQueryRequest) (*
 func (g *workerGateway) Close(context.Context, biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
 	return &biz.PaymentCloseResult{Success: true}, nil
 }
+func (g *workerGateway) Refund(context.Context, biz.PaymentRefundRequest) (*biz.PaymentRefundResult, error) {
+	return nil, nil
+}
 func (g *workerGateway) ParseAndVerifyNotification(string, *http.Request) (*biz.PaymentNotification, error) {
 	return nil, nil
 }
@@ -94,6 +97,13 @@ func (r *workerRepo) ApplyPayQuery(_ context.Context, args biz.CheckPayArgs, res
 	return nil
 }
 func (r *workerRepo) MarkPayClosePending(context.Context, biz.CheckPayArgs) error { return nil }
+func (r *workerRepo) PreparePaymentRefund(context.Context, int64, string) (*biz.PaymentDO, *biz.PaymentRefund, error) {
+	return nil, nil, nil
+}
+func (r *workerRepo) RecordPaymentRefundError(context.Context, int64, string, bool) error {
+	return nil
+}
+func (r *workerRepo) ApplyPaymentRefund(context.Context, int64, int64) error { return nil }
 func (r *workerRepo) MarkReconciliationRequired(context.Context, biz.ReconciliationFailure) error {
 	return nil
 }
@@ -124,6 +134,16 @@ func TestCheckPayWorker_TechnicalQueryErrorUsesRiverRetry(t *testing.T) {
 	require.EqualError(t, err, "timeout")
 	require.Equal(t, "timeout", repo.notificationError)
 	require.True(t, worker.NextRetry(job).After(time.Now()))
+}
+
+func TestCheckPayWorker_EmptyProviderResultUsesRiverRetry(t *testing.T) {
+	payment := &biz.PaymentDO{ID: 8, Method: "wechat:native", OutTradeNo: "pay_8"}
+	repo := &workerRepo{payment: payment}
+	worker := NewCheckPayWorker(&workerGateway{}, repo, log.DefaultLogger)
+	job := &river.Job[biz.CheckPayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.CheckPayArgs{PaymentID: 8, Provider: "wechat", NotificationID: 17}}
+	err := worker.Work(context.Background(), job)
+	require.ErrorContains(t, err, "empty query result")
+	require.Contains(t, repo.notificationError, "empty query result")
 }
 
 func TestCheckPayWorker_AlreadyProcessedNotificationSkipsProviderQuery(t *testing.T) {

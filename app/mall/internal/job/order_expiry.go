@@ -24,6 +24,9 @@ func (w *ExpireOrderWorker) Work(ctx context.Context, job *river.Job[biz.ExpireO
 		return river.JobCancel(fmt.Errorf("expire_order requires order_id and repository"))
 	}
 	err := w.repo.ExpireOrder(ctx, job.Args.OrderID)
+	if errors.Is(err, biz.ErrOrderNotExpired) {
+		return river.JobSnooze(time.Minute)
+	}
 	if errors.Is(err, biz.ErrPaymentReconciliationRequired) {
 		return river.JobSnooze(5 * time.Minute)
 	}

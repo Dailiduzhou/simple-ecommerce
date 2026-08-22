@@ -36,6 +36,9 @@ func (u *callbackPaymentUsecase) QueryPayment(context.Context, string, int64) (*
 func (u *callbackPaymentUsecase) ClosePayment(context.Context, string, int64) (*biz.PaymentCloseResult, error) {
 	return nil, nil
 }
+func (u *callbackPaymentUsecase) RefundPayment(context.Context, int64) (*biz.PaymentRefundResult, error) {
+	return nil, nil
+}
 func (u *callbackPaymentUsecase) CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*biz.MQJob, error) {
 	return nil, nil
 }

@@ -66,6 +66,15 @@ func (g *paymentGateway) Close(ctx context.Context, req PaymentCloseRequest) (*P
 	return adapter.Close(ctx, req)
 }
 
+func (g *paymentGateway) Refund(ctx context.Context, req PaymentRefundRequest) (*PaymentRefundResult, error) {
+	adapter, err := g.adapter(req.Method)
+	if err != nil {
+		return nil, err
+	}
+	req.Method = req.Method.Normalize()
+	return adapter.Refund(ctx, req)
+}
+
 func (g *paymentGateway) ParseAndVerifyNotification(provider string, request *http.Request) (*PaymentNotification, error) {
 	adapter, ok := g.adapters[strings.ToLower(strings.TrimSpace(provider))]
 	if !ok {
