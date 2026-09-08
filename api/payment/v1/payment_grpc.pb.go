@@ -47,7 +47,7 @@ type PaymentClient interface {
 	ClosePayment(ctx context.Context, in *ClosePaymentReq, opts ...grpc.CallOption) (*ClosePaymentReply, error)
 	GetPayment(ctx context.Context, in *GetPaymentRequest, opts ...grpc.CallOption) (*PaymentInfo, error)
 	GetPaymentByOrder(ctx context.Context, in *GetPaymentByOrderRequest, opts ...grpc.CallOption) (*PaymentInfo, error)
-	// 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
+	// 管理员对指定支付发起整笔全额退款。
 	RefundPayment(ctx context.Context, in *RefundPaymentRequest, opts ...grpc.CallOption) (*RefundPaymentReply, error)
 	CreatePaymentCheckJob(ctx context.Context, in *CreatePaymentCheckJobRequest, opts ...grpc.CallOption) (*MQJobInfo, error)
 	GetMQJob(ctx context.Context, in *GetMQJobRequest, opts ...grpc.CallOption) (*MQJobInfo, error)
@@ -159,7 +159,7 @@ type PaymentServer interface {
 	ClosePayment(context.Context, *ClosePaymentReq) (*ClosePaymentReply, error)
 	GetPayment(context.Context, *GetPaymentRequest) (*PaymentInfo, error)
 	GetPaymentByOrder(context.Context, *GetPaymentByOrderRequest) (*PaymentInfo, error)
-	// 暂不可用：当前明确返回 HTTP 501 / PAYMENT_REFUND_NOT_IMPLEMENTED。
+	// 管理员对指定支付发起整笔全额退款。
 	RefundPayment(context.Context, *RefundPaymentRequest) (*RefundPaymentReply, error)
 	CreatePaymentCheckJob(context.Context, *CreatePaymentCheckJobRequest) (*MQJobInfo, error)
 	GetMQJob(context.Context, *GetMQJobRequest) (*MQJobInfo, error)

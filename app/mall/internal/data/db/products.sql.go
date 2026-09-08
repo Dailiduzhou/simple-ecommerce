@@ -203,6 +203,7 @@ type ListProductsByCategoryParams struct {
 	Offset     int32
 }
 
+// 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
 func (q *Queries) ListProductsByCategory(ctx context.Context, arg ListProductsByCategoryParams) ([]Product, error) {
 	rows, err := q.db.Query(ctx, listProductsByCategory, arg.CategoryID, arg.Limit, arg.Offset)
 	if err != nil {

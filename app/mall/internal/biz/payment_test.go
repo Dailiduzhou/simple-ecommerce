@@ -13,45 +13,71 @@ import (
 )
 
 type paymentTestGateway struct {
-	prepayReq    PaymentPrepayRequest
-	prepayResult *PaymentPrepayResult
-	closeResult  *PaymentCloseResult
-	capabilities PaymentCapabilities
-	txActive     *bool
+	prepayReq       PaymentPrepayRequest
+	prepayCalled    bool
+	prepayResult    *PaymentPrepayResult
+	closeResult     *PaymentCloseResult
+	closeErr        error
+	queryResult     *PaymentQueryResult
+	queryErr        error
+	refundReq       PaymentRefundRequest
+	refundResult    *PaymentRefundResult
+	refundErr       error
+	refundCalled    bool
+	capabilities    PaymentCapabilities
+	capabilitiesErr error
+	txActive        *bool
+	notification    *PaymentNotification
 }
 
 func (g *paymentTestGateway) Capabilities(PaymentMethod) (PaymentCapabilities, error) {
-	return g.capabilities, nil
+	return g.capabilities, g.capabilitiesErr
 }
 func (g *paymentTestGateway) Prepay(_ context.Context, req PaymentPrepayRequest) (*PaymentPrepayResult, error) {
 	if g.txActive != nil && *g.txActive {
 		panic("provider call executed in database transaction")
 	}
 	g.prepayReq = req
+	g.prepayCalled = true
 	return g.prepayResult, nil
 }
 func (g *paymentTestGateway) Query(context.Context, PaymentQueryRequest) (*PaymentQueryResult, error) {
-	return nil, nil
+	return g.queryResult, g.queryErr
 }
 func (g *paymentTestGateway) Close(context.Context, PaymentCloseRequest) (*PaymentCloseResult, error) {
 	if g.txActive != nil && *g.txActive {
 		panic("provider close executed in database transaction")
 	}
-	return g.closeResult, nil
+	return g.closeResult, g.closeErr
+}
+func (g *paymentTestGateway) Refund(_ context.Context, req PaymentRefundRequest) (*PaymentRefundResult, error) {
+	if g.txActive != nil && *g.txActive {
+		panic("provider refund executed in database transaction")
+	}
+	g.refundReq = req
+	g.refundCalled = true
+	return g.refundResult, g.refundErr
 }
 func (g *paymentTestGateway) ParseAndVerifyNotification(string, *http.Request) (*PaymentNotification, error) {
-	return nil, nil
+	return g.notification, nil
 }
 func (g *paymentTestGateway) NotificationAck(string, bool) (PaymentNotificationAck, error) {
 	return DefaultPaymentNotificationAck(), nil
 }
 
 type paymentTestRepo struct {
-	payment       *PaymentDO
-	created       CreatePaymentArgs
-	pendingAction PaymentAction
-	closePending  bool
-	applied       bool
+	payment               *PaymentDO
+	created               CreatePaymentArgs
+	pendingAction         PaymentAction
+	closePending          bool
+	applied               bool
+	appliedResult         *PaymentQueryResult
+	refund                *PaymentRefund
+	refundApplied         bool
+	refundError           string
+	refundDefinitive      *bool
+	staleRefunds          []PaymentRefund
+	reconciliationFailure *ReconciliationFailure
 }
 
 func (r *paymentTestRepo) CreatePayment(_ context.Context, args CreatePaymentArgs) (*PaymentDO, error) {
@@ -59,11 +85,18 @@ func (r *paymentTestRepo) CreatePayment(_ context.Context, args CreatePaymentArg
 	r.payment = &PaymentDO{ID: 7, OrderID: args.OrderID, UserID: args.UserID, Amount: args.Amount, Currency: args.Currency, Method: args.Method, OutTradeNo: args.OutTradeNo, Status: PaymentStatusCreating}
 	return r.payment, nil
 }
-func (r *paymentTestRepo) MarkPaymentPending(_ context.Context, _ int64, action PaymentAction) (*PaymentDO, error) {
+func (r *paymentTestRepo) ClaimPaymentPrepay(_ context.Context, _ int64, token string, _ time.Duration) (*PaymentDO, error) {
+	r.payment.PrepayLeaseToken = token
+	return r.payment, nil
+}
+func (r *paymentTestRepo) FinalizePaymentPrepay(_ context.Context, _ int64, _ string, action PaymentAction) (*PaymentDO, error) {
 	r.pendingAction = action
 	r.payment.Status = PaymentStatusPending
 	r.payment.Action = action
 	return r.payment, nil
+}
+func (r *paymentTestRepo) RecordPaymentPrepayError(context.Context, int64, string, string) error {
+	return nil
 }
 func (r *paymentTestRepo) GetPayment(context.Context, int64) (*PaymentDO, error) {
 	return r.payment, nil
@@ -80,15 +113,51 @@ func (r *paymentTestRepo) GetActivePaymentByOrderMethod(context.Context, int64, 
 func (r *paymentTestRepo) GetPaymentByOutTradeNo(context.Context, string) (*PaymentDO, error) {
 	return r.payment, nil
 }
-func (r *paymentTestRepo) ApplyPayQuery(context.Context, CheckPayArgs, *PaymentQueryResult) error {
+func (r *paymentTestRepo) BeginPaymentNotificationProcessing(context.Context, int64, string, string) (bool, error) {
+	return true, nil
+}
+func (r *paymentTestRepo) RecordPaymentNotificationError(context.Context, int64, string) error {
+	return nil
+}
+func (r *paymentTestRepo) MarkPaymentNotificationFailed(context.Context, int64, string) error {
+	return nil
+}
+func (r *paymentTestRepo) ApplyPayQuery(_ context.Context, _ CheckPayArgs, result *PaymentQueryResult) error {
 	r.applied = true
+	r.appliedResult = result
 	return nil
 }
 func (r *paymentTestRepo) MarkPayClosePending(context.Context, CheckPayArgs) error {
 	r.closePending = true
 	return nil
 }
-func (r *paymentTestRepo) MarkReconciliationRequired(context.Context, ReconciliationFailure) error {
+func (r *paymentTestRepo) PreparePaymentRefund(_ context.Context, paymentID int64, outRefundNo string) (*PaymentDO, *PaymentRefund, error) {
+	if r.refund == nil {
+		r.refund = &PaymentRefund{
+			ID: 11, PaymentID: paymentID, OrderID: r.payment.OrderID, UserID: r.payment.UserID,
+			OutRefundNo: outRefundNo, TotalAmount: r.payment.Amount, RefundAmount: r.payment.Amount,
+			Currency: r.payment.Currency, Status: PaymentRefundStatusPending,
+		}
+	}
+	return r.payment, r.refund, nil
+}
+func (r *paymentTestRepo) RecordPaymentRefundError(_ context.Context, _ int64, lastError string, definitive bool) error {
+	r.refundError = lastError
+	r.refundDefinitive = &definitive
+	return nil
+}
+func (r *paymentTestRepo) ApplyPaymentRefund(context.Context, int64, int64) error {
+	r.refundApplied = true
+	r.payment.Status = PaymentStatusRefunded
+	r.refund.Status = PaymentRefundStatusSuccess
+	return nil
+}
+func (r *paymentTestRepo) ListStalePendingRefunds(context.Context, time.Duration, int) ([]PaymentRefund, error) {
+	return r.staleRefunds, nil
+}
+
+func (r *paymentTestRepo) MarkReconciliationRequired(_ context.Context, failure ReconciliationFailure) error {
+	r.reconciliationFailure = &failure
 	return nil
 }
 func (r *paymentTestRepo) RecordReconciliationFailure(context.Context, ReconciliationFailure) error {
@@ -131,6 +200,13 @@ type paymentTestJobs struct {
 	args     CheckPayArgs
 }
 
+type paymentTestNotifications struct{ enqueued bool }
+
+func (r *paymentTestNotifications) PersistAndEnqueueNotification(context.Context, *PaymentNotification, CheckPayArgs) (bool, error) {
+	r.enqueued = true
+	return false, nil
+}
+
 func (j *paymentTestJobs) EnqueueCheckPay(context.Context, CheckPayArgs, time.Duration) (*MQJob, error) {
 	return nil, stderrors.New("non-transactional enqueue is forbidden in this test")
 }
@@ -140,6 +216,12 @@ func (j *paymentTestJobs) EnqueueCheckPayTx(_ context.Context, args CheckPayArgs
 	}
 	j.enqueued, j.args = true, args
 	return &MQJob{ID: 1}, nil
+}
+func (j *paymentTestJobs) EnqueueClosePay(context.Context, ClosePayArgs, time.Duration) (*MQJob, error) {
+	return &MQJob{ID: 2}, nil
+}
+func (j *paymentTestJobs) EnqueueClosePayTx(context.Context, ClosePayArgs, time.Duration) (*MQJob, error) {
+	return &MQJob{ID: 2}, nil
 }
 func (j *paymentTestJobs) GetMQJob(context.Context, int64) (*MQJob, error) { return nil, nil }
 
@@ -154,7 +236,7 @@ func TestPrepayForOrder_UsesDatabaseAmountAndCallsProviderOutsideTransaction(t *
 	actionPayload := json.RawMessage(`{"url":"https://pay.example"}`)
 	gateway := &paymentTestGateway{txActive: &tx.active, prepayResult: &PaymentPrepayResult{Action: PaymentAction{Type: PaymentActionRedirect, Payload: actionPayload}}}
 	repo := &paymentTestRepo{}
-	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 10000, Currency: "CNY", Status: OrderStatusPendingPayment, OutTradeNo: "order_5"}}
+	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 10000, Currency: "CNY", Status: OrderStatusPendingPayment, OutTradeNo: "order_5", ExpiresAt: time.Now().Add(time.Minute)}}
 	uc := NewPaymentUsecase(gateway, repo, nil, orders, nil, tx, paymentTestID{}, log.DefaultLogger)
 
 	result, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{OrderNo: "order_5", UserID: 42, Method: PaymentMethod{Provider: "alipay", Product: "wap"}})
@@ -162,6 +244,7 @@ func TestPrepayForOrder_UsesDatabaseAmountAndCallsProviderOutsideTransaction(t *
 	require.Equal(t, int64(10000), gateway.prepayReq.Amount)
 	require.Equal(t, int64(10000), repo.created.Amount)
 	require.Equal(t, "CNY", gateway.prepayReq.Currency)
+	require.Equal(t, orders.order.ExpiresAt, gateway.prepayReq.ExpiresAt)
 	require.Equal(t, "Order order_5", gateway.prepayReq.Description)
 	require.Equal(t, PaymentActionRedirect, result.Prepay.Action.Type)
 }
@@ -180,9 +263,111 @@ func TestClosePayment_PersistsIntentAndJobBeforeProviderCall(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success)
 	require.True(t, repo.closePending)
-	require.True(t, jobs.enqueued)
-	require.Equal(t, 1, jobs.args.MaxPolls)
 	require.True(t, repo.applied)
+}
+
+func TestRefundPayment_UsesPersistedRefundNumberOutsideTransaction(t *testing.T) {
+	tx := &paymentTestTx{}
+	payment := &PaymentDO{
+		ID: 7, OrderID: 5, UserID: 42, Amount: 10000, Currency: "CNY",
+		Method: "alipay:wap", OutTradeNo: "payment_7", ThirdPartyTxID: "trade_7",
+		Status: PaymentStatusSuccess,
+	}
+	repo := &paymentTestRepo{payment: payment}
+	gateway := &paymentTestGateway{
+		txActive: &tx.active, capabilities: PaymentCapabilities{SupportsRefund: true},
+		refundResult: &PaymentRefundResult{
+			OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID,
+			OutRefundNo: "payment_99", Amount: payment.Amount, Currency: payment.Currency, Success: true,
+		},
+	}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, tx, paymentTestID{}, log.DefaultLogger)
+	result, err := uc.RefundPayment(context.Background(), payment.ID)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	require.True(t, repo.refundApplied)
+	require.Equal(t, "payment_99", gateway.refundReq.OutRefundNo)
+	require.Equal(t, payment.Amount, gateway.refundReq.Amount)
+	require.Equal(t, PaymentStatusRefunded, payment.Status)
+}
+
+func TestRefundPayment_AlreadySucceededIsIdempotent(t *testing.T) {
+	payment := &PaymentDO{
+		ID: 7, OrderID: 5, UserID: 42, Amount: 10000, Currency: "CNY",
+		Method: "alipay:wap", OutTradeNo: "payment_7", Status: PaymentStatusRefunded,
+	}
+	repo := &paymentTestRepo{
+		payment: payment,
+		refund: &PaymentRefund{
+			ID: 11, PaymentID: payment.ID, OrderID: payment.OrderID, UserID: payment.UserID,
+			OutRefundNo: "refund_existing", TotalAmount: payment.Amount, RefundAmount: payment.Amount,
+			Currency: payment.Currency, Status: PaymentRefundStatusSuccess,
+		},
+	}
+	gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsRefund: true}}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	result, err := uc.RefundPayment(context.Background(), payment.ID)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	require.Equal(t, "refund_existing", result.OutRefundNo)
+	require.False(t, gateway.refundCalled)
+}
+
+func TestRefundPayment_RecordsProviderRejection(t *testing.T) {
+	payment := &PaymentDO{
+		ID: 7, OrderID: 5, UserID: 42, Amount: 10000, Currency: "CNY",
+		Method: "alipay:wap", OutTradeNo: "payment_7", Status: PaymentStatusSuccess,
+	}
+	repo := &paymentTestRepo{payment: payment}
+	gateway := &paymentTestGateway{
+		capabilities: PaymentCapabilities{SupportsRefund: true},
+		refundResult: &PaymentRefundResult{RawCode: "ACQ.TRADE_NOT_EXIST"},
+		refundErr:    stderrors.New("refund rejected"),
+	}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	require.Error(t, err)
+	require.Equal(t, "refund rejected", repo.refundError)
+	require.False(t, repo.refundApplied)
+}
+
+func TestRefundPayment_RejectsUnsupportedProviderBeforeCreatingRefund(t *testing.T) {
+	payment := &PaymentDO{ID: 7, UserID: 42, Method: "wechat:app", Status: PaymentStatusSuccess}
+	repo := &paymentTestRepo{payment: payment}
+	gateway := &paymentTestGateway{}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	require.Error(t, err)
+	require.Nil(t, repo.refund)
+	require.False(t, gateway.refundCalled)
+}
+
+func TestPrepayForOrder_CapabilitiesErrorPreventsProviderPrepay(t *testing.T) {
+	tx := &paymentTestTx{}
+	gateway := &paymentTestGateway{txActive: &tx.active, capabilitiesErr: stderrors.New("capabilities unavailable")}
+	repo := &paymentTestRepo{}
+	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 10000, Currency: "CNY", Status: OrderStatusPendingPayment, OutTradeNo: "order_5"}}
+	uc := NewPaymentUsecase(gateway, repo, nil, orders, nil, tx, paymentTestID{}, log.DefaultLogger)
+
+	_, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{OrderNo: "order_5", UserID: 42, Method: PaymentMethod{Provider: "alipay", Product: "wap"}})
+	require.Error(t, err)
+	require.False(t, gateway.prepayCalled, "provider prepay must not run when capabilities lookup fails")
+	require.Nil(t, repo.payment, "unsupported methods must not create an active payment row")
+}
+
+func TestHandleNotification_RejectsVerifiedAmountMismatchAndRequiresReconciliation(t *testing.T) {
+	payment := &PaymentDO{ID: 7, Amount: 10000, Currency: "CNY", Method: "alipay:wap", OutTradeNo: "payment_7"}
+	repo := &paymentTestRepo{payment: payment}
+	notifications := &paymentTestNotifications{}
+	gateway := &paymentTestGateway{notification: &PaymentNotification{
+		Provider: "alipay", OutTradeNo: payment.OutTradeNo, TransactionID: "trade_7", Amount: 1, Currency: "CNY",
+	}}
+	uc := NewPaymentUsecase(gateway, repo, notifications, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	err := uc.HandleNotification(context.Background(), "alipay", nil)
+	require.Error(t, err)
+	require.False(t, notifications.enqueued)
+	require.NotNil(t, repo.reconciliationFailure)
+	require.Equal(t, "callback_amount_mismatch", repo.reconciliationFailure.Reason)
 }
 
 func TestPrepayForOrder_RejectsDifferentOwner(t *testing.T) {
@@ -207,3 +392,112 @@ func TestPaymentGatewayWithoutProvidersReturnsAvailabilityError(t *testing.T) {
 }
 
 var _ = time.Second
+
+func refundFixture(status string) (*PaymentDO, *PaymentRefund) {
+	payment := &PaymentDO{
+		ID: 7, OrderID: 5, UserID: 42, Amount: 10000, Currency: "CNY",
+		Method: "alipay:wap", OutTradeNo: "payment_7", Status: PaymentStatusSuccess,
+	}
+	refund := &PaymentRefund{
+		ID: 11, PaymentID: payment.ID, OrderID: payment.OrderID, UserID: payment.UserID,
+		OutRefundNo: "refund_11", TotalAmount: payment.Amount, RefundAmount: payment.Amount,
+		Currency: payment.Currency, Status: status,
+	}
+	return payment, refund
+}
+
+func TestRefundPayment_TransientErrorKeepsRefundPending(t *testing.T) {
+	payment, refund := refundFixture(PaymentRefundStatusPending)
+	repo := &paymentTestRepo{payment: payment, refund: refund}
+	gateway := &paymentTestGateway{
+		capabilities: PaymentCapabilities{SupportsRefund: true},
+		// A 5xx-shaped provider failure carries a RawCode but no Rejection:
+		// it must not be recorded as a definitive failure.
+		refundResult: &PaymentRefundResult{RawCode: "2000"},
+		refundErr:    stderrors.New("alipay system busy"),
+	}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	require.Error(t, err)
+	require.NotNil(t, repo.refundDefinitive)
+	require.False(t, *repo.refundDefinitive)
+	require.False(t, repo.refundApplied)
+}
+
+func TestRefundPayment_BusinessRejectionMarksDefinitiveFailure(t *testing.T) {
+	payment, refund := refundFixture(PaymentRefundStatusPending)
+	repo := &paymentTestRepo{payment: payment, refund: refund}
+	gateway := &paymentTestGateway{
+		capabilities: PaymentCapabilities{SupportsRefund: true},
+		refundResult: &PaymentRefundResult{RawCode: "ACQ.TRADE_STATUS_ERROR", Rejection: true},
+		refundErr:    stderrors.New("refund rejected"),
+	}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	require.Error(t, err)
+	require.NotNil(t, repo.refundDefinitive)
+	require.True(t, *repo.refundDefinitive)
+}
+
+func TestReconcilePendingRefunds_RetriesStuckRefundWithOriginalNumber(t *testing.T) {
+	payment, refund := refundFixture(PaymentRefundStatusPending)
+	repo := &paymentTestRepo{payment: payment, refund: refund, staleRefunds: []PaymentRefund{*refund}}
+	gateway := &paymentTestGateway{
+		capabilities: PaymentCapabilities{SupportsRefund: true},
+		refundResult: &PaymentRefundResult{Success: true, OutRefundNo: refund.OutRefundNo},
+	}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	settled, err := uc.ReconcilePendingRefunds(context.Background(), 10*time.Minute, 100)
+	require.NoError(t, err)
+	require.Equal(t, 1, settled)
+	require.True(t, gateway.refundCalled)
+	require.Equal(t, refund.OutRefundNo, gateway.refundReq.OutRefundNo)
+	require.True(t, repo.refundApplied)
+}
+
+func TestReconcilePendingRefunds_SkipsConflictWithoutSettling(t *testing.T) {
+	_, refund := refundFixture(PaymentRefundStatusPending)
+	// The stored refund points at a different payment record than the one
+	// re-preparation returns, so the reconciler must skip it.
+	conflicting := *refund
+	conflicting.ID = 99
+	repo := &paymentTestRepo{payment: &PaymentDO{ID: 7, OrderID: 5, UserID: 42, Method: "alipay:wap", Status: PaymentStatusSuccess}, refund: &conflicting, staleRefunds: []PaymentRefund{*refund}}
+	gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsRefund: true}}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	settled, err := uc.ReconcilePendingRefunds(context.Background(), 10*time.Minute, 100)
+	require.NoError(t, err)
+	require.Equal(t, 0, settled)
+	require.False(t, gateway.refundCalled)
+}
+
+func TestClosePayment_ConflictingCloseSettlesActualPaidState(t *testing.T) {
+	payment := &PaymentDO{ID: 7, UserID: 42, Method: "alipay:wap", OutTradeNo: "pay_7", Status: PaymentStatusPending}
+	repo := &paymentTestRepo{payment: payment}
+	gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsClose: true}, closeErr: ErrProviderTradeStateConflict,
+		queryResult: &PaymentQueryResult{Method: PaymentMethod{Provider: "alipay", Product: "wap"}, OutTradeNo: "pay_7", TradeState: TradeStateSuccess}}
+	uc := NewPaymentUsecase(gateway, repo, nil, nil, &paymentTestJobs{}, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	result, err := uc.ClosePayment(context.Background(), "pay_7", 42)
+	require.NoError(t, err)
+	require.False(t, result.Success, "payment won; close was not successful")
+	require.True(t, repo.applied)
+	require.Equal(t, TradeStateSuccess, repo.appliedResult.TradeState)
+}
+
+func TestPrepayForOrder_UnsupportedMethodsNeverCreateRows(t *testing.T) {
+	gateway := NewPaymentGateway([]PaymentAdapter{&gatewayTestAdapter{provider: "alipay"}})
+	for _, method := range []PaymentMethod{{Provider: "unknown", Product: "wap"}, {Provider: "alipay", Product: "unknown"}} {
+		repo := &paymentTestRepo{}
+		uc := NewPaymentUsecase(gateway, repo, nil, nil, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+		_, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{Method: method})
+		require.ErrorIs(t, err, ErrPaymentProviderUnavailable)
+		require.Nil(t, repo.payment)
+	}
+}
+
+type gatewayTestAdapter struct {
+	PaymentAdapter
+	provider string
+}
+
+func (a *gatewayTestAdapter) Provider() string                   { return a.provider }
+func (a *gatewayTestAdapter) Supports(method PaymentMethod) bool { return method.Product == "wap" }

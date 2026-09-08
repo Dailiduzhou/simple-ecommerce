@@ -6,7 +6,6 @@ import (
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
-	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +34,7 @@ func TestOrderService_AllOperationsUseAuthenticatedOwner(t *testing.T) {
 	uc := &orderServiceUsecase{order: &biz.Order{ID: 1, UserID: 42, TotalAmount: 10000, Currency: "CNY", Items: []biz.OrderItem{{ProductID: 3, Quantity: 2, UnitPrice: 5000}}}}
 	service := NewOrderService(uc)
 	ctx := authenticatedPaymentContext(42, "user")
-	created, err := service.CreateOrder(ctx, &pb.CreateOrderRequest{UserId: 42, AddressId: 9, Items: []*pb.OrderItemInput{{ProductId: 3, Quantity: 2}}})
+	created, err := service.CreateOrder(ctx, &pb.CreateOrderRequest{AddressId: 9, IdempotencyKey: "checkout-42", Items: []*pb.OrderItemInput{{ProductId: 3, Quantity: 2}}})
 	require.NoError(t, err)
 	require.Equal(t, "100.00", created.TotalAmount)
 	require.Equal(t, int64(42), uc.createReq.UserID)
@@ -49,8 +48,14 @@ func TestOrderService_AllOperationsUseAuthenticatedOwner(t *testing.T) {
 	require.Equal(t, int64(42), uc.cancelledUser)
 }
 
-func TestOrderService_RejectsBodyUserMismatch(t *testing.T) {
-	service := NewOrderService(&orderServiceUsecase{order: &biz.Order{}})
-	_, err := service.CreateOrder(authenticatedPaymentContext(42, "user"), &pb.CreateOrderRequest{UserId: 7, AddressId: 1, Items: []*pb.OrderItemInput{{ProductId: 1, Quantity: 1}}})
-	require.True(t, errors.IsForbidden(err))
+func TestOrderService_PassesTrimmedIdempotencyKeyToUsecase(t *testing.T) {
+	// Key validation lives in the biz layer; the service only forwards the
+	// trimmed value so the two layers cannot drift apart.
+	uc := &orderServiceUsecase{order: &biz.Order{}}
+	service := NewOrderService(uc)
+	_, err := service.CreateOrder(authenticatedPaymentContext(42, "user"), &pb.CreateOrderRequest{
+		AddressId: 1, IdempotencyKey: "  checkout-42  ", Items: []*pb.OrderItemInput{{ProductId: 1, Quantity: 1}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "checkout-42", uc.createReq.IdempotencyKey)
 }

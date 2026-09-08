@@ -6,6 +6,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/go-kratos/kratos/v2/log"
+	"github.com/go-pay/gopay/alipay"
 )
 
 // NewPaymentAdapters registers only explicitly enabled providers. A missing or
@@ -31,6 +32,16 @@ func NewPaymentAdapters(c *conf.Payment, logger log.Logger) ([]biz.PaymentAdapte
 			return nil, err
 		}
 		adapter := NewAlipayPaymentAdapter(client, logger)
+		// The v2 WAP helper signs locally with QUICK_WAP_WAY (v3 in
+		// gopay v1.5.118 incorrectly forces the PAGE product). No v2 HTTP API is used.
+		signer, err := alipay.NewClient(client.AppId, c.Alipay.PrivateKey, client.IsProd)
+		if err != nil {
+			return nil, err
+		}
+		signer.AppCertSN, signer.AliPayRootCertSN = client.AppCertSN, client.AliPayRootCertSN
+		signer.AppAuthToken = client.AppAuthToken
+		signer.SetLocation("Asia/Shanghai")
+		adapter.wapSigner = signer
 		adapter.publicCertPath = c.Alipay.AlipayPublicCertPath
 		adapters = append(adapters, adapter)
 	}

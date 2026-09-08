@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,18 +16,31 @@ import (
 const (
 	PaymentStatusCreating          = "creating"
 	PaymentStatusPending           = "pending"
+	PaymentStatusFailed            = "failed"
 	PaymentStatusSuccess           = "success"
 	PaymentStatusRefunded          = "refunded"
 	PaymentStatusClosePending      = "close_pending"
 	PaymentStatusClosed            = "closed"
-	PaymentStatusReconcileRequired = "reconcile_required"
+	ReconciliationStatusNone       = "none"
+	ReconciliationStatusRequired   = "required"
+	ReconciliationStatusProcessing = "processing"
+	ReconciliationStatusResolved   = "resolved"
 )
 
 var (
-	ErrPaymentConflict            = errors.Conflict("PAYMENT_CONFLICT", "an active payment already exists")
-	ErrPaymentNotFound            = errors.NotFound("PAYMENT_NOT_FOUND", "payment not found")
-	ErrPaymentStateConflict       = errors.Conflict("PAYMENT_STATE_CONFLICT", "payment state transition conflicts with the current state")
-	ErrPaymentProviderUnavailable = errors.ServiceUnavailable("PAYMENT_PROVIDER_NOT_AVAILABLE", "payment provider is not available")
+	ErrPaymentConflict               = errors.Conflict("PAYMENT_CONFLICT", "an active payment already exists")
+	ErrPaymentNotFound               = errors.NotFound("PAYMENT_NOT_FOUND", "payment not found")
+	ErrPaymentStateConflict          = errors.Conflict("PAYMENT_STATE_CONFLICT", "payment state transition conflicts with the current state")
+	ErrPaymentNotificationBinding    = errors.Conflict("PAYMENT_NOTIFICATION_BINDING_MISMATCH", "payment notification does not match reconciliation job")
+	ErrPaymentProviderUnavailable    = errors.ServiceUnavailable("PAYMENT_PROVIDER_NOT_AVAILABLE", "payment provider is not available")
+	ErrPaymentPrepayInProgress       = errors.Conflict("PAYMENT_PREPAY_IN_PROGRESS", "payment prepay is already in progress")
+	ErrPaymentReconciliationRequired = errors.Conflict("PAYMENT_RECONCILIATION_REQUIRED", "payment requires reconciliation")
+	ErrOrderExpired                  = errors.Conflict("ORDER_EXPIRED", "order payment window has expired")
+	ErrProviderTradeStateConflict    = errors.Conflict("PAYMENT_PROVIDER_TRADE_STATE_CONFLICT", "provider trade state conflicts with close")
+	// ErrProviderOrderNotExist means the provider has no record of the trade:
+	// the prepay never reached the provider or the order was purged. This alone
+	// does not prove it is safe to release stock or invalidate signed links.
+	ErrProviderOrderNotExist = errors.NotFound("PAYMENT_PROVIDER_ORDER_NOT_EXIST", "provider has no record of this trade")
 )
 
 type PaymentMethod struct {
@@ -74,7 +88,20 @@ type PaymentAction struct {
 	Payload json.RawMessage
 }
 
+// SignedPaymentPayload records local parameter generation, not channel trade creation.
+// ExpiresAt is the absolute deadline included in the signed channel request; zero
+// means a legacy/unbounded action and must never authorize missing-trade closure.
+type SignedPaymentPayload struct {
+	Payload         string    `json:"payload"`
+	ExpiresAt       time.Time `json:"channel_expires_at"`
+	ProviderAccount string    `json:"provider_account"`
+}
+
+// Allow channel propagation and bounded clock skew before querying for absence.
+const PaymentExpirySafetyMargin = time.Minute
+
 type PaymentPrepayRequest struct {
+	ExpiresAt   time.Time
 	Method      PaymentMethod
 	OutTradeNo  string
 	Description string
@@ -105,7 +132,7 @@ const (
 func (s TradeState) String() string { return string(s) }
 func (s TradeState) IsTerminal() bool {
 	switch s {
-	case TradeStateSuccess, TradeStateRefund, TradeStateClosed, TradeStateRevoked:
+	case TradeStateSuccess, TradeStateRefund, TradeStateClosed, TradeStateRevoked, TradeStatePayError:
 		return true
 	default:
 		return false
@@ -142,9 +169,12 @@ func ParseTradeState(state string) TradeState {
 }
 
 type PaymentQueryRequest struct {
-	Method        PaymentMethod
-	OutTradeNo    string
-	TransactionID string
+	// ExpectedProviderAccount binds absence checks to the account/environment
+	// that signed the action; a configuration change cannot prove trade absence.
+	ExpectedProviderAccount string
+	Method                  PaymentMethod
+	OutTradeNo              string
+	TransactionID           string
 }
 
 type PaymentQueryResult struct {
@@ -173,6 +203,54 @@ type PaymentCloseResult struct {
 	RawSubCode    string
 }
 
+type PaymentRefundRequest struct {
+	Method        PaymentMethod
+	OutTradeNo    string
+	TransactionID string
+	OutRefundNo   string
+	Amount        int64
+	Currency      string
+	Reason        string
+}
+
+type PaymentRefundResult struct {
+	Method        PaymentMethod
+	OutTradeNo    string
+	TransactionID string
+	OutRefundNo   string
+	Amount        int64
+	Currency      string
+	FundChanged   bool
+	Success       bool
+	RawCode       string
+	// Rejection reports a definitive business rejection from the provider, as
+	// opposed to a transient transport or system error that may be retried.
+	// Only a Rejection may mark the local refund record as definitively failed.
+	Rejection bool
+}
+
+const (
+	PaymentRefundStatusPending = "pending"
+	PaymentRefundStatusSuccess = "success"
+	PaymentRefundStatusFailed  = "failed"
+)
+
+type PaymentRefund struct {
+	ID           int64
+	PaymentID    int64
+	OrderID      int64
+	UserID       int64
+	OutRefundNo  string
+	TotalAmount  int64
+	RefundAmount int64
+	Currency     string
+	Reason       string
+	Status       string
+	LastError    string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 type PaymentNotification struct {
 	Provider        string
 	ProviderEventID string
@@ -183,6 +261,13 @@ type PaymentNotification struct {
 	PayloadHash     string
 	VerifiedAt      time.Time
 }
+
+const (
+	PaymentNotificationStatusReceived   = "received"
+	PaymentNotificationStatusProcessing = "processing"
+	PaymentNotificationStatusProcessed  = "processed"
+	PaymentNotificationStatusFailed     = "failed"
+)
 
 type PaymentNotificationAck struct {
 	StatusCode  int
@@ -198,6 +283,10 @@ type PaymentNotificationAcknowledger interface {
 	NotificationAck(provider string, success bool) PaymentNotificationAck
 }
 
+type PaymentNotificationProviderChecker interface {
+	SupportsNotificationProvider(provider string) bool
+}
+
 type PaymentAdapter interface {
 	Provider() string
 	Supports(method PaymentMethod) bool
@@ -205,6 +294,7 @@ type PaymentAdapter interface {
 	Prepay(context.Context, PaymentPrepayRequest) (*PaymentPrepayResult, error)
 	Query(context.Context, PaymentQueryRequest) (*PaymentQueryResult, error)
 	Close(context.Context, PaymentCloseRequest) (*PaymentCloseResult, error)
+	Refund(context.Context, PaymentRefundRequest) (*PaymentRefundResult, error)
 	ParseAndVerifyNotification(*http.Request) (*PaymentNotification, error)
 	NotificationAck(success bool) PaymentNotificationAck
 }
@@ -214,16 +304,28 @@ type PaymentGateway interface {
 	Prepay(context.Context, PaymentPrepayRequest) (*PaymentPrepayResult, error)
 	Query(context.Context, PaymentQueryRequest) (*PaymentQueryResult, error)
 	Close(context.Context, PaymentCloseRequest) (*PaymentCloseResult, error)
+	// Refund requests a refund identified by OutRefundNo. Implementations MUST
+	// be idempotent per OutRefundNo: re-issuing a refund whose OutRefundNo was
+	// already accepted by the provider must confirm the original result without
+	// moving money again. Admin retries and the pending-refund reconciliation
+	// worker both rely on this contract.
+	Refund(context.Context, PaymentRefundRequest) (*PaymentRefundResult, error)
 	ParseAndVerifyNotification(string, *http.Request) (*PaymentNotification, error)
 	NotificationAck(string, bool) (PaymentNotificationAck, error)
 }
 
 const CheckPayJobKind = "check_pay"
+const ClosePayJobKind = "close_pay"
+const ReconcileRefundsJobKind = "reconcile_refunds"
+
+type ReconcileRefundsArgs struct{}
+
+func (ReconcileRefundsArgs) Kind() string { return ReconcileRefundsJobKind }
 
 type CheckPayArgs struct {
 	PaymentID           int64  `json:"payment_id" river:"unique"`
 	Provider            string `json:"provider" river:"unique"`
-	NotificationID      int64  `json:"notification_id"`
+	NotificationID      int64  `json:"notification_id" river:"unique"`
 	Trigger             string `json:"trigger"`
 	PollCount           int    `json:"poll_count"`
 	MaxPolls            int    `json:"max_polls"`
@@ -231,6 +333,14 @@ type CheckPayArgs struct {
 }
 
 func (CheckPayArgs) Kind() string { return CheckPayJobKind }
+
+type ClosePayArgs struct {
+	PaymentID int64  `json:"payment_id" river:"unique"`
+	Provider  string `json:"provider" river:"unique"`
+	Reason    string `json:"reason"`
+}
+
+func (ClosePayArgs) Kind() string { return ClosePayJobKind }
 
 func NormalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
 	args.Provider = strings.ToLower(strings.TrimSpace(args.Provider))
@@ -248,6 +358,7 @@ func NormalizeCheckPayArgs(args CheckPayArgs) CheckPayArgs {
 
 type MQJob struct {
 	ID                       int64
+	Deduplicated             bool
 	Kind, Queue, State       string
 	Attempt, MaxAttempts     int
 	ArgsJSON                 string
@@ -263,12 +374,16 @@ type MQJobError struct {
 }
 
 type PaymentDO struct {
-	ID, OrderID, UserID, MerchantID                      int64
-	Amount                                               int64
-	Currency, Status, Method, OutTradeNo, ThirdPartyTxID string
-	Action                                               PaymentAction
-	PaidAt                                               *time.Time
-	CreatedAt, UpdatedAt                                 time.Time
+	ID, OrderID, UserID, MerchantID                                  int64
+	Amount                                                           int64
+	Currency, Status, Method, OutTradeNo, ThirdPartyTxID             string
+	ReconciliationStatus, ReconciliationReason, ReconciliationDetail string
+	PrepayLeaseToken, LastError                                      string
+	PrepayLeaseUntil                                                 *time.Time
+	PrepayAttempts                                                   int32
+	Action                                                           PaymentAction
+	PaidAt                                                           *time.Time
+	CreatedAt, UpdatedAt                                             time.Time
 }
 
 type CreatePaymentArgs struct {
@@ -278,25 +393,39 @@ type CreatePaymentArgs struct {
 }
 
 type ReconciliationFailure struct {
-	PaymentID  int64
-	Provider   string
-	RiverJobID *int64
-	Attempt    int
-	LastError  string
+	PaymentID      int64
+	NotificationID int64
+	Provider       string
+	RiverJobID     *int64
+	Attempt        int
+	Reason         string
+	LastError      string
 }
 
 type PaymentRepo interface {
 	CreatePayment(context.Context, CreatePaymentArgs) (*PaymentDO, error)
-	MarkPaymentPending(context.Context, int64, PaymentAction) (*PaymentDO, error)
 	GetPayment(context.Context, int64) (*PaymentDO, error)
 	GetPaymentByUser(context.Context, int64, int64) (*PaymentDO, error)
 	GetLatestPaymentByOrder(context.Context, int64) (*PaymentDO, error)
 	GetActivePaymentByOrderMethod(context.Context, int64, string) (*PaymentDO, error)
 	GetPaymentByOutTradeNo(context.Context, string) (*PaymentDO, error)
+	BeginPaymentNotificationProcessing(context.Context, int64, string, string) (bool, error)
+	RecordPaymentNotificationError(context.Context, int64, string) error
+	MarkPaymentNotificationFailed(context.Context, int64, string) error
 	ApplyPayQuery(context.Context, CheckPayArgs, *PaymentQueryResult) error
 	MarkPayClosePending(context.Context, CheckPayArgs) error
+	PreparePaymentRefund(context.Context, int64, string) (*PaymentDO, *PaymentRefund, error)
+	RecordPaymentRefundError(context.Context, int64, string, bool) error
+	ApplyPaymentRefund(context.Context, int64, int64) error
+	ListStalePendingRefunds(context.Context, time.Duration, int) ([]PaymentRefund, error)
 	MarkReconciliationRequired(context.Context, ReconciliationFailure) error
 	RecordReconciliationFailure(context.Context, ReconciliationFailure) error
+}
+
+type PaymentPrepayRepo interface {
+	ClaimPaymentPrepay(context.Context, int64, string, time.Duration) (*PaymentDO, error)
+	FinalizePaymentPrepay(context.Context, int64, string, PaymentAction) (*PaymentDO, error)
+	RecordPaymentPrepayError(context.Context, int64, string, string) error
 }
 
 type PaymentNotificationRepo interface {
@@ -306,12 +435,18 @@ type PaymentNotificationRepo interface {
 type PaymentMQRepo interface {
 	EnqueueCheckPay(context.Context, CheckPayArgs, time.Time) (*MQJob, error)
 	EnqueueCheckPayTx(context.Context, CheckPayArgs, time.Time) (*MQJob, error)
+	EnqueueClosePay(context.Context, ClosePayArgs, time.Time) (*MQJob, error)
+	EnqueueClosePayTx(context.Context, ClosePayArgs, time.Time) (*MQJob, error)
+	EnqueueExpireOrder(context.Context, ExpireOrderArgs, time.Time) (*MQJob, error)
+	EnqueueExpireOrderTx(context.Context, ExpireOrderArgs, time.Time) (*MQJob, error)
 	GetMQJob(context.Context, int64) (*MQJob, error)
 }
 
 type PaymentJobUsecase interface {
 	EnqueueCheckPay(context.Context, CheckPayArgs, time.Duration) (*MQJob, error)
 	EnqueueCheckPayTx(context.Context, CheckPayArgs, time.Duration) (*MQJob, error)
+	EnqueueClosePay(context.Context, ClosePayArgs, time.Duration) (*MQJob, error)
+	EnqueueClosePayTx(context.Context, ClosePayArgs, time.Duration) (*MQJob, error)
 	GetMQJob(context.Context, int64) (*MQJob, error)
 }
 
@@ -361,6 +496,37 @@ func (uc *paymentJobUsecase) GetMQJob(ctx context.Context, id int64) (*MQJob, er
 	return uc.repo.GetMQJob(ctx, id)
 }
 
+func (uc *paymentJobUsecase) enqueueClose(ctx context.Context, args ClosePayArgs, delay time.Duration, tx bool) (*MQJob, error) {
+	args.Provider = strings.ToLower(strings.TrimSpace(args.Provider))
+	if args.PaymentID <= 0 || args.Provider == "" {
+		return nil, errors.BadRequest("PAYMENT_CLOSE_JOB_INVALID", "payment_id and provider are required")
+	}
+	var scheduledAt time.Time
+	if delay > 0 {
+		scheduledAt = time.Now().Add(delay)
+	}
+	if tx {
+		return uc.repo.EnqueueClosePayTx(ctx, args, scheduledAt)
+	}
+	return uc.repo.EnqueueClosePay(ctx, args, scheduledAt)
+}
+
+func (uc *paymentJobUsecase) EnqueueClosePay(ctx context.Context, args ClosePayArgs, delay time.Duration) (*MQJob, error) {
+	return uc.enqueueClose(ctx, args, delay, false)
+}
+
+func (uc *paymentJobUsecase) EnqueueClosePayTx(ctx context.Context, args ClosePayArgs, delay time.Duration) (*MQJob, error) {
+	return uc.enqueueClose(ctx, args, delay, true)
+}
+
+type OrderExpiryRepo interface {
+	ExpireOrder(context.Context, int64) error
+	// ReapOverdueOrders re-enqueues expiry for pending_payment orders whose
+	// payment window ended more than the given grace ago. It is the backstop
+	// for expire_order jobs discarded after exhausting retries.
+	ReapOverdueOrders(context.Context, time.Duration, int) ([]int64, error)
+}
+
 type PrepayForOrderArgs struct {
 	OrderNo     string
 	UserID      int64
@@ -380,6 +546,8 @@ type PaymentUsecase interface {
 	GetPaymentByOrder(context.Context, int64, int64) (*PaymentDO, error)
 	QueryPayment(context.Context, string, int64) (*PaymentQueryResult, error)
 	ClosePayment(context.Context, string, int64) (*PaymentCloseResult, error)
+	RefundPayment(context.Context, int64) (*PaymentRefundResult, error)
+	ReconcilePendingRefunds(context.Context, time.Duration, int) (int, error)
 	CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*MQJob, error)
 	HandleNotification(context.Context, string, *http.Request) error
 }
@@ -392,17 +560,50 @@ type paymentUsecase struct {
 	paymentJobs      PaymentJobUsecase
 	tx               TxManager
 	idGen            IDGenerator
+	policy           PaymentPolicy
 	log              *log.Helper
 }
 
+type PaymentPolicy struct {
+	PrepayLeaseDuration time.Duration
+	PollInitialDelay    time.Duration
+	PollInterval        time.Duration
+	PollMaxCount        int
+}
+
 func NewPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, notificationRepo PaymentNotificationRepo, orderRepo OrderRepo, paymentJobs PaymentJobUsecase, tx TxManager, idGen IDGenerator, logger log.Logger) PaymentUsecase {
-	return &paymentUsecase{gateway: gateway, paymentRepo: paymentRepo, notificationRepo: notificationRepo, orderRepo: orderRepo, paymentJobs: paymentJobs, tx: tx, idGen: idGen, log: log.NewHelper(logger)}
+	return NewConfiguredPaymentUsecase(gateway, paymentRepo, notificationRepo, orderRepo, paymentJobs, tx, idGen, PaymentPolicy{}, logger)
+}
+
+func NewConfiguredPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo, notificationRepo PaymentNotificationRepo, orderRepo OrderRepo, paymentJobs PaymentJobUsecase, tx TxManager, idGen IDGenerator, policy PaymentPolicy, logger log.Logger) PaymentUsecase {
+	if policy.PrepayLeaseDuration <= 0 {
+		policy.PrepayLeaseDuration = 30 * time.Second
+	}
+	if policy.PollInitialDelay <= 0 {
+		policy.PollInitialDelay = 5 * time.Second
+	}
+	if policy.PollInterval <= 0 {
+		policy.PollInterval = 10 * time.Second
+	}
+	if policy.PollMaxCount <= 0 {
+		policy.PollMaxCount = 30
+	}
+	return &paymentUsecase{gateway: gateway, paymentRepo: paymentRepo, notificationRepo: notificationRepo, orderRepo: orderRepo, paymentJobs: paymentJobs, tx: tx, idGen: idGen, policy: policy, log: log.NewHelper(logger)}
 }
 
 func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrderArgs) (*PrepayForOrderResult, error) {
+	prepayRepo, ok := uc.paymentRepo.(PaymentPrepayRepo)
+	if !ok {
+		return nil, errors.ServiceUnavailable("PAYMENT_PREPAY_REPO_UNAVAILABLE", "payment prepay repository is unavailable")
+	}
 	method := args.Method.Normalize()
 	if method.String() == "" {
 		return nil, errors.BadRequest("PAYMENT_METHOD_REQUIRED", "payment method is required")
+	}
+	// Reject unsupported methods before creating any active payment row.
+	capabilities, err := uc.gateway.Capabilities(method)
+	if err != nil {
+		return nil, err
 	}
 	order, err := uc.orderRepo.GetOrderByOrderNo(ctx, args.OrderNo)
 	if err != nil {
@@ -416,25 +617,40 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 	}
 
 	methodKey := method.String()
-	payment, err := uc.paymentRepo.GetActivePaymentByOrderMethod(ctx, order.ID, methodKey)
-	if err != nil && !errors.Is(err, ErrPaymentNotFound) {
+	if !order.ExpiresAt.IsZero() && !time.Now().UTC().Before(order.ExpiresAt) {
+		return nil, ErrOrderExpired
+	}
+	outTradeNo := uc.idGen.GenerateString()
+	if err := validateOutTradeNo(outTradeNo); err != nil {
 		return nil, err
 	}
-	if payment == nil {
-		outTradeNo := uc.idGen.GenerateString()
-		if err := validateOutTradeNo(outTradeNo); err != nil {
-			return nil, err
-		}
-		payment, err = uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
-			OrderID: order.ID, UserID: order.UserID, Amount: order.TotalAmount,
-			Currency: order.Currency, Method: methodKey, OutTradeNo: outTradeNo,
-		})
-		if err != nil {
-			return nil, err
-		}
+	payment, err := uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
+		OrderID: order.ID, UserID: order.UserID, Amount: order.TotalAmount,
+		Currency: order.Currency, Method: methodKey, OutTradeNo: outTradeNo,
+	})
+	if err != nil {
+		return nil, err
 	}
 	if payment.Status == PaymentStatusPending && payment.Action.Type != "" {
 		return &PrepayForOrderResult{Payment: payment, Prepay: &PaymentPrepayResult{ProviderReference: payment.ThirdPartyTxID, Action: payment.Action}}, nil
+	}
+	if payment.Status != PaymentStatusCreating {
+		if payment.Status == PaymentStatusPending {
+			// pending 却没有 action 属于适配器违约:支付已激活但无法把支付参数交给用户。
+			uc.log.WithContext(ctx).Errorw("msg", "pending payment has no action", "payment_id", payment.ID, "method", payment.Method)
+		}
+		return nil, ErrPaymentStateConflict
+	}
+	leaseToken := uc.idGen.GenerateString()
+	payment, err = prepayRepo.ClaimPaymentPrepay(ctx, payment.ID, leaseToken, uc.policy.PrepayLeaseDuration)
+	if err != nil {
+		return nil, err
+	}
+	if payment.Status == PaymentStatusPending && payment.Action.Type != "" {
+		return &PrepayForOrderResult{
+			Payment: payment,
+			Prepay:  &PaymentPrepayResult{ProviderReference: payment.ThirdPartyTxID, Action: payment.Action},
+		}, nil
 	}
 	description := strings.TrimSpace(args.Description)
 	if description == "" {
@@ -442,33 +658,43 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 	}
 	prepay, err := uc.gateway.Prepay(ctx, PaymentPrepayRequest{
 		Method: method, OutTradeNo: payment.OutTradeNo, Description: description,
-		Amount: order.TotalAmount, Currency: order.Currency, ClientIP: args.ClientIP, Extension: args.Extension,
+		Amount: order.TotalAmount, Currency: order.Currency, ClientIP: args.ClientIP, Extension: args.Extension, ExpiresAt: order.ExpiresAt,
 	})
 	if err != nil {
+		if recordErr := prepayRepo.RecordPaymentPrepayError(ctx, payment.ID, leaseToken, err.Error()); recordErr != nil {
+			uc.log.WithContext(ctx).Errorw("msg", "record payment prepay error failed", "payment_id", payment.ID, "error", recordErr)
+		}
+		return nil, err
+	}
+	if prepay == nil || prepay.Action.Type == "" || len(prepay.Action.Payload) == 0 {
+		err = errors.InternalServer("PAYMENT_PREPAY_RESPONSE_INVALID", "payment provider returned invalid prepay parameters")
+		if recordErr := prepayRepo.RecordPaymentPrepayError(ctx, payment.ID, leaseToken, err.Error()); recordErr != nil {
+			uc.log.WithContext(ctx).Errorw("msg", "record invalid payment prepay response failed", "payment_id", payment.ID, "error", recordErr)
+		}
 		return nil, err
 	}
 
-	capabilities, err := uc.gateway.Capabilities(method)
-	if err != nil {
-		return nil, err
-	}
 	err = uc.tx.InTx(ctx, func(ctx context.Context) error {
-		activated, err := uc.paymentRepo.MarkPaymentPending(ctx, payment.ID, prepay.Action)
+		activated, err := prepayRepo.FinalizePaymentPrepay(ctx, payment.ID, leaseToken, prepay.Action)
 		if err != nil {
 			return err
 		}
 		payment = activated
 		if capabilities.RequiresPoll && uc.paymentJobs != nil {
 			_, err = uc.paymentJobs.EnqueueCheckPayTx(ctx, CheckPayArgs{
-				PaymentID: payment.ID, Provider: method.Provider, Trigger: "prepay", MaxPolls: 30, PollIntervalSeconds: 10,
-			}, 5*time.Second)
+				PaymentID: payment.ID, Provider: method.Provider, Trigger: "prepay",
+				MaxPolls: uc.policy.PollMaxCount, PollIntervalSeconds: int(uc.policy.PollInterval.Seconds()),
+			}, uc.policy.PollInitialDelay)
 		}
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &PrepayForOrderResult{Payment: payment, Prepay: prepay}, nil
+	return &PrepayForOrderResult{
+		Payment: payment,
+		Prepay:  &PaymentPrepayResult{ProviderReference: prepay.ProviderReference, Action: payment.Action},
+	}, nil
 }
 
 func (uc *paymentUsecase) GetPayment(ctx context.Context, id, userID int64) (*PaymentDO, error) {
@@ -527,19 +753,28 @@ func (uc *paymentUsecase) ClosePayment(ctx context.Context, outTradeNo string, u
 	if uc.paymentJobs == nil {
 		return nil, errors.ServiceUnavailable("PAYMENT_MQ_NOT_CONFIGURED", "payment mq is required for reliable close")
 	}
-	closeArgs := CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "api_close", MaxPolls: 1, PollIntervalSeconds: 1}
-	if err := uc.tx.InTx(ctx, func(ctx context.Context) error {
-		if err := uc.paymentRepo.MarkPayClosePending(ctx, closeArgs); err != nil {
-			return err
-		}
-		_, err := uc.paymentJobs.EnqueueCheckPayTx(ctx, closeArgs, 0)
-		return err
-	}); err != nil {
+	closeArgs := CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "api_close"}
+	if err := uc.paymentRepo.MarkPayClosePending(ctx, closeArgs); err != nil {
 		return nil, err
 	}
 	result, err := uc.gateway.Close(ctx, PaymentCloseRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+	if stderrors.Is(err, ErrProviderTradeStateConflict) {
+		query, queryErr := uc.gateway.Query(ctx, PaymentQueryRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		if query != nil && query.TradeState.IsTerminal() {
+			if applyErr := uc.paymentRepo.ApplyPayQuery(ctx, closeArgs, query); applyErr != nil {
+				return nil, applyErr
+			}
+			return &PaymentCloseResult{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: query.TransactionID, Success: query.TradeState == TradeStateClosed}, nil
+		}
+	}
 	if err != nil {
 		return nil, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("payment provider returned an empty close result")
 	}
 	if result.Success {
 		err = uc.paymentRepo.ApplyPayQuery(ctx, CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "api_close"}, &PaymentQueryResult{
@@ -548,6 +783,80 @@ func (uc *paymentUsecase) ClosePayment(ctx context.Context, outTradeNo string, u
 		})
 	}
 	return result, err
+}
+
+func (uc *paymentUsecase) RefundPayment(ctx context.Context, paymentID int64) (*PaymentRefundResult, error) {
+	if paymentID <= 0 {
+		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
+	}
+	if uc.idGen == nil {
+		return nil, errors.InternalServer("PAYMENT_ID_GENERATOR_MISSING", "refund number generator is unavailable")
+	}
+	payment, err := uc.paymentRepo.GetPayment(ctx, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	method, err := ParsePaymentMethod(payment.Method)
+	if err != nil {
+		return nil, err
+	}
+	capabilities, err := uc.gateway.Capabilities(method)
+	if err != nil {
+		return nil, err
+	}
+	if !capabilities.SupportsRefund {
+		return nil, errors.New(501, "PAYMENT_REFUND_NOT_SUPPORTED", "provider does not support refund")
+	}
+	payment, refund, err := uc.paymentRepo.PreparePaymentRefund(
+		ctx,
+		paymentID,
+		uc.idGen.GenerateOrderNo64("rfnd", payment.UserID),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return uc.executeRefund(ctx, method, payment, refund)
+}
+
+// executeRefund drives the gateway call and local settlement for a prepared
+// refund record. It is shared by the admin refund API and the pending-refund
+// reconciliation worker; both rely on the gateway's per-OutRefundNo
+// idempotency to make re-issuing the same refund safe.
+func (uc *paymentUsecase) executeRefund(ctx context.Context, method PaymentMethod, payment *PaymentDO, refund *PaymentRefund) (*PaymentRefundResult, error) {
+	result := &PaymentRefundResult{
+		Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID,
+		OutRefundNo: refund.OutRefundNo, Amount: refund.RefundAmount, Currency: refund.Currency,
+	}
+	if refund.Status == PaymentRefundStatusSuccess {
+		result.Success = true
+		return result, nil
+	}
+	result, err := uc.gateway.Refund(ctx, PaymentRefundRequest{
+		Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID,
+		OutRefundNo: refund.OutRefundNo, Amount: refund.RefundAmount, Currency: refund.Currency,
+		Reason: refund.Reason,
+	})
+	if err != nil {
+		// Only an explicit provider business rejection is definitive. Transient
+		// transport or system errors keep the record pending so the
+		// reconciliation worker can retry it with the same OutRefundNo.
+		definitive := result != nil && result.Rejection
+		if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), definitive); recordErr != nil {
+			uc.log.WithContext(ctx).Errorw("msg", "record payment refund error failed", "payment_id", payment.ID, "refund_id", refund.ID, "error", recordErr)
+		}
+		return result, err
+	}
+	if result == nil || !result.Success {
+		err = errors.New(502, "PAYMENT_REFUND_FAILED", "payment provider did not confirm refund")
+		if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), false); recordErr != nil {
+			uc.log.WithContext(ctx).Errorw("msg", "record payment refund rejection failed", "payment_id", payment.ID, "refund_id", refund.ID, "error", recordErr)
+		}
+		return result, err
+	}
+	if err := uc.paymentRepo.ApplyPaymentRefund(ctx, payment.ID, refund.ID); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (uc *paymentUsecase) HandleNotification(ctx context.Context, provider string, request *http.Request) error {
@@ -569,8 +878,22 @@ func (uc *paymentUsecase) HandleNotification(ctx context.Context, provider strin
 	if method.Provider != strings.ToLower(notification.Provider) {
 		return errors.BadRequest("PAYMENT_NOTIFICATION_PROVIDER_MISMATCH", "notification provider does not match payment")
 	}
+	if notification.Amount != payment.Amount || strings.ToUpper(strings.TrimSpace(notification.Currency)) != strings.ToUpper(strings.TrimSpace(payment.Currency)) {
+		reason := "callback_amount_mismatch"
+		if notification.Amount == payment.Amount {
+			reason = "callback_currency_mismatch"
+		}
+		if err := uc.paymentRepo.MarkReconciliationRequired(ctx, ReconciliationFailure{
+			PaymentID: payment.ID, Provider: method.Provider, Attempt: 1,
+			Reason: reason, LastError: "verified payment notification does not match persisted payment",
+		}); err != nil {
+			return err
+		}
+		return errors.Conflict("PAYMENT_NOTIFICATION_AMOUNT_MISMATCH", "payment notification amount or currency does not match payment")
+	}
 	_, err = uc.notificationRepo.PersistAndEnqueueNotification(ctx, notification, CheckPayArgs{
-		PaymentID: payment.ID, Provider: method.Provider, Trigger: "callback", MaxPolls: 30, PollIntervalSeconds: 10,
+		PaymentID: payment.ID, Provider: method.Provider, Trigger: "callback",
+		MaxPolls: uc.policy.PollMaxCount, PollIntervalSeconds: int(uc.policy.PollInterval.Seconds()),
 	})
 	return err
 }
@@ -581,6 +904,11 @@ func (uc *paymentUsecase) NotificationAck(provider string, success bool) Payment
 		return DefaultPaymentNotificationAck()
 	}
 	return ack
+}
+
+func (uc *paymentUsecase) SupportsNotificationProvider(provider string) bool {
+	_, err := uc.gateway.NotificationAck(provider, false)
+	return err == nil
 }
 
 func (uc *paymentUsecase) CreateCheckJob(ctx context.Context, paymentID int64, maxPolls int, pollInterval time.Duration, delay time.Duration, trigger string) (*MQJob, error) {
@@ -626,4 +954,59 @@ func validateOutTradeNo(value string) error {
 		return errors.BadRequest("OUT_TRADE_NO_INVALID", "out_trade_no contains invalid characters")
 	}
 	return nil
+}
+
+// ReconcilePendingRefunds retries refunds stuck in pending for longer than
+// olderThan — for example when the gateway accepted the refund but the process
+// crashed before ApplyPaymentRefund committed. Each record is re-prepared
+// under the payment row lock and re-issued with the same OutRefundNo.
+func (uc *paymentUsecase) ReconcilePendingRefunds(ctx context.Context, olderThan time.Duration, limit int) (int, error) {
+	if olderThan <= 0 {
+		olderThan = 10 * time.Minute
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	refunds, err := uc.paymentRepo.ListStalePendingRefunds(ctx, olderThan, limit)
+	if err != nil {
+		return 0, err
+	}
+	settled := 0
+	for _, refund := range refunds {
+		if err := uc.reconcileRefund(ctx, refund); err != nil {
+			uc.log.WithContext(ctx).Errorw("msg", "reconcile pending refund failed", "payment_id", refund.PaymentID, "refund_id", refund.ID, "out_refund_no", refund.OutRefundNo, "error", err)
+			continue
+		}
+		settled++
+	}
+	return settled, nil
+}
+
+func (uc *paymentUsecase) reconcileRefund(ctx context.Context, refund PaymentRefund) error {
+	payment, err := uc.paymentRepo.GetPayment(ctx, refund.PaymentID)
+	if err != nil {
+		return err
+	}
+	method, err := ParsePaymentMethod(payment.Method)
+	if err != nil {
+		return err
+	}
+	capabilities, err := uc.gateway.Capabilities(method)
+	if err != nil {
+		return err
+	}
+	if !capabilities.SupportsRefund {
+		return fmt.Errorf("provider %s does not support refund", method.Provider)
+	}
+	// Re-preparing under the payment lock re-validates amounts and state, and
+	// returns the existing refund record instead of creating a new one.
+	current, prepared, err := uc.paymentRepo.PreparePaymentRefund(ctx, refund.PaymentID, refund.OutRefundNo)
+	if err != nil {
+		return err
+	}
+	if prepared.ID != refund.ID {
+		return ErrPaymentStateConflict
+	}
+	_, err = uc.executeRefund(ctx, method, current, prepared)
+	return err
 }

@@ -323,12 +323,14 @@ func (x *Data) GetRedis() *Data_Redis {
 }
 
 type Payment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Alipay        *Alipay                `protobuf:"bytes,1,opt,name=alipay,proto3" json:"alipay,omitempty"`
-	Wechat        *Wechat                `protobuf:"bytes,2,opt,name=wechat,proto3" json:"wechat,omitempty"`
-	CheckPayJob   *CheckPayJob           `protobuf:"bytes,3,opt,name=check_pay_job,json=checkPayJob,proto3" json:"check_pay_job,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Alipay              *Alipay                `protobuf:"bytes,1,opt,name=alipay,proto3" json:"alipay,omitempty"`
+	Wechat              *Wechat                `protobuf:"bytes,2,opt,name=wechat,proto3" json:"wechat,omitempty"`
+	CheckPayJob         *CheckPayJob           `protobuf:"bytes,3,opt,name=check_pay_job,json=checkPayJob,proto3" json:"check_pay_job,omitempty"`
+	OrderPaymentTimeout *durationpb.Duration   `protobuf:"bytes,4,opt,name=order_payment_timeout,json=orderPaymentTimeout,proto3" json:"order_payment_timeout,omitempty"`
+	PrepayLeaseDuration *durationpb.Duration   `protobuf:"bytes,5,opt,name=prepay_lease_duration,json=prepayLeaseDuration,proto3" json:"prepay_lease_duration,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Payment) Reset() {
@@ -378,6 +380,20 @@ func (x *Payment) GetWechat() *Wechat {
 func (x *Payment) GetCheckPayJob() *CheckPayJob {
 	if x != nil {
 		return x.CheckPayJob
+	}
+	return nil
+}
+
+func (x *Payment) GetOrderPaymentTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.OrderPaymentTimeout
+	}
+	return nil
+}
+
+func (x *Payment) GetPrepayLeaseDuration() *durationpb.Duration {
+	if x != nil {
+		return x.PrepayLeaseDuration
 	}
 	return nil
 }
@@ -903,11 +919,13 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x12<\n" +
 	"\fread_timeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\vreadTimeout\x12>\n" +
 	"\rwrite_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\fwriteTimeout\x12<\n" +
-	"\fdial_timeout\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\vdialTimeout\"\x9e\x01\n" +
+	"\fdial_timeout\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\vdialTimeout\"\xbc\x02\n" +
 	"\aPayment\x12*\n" +
 	"\x06alipay\x18\x01 \x01(\v2\x12.kratos.api.AlipayR\x06alipay\x12*\n" +
 	"\x06wechat\x18\x02 \x01(\v2\x12.kratos.api.WechatR\x06wechat\x12;\n" +
-	"\rcheck_pay_job\x18\x03 \x01(\v2\x17.kratos.api.CheckPayJobR\vcheckPayJob\"\x8d\x02\n" +
+	"\rcheck_pay_job\x18\x03 \x01(\v2\x17.kratos.api.CheckPayJobR\vcheckPayJob\x12M\n" +
+	"\x15order_payment_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x13orderPaymentTimeout\x12M\n" +
+	"\x15prepay_lease_duration\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\x13prepayLeaseDuration\"\x8d\x02\n" +
 	"\x06Alipay\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1f\n" +
 	"\vprivate_key\x18\x02 \x01(\tR\n" +
@@ -972,18 +990,20 @@ var file_conf_conf_proto_depIdxs = []int32{
 	6,  // 11: kratos.api.Payment.alipay:type_name -> kratos.api.Alipay
 	7,  // 12: kratos.api.Payment.wechat:type_name -> kratos.api.Wechat
 	8,  // 13: kratos.api.Payment.check_pay_job:type_name -> kratos.api.CheckPayJob
-	13, // 14: kratos.api.CheckPayJob.initial_delay:type_name -> google.protobuf.Duration
-	13, // 15: kratos.api.CheckPayJob.poll_interval:type_name -> google.protobuf.Duration
-	13, // 16: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
-	13, // 17: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	13, // 18: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
-	13, // 19: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
-	13, // 20: kratos.api.Data.Redis.dial_timeout:type_name -> google.protobuf.Duration
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	13, // 14: kratos.api.Payment.order_payment_timeout:type_name -> google.protobuf.Duration
+	13, // 15: kratos.api.Payment.prepay_lease_duration:type_name -> google.protobuf.Duration
+	13, // 16: kratos.api.CheckPayJob.initial_delay:type_name -> google.protobuf.Duration
+	13, // 17: kratos.api.CheckPayJob.poll_interval:type_name -> google.protobuf.Duration
+	13, // 18: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
+	13, // 19: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	13, // 20: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
+	13, // 21: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
+	13, // 22: kratos.api.Data.Redis.dial_timeout:type_name -> google.protobuf.Duration
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_conf_conf_proto_init() }

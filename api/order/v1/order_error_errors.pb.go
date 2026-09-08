@@ -70,3 +70,51 @@ func IsAddressNotFound(err error) bool {
 func ErrorAddressNotFound(format string, args ...interface{}) *errors.Error {
 	return errors.New(404, ErrorReason_ADDRESS_NOT_FOUND.String(), fmt.Sprintf(format, args...))
 }
+
+func IsIdempotencyKeyRequired(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_IDEMPOTENCY_KEY_REQUIRED.String() && e.Code == 400
+}
+
+func ErrorIdempotencyKeyRequired(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_IDEMPOTENCY_KEY_REQUIRED.String(), fmt.Sprintf(format, args...))
+}
+
+func IsIdempotencyKeyInvalid(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_IDEMPOTENCY_KEY_INVALID.String() && e.Code == 400
+}
+
+func ErrorIdempotencyKeyInvalid(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_IDEMPOTENCY_KEY_INVALID.String(), fmt.Sprintf(format, args...))
+}
+
+func IsIdempotencyKeyConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_IDEMPOTENCY_KEY_CONFLICT.String() && e.Code == 409
+}
+
+func ErrorIdempotencyKeyConflict(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_IDEMPOTENCY_KEY_CONFLICT.String(), fmt.Sprintf(format, args...))
+}
+
+func IsOrderExpired(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_ORDER_EXPIRED.String() && e.Code == 409
+}
+
+func ErrorOrderExpired(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_ORDER_EXPIRED.String(), fmt.Sprintf(format, args...))
+}

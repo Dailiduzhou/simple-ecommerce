@@ -23,9 +23,12 @@ func (q *Queries) CountOrdersByUser(ctx context.Context, userID int64) (int64, e
 }
 
 const createOrder = `-- name: CreateOrder :one
-INSERT INTO orders (user_id, address_id, total_amount_minor, currency, status, out_trade_no)
-VALUES ($1, $2, $3, $4, 'pending_payment', $5)
-RETURNING id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency
+INSERT INTO orders (
+  user_id, address_id, total_amount_minor, currency, status, out_trade_no,
+  idempotency_key, request_hash, expires_at
+)
+VALUES ($1, $2, $3, $4, 'pending_payment', $5, $6, $7, $8)
+RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 type CreateOrderParams struct {
@@ -33,7 +36,10 @@ type CreateOrderParams struct {
 	AddressID        int64
 	TotalAmountMinor int64
 	Currency         string
-	OutTradeNo       pgtype.Text
+	OutTradeNo       string
+	IdempotencyKey   string
+	RequestHash      string
+	ExpiresAt        pgtype.Timestamptz
 }
 
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error) {
@@ -43,6 +49,9 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		arg.TotalAmountMinor,
 		arg.Currency,
 		arg.OutTradeNo,
+		arg.IdempotencyKey,
+		arg.RequestHash,
+		arg.ExpiresAt,
 	)
 	var i Order
 	err := row.Scan(
@@ -50,18 +59,21 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
-		&i.Currency,
 	)
 	return i, err
 }
 
 const getOrder = `-- name: GetOrder :one
-SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE id = $1
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE id = $1
 `
 
 func (q *Queries) GetOrder(ctx context.Context, id int64) (Order, error) {
@@ -72,23 +84,26 @@ func (q *Queries) GetOrder(ctx context.Context, id int64) (Order, error) {
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
-		&i.Currency,
 	)
 	return i, err
 }
 
 const getOrderByOrderNo = `-- name: GetOrderByOrderNo :one
-SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE out_trade_no = $1
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE out_trade_no = $1
 `
 
 // 通过商户订单号(orders.out_trade_no)查询订单。
 // 统一支付 API 的入口:order_no -> order。
-func (q *Queries) GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text) (Order, error) {
+func (q *Queries) GetOrderByOrderNo(ctx context.Context, outTradeNo string) (Order, error) {
 	row := q.db.QueryRow(ctx, getOrderByOrderNo, outTradeNo)
 	var i Order
 	err := row.Scan(
@@ -96,18 +111,21 @@ func (q *Queries) GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text)
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
-		&i.Currency,
 	)
 	return i, err
 }
 
 const getOrderByUser = `-- name: GetOrderByUser :one
-SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE id = $1 AND user_id = $2
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE id = $1 AND user_id = $2
 `
 
 type GetOrderByUserParams struct {
@@ -123,18 +141,21 @@ func (q *Queries) GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) 
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
-		&i.Currency,
 	)
 	return i, err
 }
 
 const getOrderByUserForUpdate = `-- name: GetOrderByUserForUpdate :one
-SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE
 `
 
 type GetOrderByUserForUpdateParams struct {
@@ -150,18 +171,51 @@ func (q *Queries) GetOrderByUserForUpdate(ctx context.Context, arg GetOrderByUse
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
+	)
+	return i, err
+}
+
+const getOrderByUserIdempotency = `-- name: GetOrderByUserIdempotency :one
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE user_id = $1 AND idempotency_key = $2
+`
+
+type GetOrderByUserIdempotencyParams struct {
+	UserID         int64
+	IdempotencyKey string
+}
+
+func (q *Queries) GetOrderByUserIdempotency(ctx context.Context, arg GetOrderByUserIdempotencyParams) (Order, error) {
+	row := q.db.QueryRow(ctx, getOrderByUserIdempotency, arg.UserID, arg.IdempotencyKey)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AddressID,
+		&i.TotalAmountMinor,
 		&i.Currency,
+		&i.Status,
+		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getOrderForUpdate = `-- name: GetOrderForUpdate :one
-SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE id = $1 FOR UPDATE
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetOrderForUpdate(ctx context.Context, id int64) (Order, error) {
@@ -172,12 +226,15 @@ func (q *Queries) GetOrderForUpdate(ctx context.Context, id int64) (Order, error
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
-		&i.Currency,
 	)
 	return i, err
 }
@@ -194,7 +251,7 @@ func (q *Queries) HasOngoingOrders(ctx context.Context, userID int64) (bool, err
 }
 
 const listOngoingOrdersByUser = `-- name: ListOngoingOrdersByUser :many
-SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE user_id = $1 AND is_completed = FALSE ORDER BY id DESC
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE user_id = $1 AND is_completed = FALSE ORDER BY id DESC
 `
 
 func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error) {
@@ -211,12 +268,15 @@ func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]
 			&i.UserID,
 			&i.AddressID,
 			&i.TotalAmountMinor,
+			&i.Currency,
 			&i.Status,
 			&i.IsCompleted,
+			&i.OutTradeNo,
+			&i.IdempotencyKey,
+			&i.RequestHash,
+			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.OutTradeNo,
-			&i.Currency,
 		); err != nil {
 			return nil, err
 		}
@@ -229,7 +289,7 @@ func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]
 }
 
 const listOrdersByUser = `-- name: ListOrdersByUser :many
-SELECT id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency FROM orders WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3
 `
 
 type ListOrdersByUserParams struct {
@@ -252,12 +312,15 @@ func (q *Queries) ListOrdersByUser(ctx context.Context, arg ListOrdersByUserPara
 			&i.UserID,
 			&i.AddressID,
 			&i.TotalAmountMinor,
+			&i.Currency,
 			&i.Status,
 			&i.IsCompleted,
+			&i.OutTradeNo,
+			&i.IdempotencyKey,
+			&i.RequestHash,
+			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.OutTradeNo,
-			&i.Currency,
 		); err != nil {
 			return nil, err
 		}
@@ -269,10 +332,62 @@ func (q *Queries) ListOrdersByUser(ctx context.Context, arg ListOrdersByUserPara
 	return items, nil
 }
 
+const listOverduePendingOrders = `-- name: ListOverduePendingOrders :many
+SELECT id FROM orders
+WHERE id > $1::bigint AND status = 'pending_payment'
+  AND expires_at <= now() - make_interval(secs => $2::double precision)
+ORDER BY id
+LIMIT $3
+`
+
+type ListOverduePendingOrdersParams struct {
+	AfterID      int64
+	GraceSeconds float64
+	LimitRows    int32
+}
+
+// Backstop for expire_order jobs that were discarded after exhausting retries;
+// the partial index idx_orders_pending_expiry keeps this scan cheap.
+func (q *Queries) ListOverduePendingOrders(ctx context.Context, arg ListOverduePendingOrdersParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listOverduePendingOrders, arg.AfterID, arg.GraceSeconds, arg.LimitRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockOrderIdempotency = `-- name: LockOrderIdempotency :exec
+SELECT pg_advisory_xact_lock(hashtextextended(
+  'order-idempotency:' || $1::bigint::text || ':' || $2::text, 0))
+`
+
+type LockOrderIdempotencyParams struct {
+	UserID         int64
+	IdempotencyKey string
+}
+
+// Lock the request identity BEFORE reading stock or checking for a replay.
+func (q *Queries) LockOrderIdempotency(ctx context.Context, arg LockOrderIdempotencyParams) error {
+	_, err := q.db.Exec(ctx, lockOrderIdempotency, arg.UserID, arg.IdempotencyKey)
+	return err
+}
+
 const markOrderCancelled = `-- name: MarkOrderCancelled :one
 UPDATE orders SET is_completed = TRUE, status = 'cancelled', updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND status = 'cancelling'
-RETURNING id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency
+RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 func (q *Queries) MarkOrderCancelled(ctx context.Context, id int64) (Order, error) {
@@ -283,12 +398,15 @@ func (q *Queries) MarkOrderCancelled(ctx context.Context, id int64) (Order, erro
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
-		&i.Currency,
 	)
 	return i, err
 }
@@ -296,7 +414,7 @@ func (q *Queries) MarkOrderCancelled(ctx context.Context, id int64) (Order, erro
 const markOrderCancelling = `-- name: MarkOrderCancelling :one
 UPDATE orders SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND status = 'pending_payment'
-RETURNING id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency
+RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 func (q *Queries) MarkOrderCancelling(ctx context.Context, id int64) (Order, error) {
@@ -307,12 +425,15 @@ func (q *Queries) MarkOrderCancelling(ctx context.Context, id int64) (Order, err
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
-		&i.Currency,
 	)
 	return i, err
 }
@@ -320,7 +441,7 @@ func (q *Queries) MarkOrderCancelling(ctx context.Context, id int64) (Order, err
 const markOrderPaid = `-- name: MarkOrderPaid :one
 UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND status = 'pending_payment'
-RETURNING id, user_id, address_id, total_amount_minor, status, is_completed, created_at, updated_at, out_trade_no, currency
+RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 func (q *Queries) MarkOrderPaid(ctx context.Context, id int64) (Order, error) {
@@ -331,12 +452,28 @@ func (q *Queries) MarkOrderPaid(ctx context.Context, id int64) (Order, error) {
 		&i.UserID,
 		&i.AddressID,
 		&i.TotalAmountMinor,
+		&i.Currency,
 		&i.Status,
 		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.OutTradeNo,
-		&i.Currency,
 	)
 	return i, err
+}
+
+const orderIsExpired = `-- name: OrderIsExpired :one
+SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired FROM orders WHERE id = $1
+`
+
+// Expiry decisions must use the database clock, not the application server's,
+// so instances with skewed clocks cannot extend or shrink the payment window.
+func (q *Queries) OrderIsExpired(ctx context.Context, id int64) (bool, error) {
+	row := q.db.QueryRow(ctx, orderIsExpired, id)
+	var expired bool
+	err := row.Scan(&expired)
+	return expired, err
 }
