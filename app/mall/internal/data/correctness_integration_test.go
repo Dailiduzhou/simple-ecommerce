@@ -53,6 +53,14 @@ func (integrationCheckPayWorker) Work(context.Context, *river.Job[biz.CheckPayAr
 	return nil
 }
 
+type integrationExpireOrderWorker struct {
+	river.WorkerDefaults[biz.ExpireOrderArgs]
+}
+
+func (integrationExpireOrderWorker) Work(context.Context, *river.Job[biz.ExpireOrderArgs]) error {
+	return nil
+}
+
 func newCorrectnessFixture(t *testing.T) *correctnessFixture {
 	t.Helper()
 	dsn := os.Getenv(integrationPostgresEnv)
@@ -86,7 +94,8 @@ func newCorrectnessFixture(t *testing.T) *correctnessFixture {
 	handler := NewPaymentRiverErrorHandler(pool, rdb, log.DefaultLogger)
 	workers := river.NewWorkers()
 	river.AddWorker(workers, integrationCheckPayWorker{})
-	riverClient, err := NewRiverClient(pool, workers, handler)
+	river.AddWorker(workers, integrationExpireOrderWorker{})
+	riverClient, err := NewRiverClient(pool, workers, nil, handler)
 	require.NoError(t, err)
 
 	prefix := fmt.Sprintf("it_%d", time.Now().UnixNano())
@@ -125,6 +134,14 @@ func (f *correctnessFixture) cleanup(t *testing.T) {
 		sql  string
 		args []any
 	}{
+		{`DELETE FROM river_job
+			WHERE kind = $1
+			  AND (args->>'order_id')::bigint IN (SELECT id FROM orders WHERE user_id = $2)`,
+			[]any{biz.ExpireOrderJobKind, f.userID}},
+		{`DELETE FROM river_job
+			WHERE kind IN ($1, $2)
+			  AND (args->>'payment_id')::bigint IN (SELECT id FROM payments WHERE user_id = $3)`,
+			[]any{biz.CheckPayJobKind, biz.ClosePayJobKind, f.userID}},
 		{`DELETE FROM river_job WHERE kind = $1 AND args->>'provider' = $2`, []any{biz.CheckPayJobKind, f.provider}},
 		{`DELETE FROM payment_notifications WHERE provider = $1`, []any{f.provider}},
 		{`DELETE FROM payment_reconciliation_failures WHERE payment_id IN (SELECT id FROM payments WHERE user_id = $1)`, []any{f.userID}},
@@ -148,9 +165,13 @@ func (f *correctnessFixture) seedPayment(t *testing.T, status string) (int64, in
 	orderNo := fmt.Sprintf("%s_order_%d", f.prefix, time.Now().UnixNano())
 	var orderID int64
 	require.NoError(t, f.pool.QueryRow(f.ctx, `
-		INSERT INTO orders (user_id, address_id, total_amount_minor, status, out_trade_no, currency)
-		VALUES ($1, $2, 12345, 'pending_payment', $3, 'CNY') RETURNING id`,
-		f.userID, f.addressID, orderNo).Scan(&orderID))
+		INSERT INTO orders (
+			user_id, address_id, total_amount_minor, status, out_trade_no, currency,
+			idempotency_key, request_hash, expires_at
+		)
+		VALUES ($1, $2, 12345, 'pending_payment', $3, 'CNY', $4, $5, CURRENT_TIMESTAMP + INTERVAL '30 minutes')
+		RETURNING id`,
+		f.userID, f.addressID, orderNo, orderNo, strings.Repeat("a", 64)).Scan(&orderID))
 	outTradeNo := fmt.Sprintf("%s_pay_%d", f.prefix, time.Now().UnixNano())
 	var paymentID int64
 	require.NoError(t, f.pool.QueryRow(f.ctx, `
@@ -167,6 +188,18 @@ func (r failingPaymentMQRepo) EnqueueCheckPay(context.Context, biz.CheckPayArgs,
 	return nil, r.err
 }
 func (r failingPaymentMQRepo) EnqueueCheckPayTx(context.Context, biz.CheckPayArgs, time.Time) (*biz.MQJob, error) {
+	return nil, r.err
+}
+func (r failingPaymentMQRepo) EnqueueClosePay(context.Context, biz.ClosePayArgs, time.Time) (*biz.MQJob, error) {
+	return nil, r.err
+}
+func (r failingPaymentMQRepo) EnqueueClosePayTx(context.Context, biz.ClosePayArgs, time.Time) (*biz.MQJob, error) {
+	return nil, r.err
+}
+func (r failingPaymentMQRepo) EnqueueExpireOrder(context.Context, biz.ExpireOrderArgs, time.Time) (*biz.MQJob, error) {
+	return nil, r.err
+}
+func (r failingPaymentMQRepo) EnqueueExpireOrderTx(context.Context, biz.ExpireOrderArgs, time.Time) (*biz.MQJob, error) {
 	return nil, r.err
 }
 func (r failingPaymentMQRepo) GetMQJob(context.Context, int64) (*biz.MQJob, error) {
@@ -198,15 +231,26 @@ func TestCorrectnessIntegration(t *testing.T) {
 		require.True(t, duplicate)
 		require.Len(t, f.paymentJobIDs(t, paymentID), 1)
 
-		_, err = f.pool.Exec(f.ctx, `UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1`, jobs[0])
+		active := *notification
+		active.ProviderEventID = f.prefix + "_event_active"
+		active.PayloadHash = f.prefix + "_payload_active"
+		duplicate, err = repo.PersistAndEnqueueNotification(f.ctx, &active, args)
 		require.NoError(t, err)
+		require.False(t, duplicate)
+		jobs = f.paymentJobIDs(t, paymentID)
+		require.Len(t, jobs, 2, "a distinct callback must not deduplicate against an active notification job")
+
+		for _, jobID := range jobs {
+			_, err = f.pool.Exec(f.ctx, `UPDATE river_job SET state = 'completed', finalized_at = now() WHERE id = $1`, jobID)
+			require.NoError(t, err)
+		}
 		late := *notification
 		late.ProviderEventID = f.prefix + "_event_2"
 		late.PayloadHash = f.prefix + "_payload_2"
 		duplicate, err = repo.PersistAndEnqueueNotification(f.ctx, &late, args)
 		require.NoError(t, err)
 		require.False(t, duplicate)
-		require.Len(t, f.paymentJobIDs(t, paymentID), 2)
+		require.Len(t, f.paymentJobIDs(t, paymentID), 3)
 
 		failed := *notification
 		failed.ProviderEventID = f.prefix + "_event_rollback"
@@ -230,7 +274,7 @@ func TestCorrectnessIntegration(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, err := q.MarkPaymentSuccess(f.ctx, db.MarkPaymentSuccessParams{ID: paymentID, ThirdPartyTxID: pgText(fmt.Sprintf("%s_tx", f.prefix))})
+				_, err := q.RecordPaymentSuccess(f.ctx, db.RecordPaymentSuccessParams{ID: paymentID, ThirdPartyTxID: pgText(fmt.Sprintf("%s_tx", f.prefix))})
 				if err == nil {
 					successes.Add(1)
 				} else if !stderrors.Is(err, pgx.ErrNoRows) {
@@ -248,7 +292,7 @@ func TestCorrectnessIntegration(t *testing.T) {
 		_, competingID, _ := f.seedPayment(t, biz.PaymentStatusPending)
 		results := make(chan error, 2)
 		go func() {
-			_, err := q.MarkPaymentSuccess(f.ctx, db.MarkPaymentSuccessParams{ID: competingID, ThirdPartyTxID: pgText(fmt.Sprintf("%s_competing_tx", f.prefix))})
+			_, err := q.RecordPaymentSuccess(f.ctx, db.RecordPaymentSuccessParams{ID: competingID, ThirdPartyTxID: pgText(fmt.Sprintf("%s_competing_tx", f.prefix))})
 			results <- err
 		}()
 		go func() {
@@ -267,6 +311,103 @@ func TestCorrectnessIntegration(t *testing.T) {
 		require.Equal(t, 1, terminalWinners)
 	})
 
+	t.Run("concurrent CreateOrder with one idempotency key creates exactly one order", func(t *testing.T) {
+		var stockBefore int32
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id = $1`, f.productID).Scan(&stockBefore))
+		mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
+		repo := NewOrderRepoWithJobs(f.data, f.tx, mq, log.DefaultLogger)
+		idempotencyKey := f.prefix + "_concurrent_key"
+
+		const workers = 8
+		orderIDs := make(chan int64, workers)
+		failures := make(chan error, workers)
+		var wg sync.WaitGroup
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				order, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{
+					UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_concurrent_order",
+					Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}},
+					IdempotencyKey: idempotencyKey, RequestHash: f.prefix + "_concurrent_hash",
+					ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+				})
+				if err != nil {
+					failures <- err
+					return
+				}
+				orderIDs <- order.ID
+			}()
+		}
+		wg.Wait()
+		close(orderIDs)
+		close(failures)
+		for err := range failures {
+			require.NoError(t, err)
+		}
+		var winner int64
+		seen := 0
+		for id := range orderIDs {
+			if seen == 0 {
+				winner = id
+			} else {
+				require.Equal(t, winner, id, "every replay must observe the same order")
+			}
+			seen++
+		}
+		require.Equal(t, workers, seen)
+
+		var orderCount int32
+		require.NoError(t, f.pool.QueryRow(f.ctx,
+			`SELECT count(*) FROM orders WHERE idempotency_key = $1`, idempotencyKey).Scan(&orderCount))
+		require.Equal(t, int32(1), orderCount, "the unique index plus recovery path must yield one row")
+		var stockAfter int32
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id = $1`, f.productID).Scan(&stockAfter))
+		require.Equal(t, stockBefore-1, stockAfter, "stock must be decremented exactly once")
+
+		_, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{
+			UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_conflict_order",
+			Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}},
+			IdempotencyKey: idempotencyKey, RequestHash: f.prefix + "_different_hash",
+			ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+		})
+		require.ErrorIs(t, err, biz.ErrIdempotencyKeyConflict)
+	})
+
+	t.Run("concurrent refund preparation yields a single refund record", func(t *testing.T) {
+		_, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+		repo := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
+
+		refundIDs := make(chan int64, 2)
+		failures := make(chan error, 2)
+		var wg sync.WaitGroup
+		for i := 0; i < 2; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				_, refund, err := repo.PreparePaymentRefund(f.ctx, paymentID, fmt.Sprintf("%s_rfnd_%d", f.prefix, i))
+				if err != nil {
+					failures <- err
+					return
+				}
+				refundIDs <- refund.ID
+			}(i)
+		}
+		wg.Wait()
+		close(refundIDs)
+		close(failures)
+		for err := range failures {
+			require.NoError(t, err)
+		}
+		first, second := <-refundIDs, <-refundIDs
+		require.Equal(t, first, second, "both callers must share the single refund record")
+
+		var refundCount int32
+		require.NoError(t, f.pool.QueryRow(f.ctx,
+			`SELECT count(*) FROM order_refunds WHERE payment_id = $1`, paymentID).Scan(&refundCount))
+		require.Equal(t, int32(1), refundCount, "the payment row lock must serialize refund creation")
+	})
+
 	t.Run("order creation uses database price and advances every related cache generation", func(t *testing.T) {
 		keys := []string{
 			"product:list:gen",
@@ -277,10 +418,14 @@ func TestCorrectnessIntegration(t *testing.T) {
 		for _, key := range keys {
 			require.NoError(t, f.rdb.Set(f.ctx, key, 7, 0).Err())
 		}
-		repo := NewOrderRepo(f.data, f.tx, log.DefaultLogger)
+		mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
+		repo := NewOrderRepoWithJobs(f.data, f.tx, mq, log.DefaultLogger)
+		expiresAt := time.Now().UTC().Add(30 * time.Minute)
 		order, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{
 			UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_created_order",
 			Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 2}},
+			IdempotencyKey: f.prefix + "_idempotency", RequestHash: f.prefix + "_request_hash",
+			ExpiresAt: expiresAt,
 		})
 		require.NoError(t, err)
 		require.Equal(t, int64(24690), order.TotalAmount)
@@ -296,6 +441,12 @@ func TestCorrectnessIntegration(t *testing.T) {
 		require.NoError(t, f.pool.QueryRow(f.ctx,
 			`SELECT product_name_snapshot FROM order_items WHERE order_id = $1`, order.ID).Scan(&snapshotName))
 		require.Equal(t, f.prefix, snapshotName)
+		var expireJobs int64
+		require.NoError(t, f.pool.QueryRow(f.ctx, `
+			SELECT count(*) FROM river_job
+			WHERE kind = $1 AND args->>'order_id' = $2`,
+			biz.ExpireOrderJobKind, fmt.Sprint(order.ID)).Scan(&expireJobs))
+		require.Equal(t, int64(1), expireJobs)
 	})
 
 	t.Run("concurrent default-address switches leave exactly one default", func(t *testing.T) {
@@ -327,6 +478,14 @@ func TestCorrectnessIntegration(t *testing.T) {
 
 	t.Run("discarded River job persists reconciliation and evicts stale caches", func(t *testing.T) {
 		orderID, paymentID, outTradeNo := f.seedPayment(t, biz.PaymentStatusPending)
+		q := db.New(f.pool)
+		notification, err := q.CreatePaymentNotification(f.ctx, db.CreatePaymentNotificationParams{
+			Provider: f.provider, ProviderEventID: pgText(f.prefix + "_discarded_event"), OutTradeNo: outTradeNo,
+			PayloadHash: f.prefix + "_discarded_payload", VerifiedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		})
+		require.NoError(t, err)
+		_, err = q.BeginPaymentNotificationProcessing(f.ctx, notification.ID)
+		require.NoError(t, err)
 		cacheKeys := []string{
 			redisKey("payment", paymentID),
 			redisKey("payment", "order", orderID),
@@ -337,19 +496,35 @@ func TestCorrectnessIntegration(t *testing.T) {
 		for _, key := range cacheKeys {
 			require.NoError(t, f.rdb.Set(f.ctx, key, `{"Status":"pending"}`, time.Hour).Err())
 		}
-		encoded, err := json.Marshal(biz.CheckPayArgs{PaymentID: paymentID, Provider: f.provider})
+		encoded, err := json.Marshal(biz.CheckPayArgs{PaymentID: paymentID, Provider: f.provider, NotificationID: notification.ID})
 		require.NoError(t, err)
 		job := &rivertype.JobRow{ID: paymentID + 1_000_000_000, Kind: biz.CheckPayJobKind, Attempt: 8, MaxAttempts: 8, EncodedArgs: encoded}
 		f.handler.HandleError(f.ctx, job, stderrors.New("provider timeout"))
 
-		var status string
-		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT status FROM payments WHERE id = $1`, paymentID).Scan(&status))
-		require.Equal(t, biz.PaymentStatusReconcileRequired, status)
+		var reconciliationStatus string
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT reconciliation_status FROM payments WHERE id = $1`, paymentID).Scan(&reconciliationStatus))
+		require.Equal(t, biz.ReconciliationStatusRequired, reconciliationStatus)
 		var failures int64
 		require.NoError(t, f.pool.QueryRow(f.ctx,
 			`SELECT count(*) FROM payment_reconciliation_failures WHERE payment_id = $1 AND river_job_id = $2`, paymentID, job.ID).Scan(&failures))
 		require.Equal(t, int64(1), failures)
+		storedNotification, err := q.GetPaymentNotification(f.ctx, notification.ID)
+		require.NoError(t, err)
+		require.Equal(t, biz.PaymentNotificationStatusFailed, storedNotification.Status)
+		require.Equal(t, "provider timeout", storedNotification.LastError.String)
 		require.Equal(t, int64(0), f.rdb.Exists(f.ctx, cacheKeys...).Val())
+	})
+
+	t.Run("discarded stale River job preserves terminal payment state", func(t *testing.T) {
+		_, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+		encoded, err := json.Marshal(biz.CheckPayArgs{PaymentID: paymentID, Provider: f.provider})
+		require.NoError(t, err)
+		job := &rivertype.JobRow{ID: paymentID + 2_000_000_000, Kind: biz.CheckPayJobKind, Attempt: 8, MaxAttempts: 8, EncodedArgs: encoded}
+		f.handler.HandleError(f.ctx, job, stderrors.New("stale provider timeout"))
+
+		var status string
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT status FROM payments WHERE id = $1`, paymentID).Scan(&status))
+		require.Equal(t, biz.PaymentStatusSuccess, status)
 	})
 }
 

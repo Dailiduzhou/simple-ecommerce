@@ -11,12 +11,16 @@ import (
 )
 
 type Querier interface {
+	BeginPaymentNotificationProcessing(ctx context.Context, id int64) (PaymentNotification, error)
+	ClaimPaymentPrepay(ctx context.Context, arg ClaimPaymentPrepayParams) (Payment, error)
 	ClearDefaultShippingAddress(ctx context.Context, userID int64) error
+	ConfirmPaymentRefunded(ctx context.Context, id int64) (Payment, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
 	CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error)
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error)
+	CreateOrderRefund(ctx context.Context, arg CreateOrderRefundParams) (OrderRefund, error)
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
 	CreatePaymentNotification(ctx context.Context, arg CreatePaymentNotificationParams) (PaymentNotification, error)
 	CreatePaymentReconciliationFailure(ctx context.Context, arg CreatePaymentReconciliationFailureParams) (PaymentReconciliationFailure, error)
@@ -28,6 +32,9 @@ type Querier interface {
 	DeleteCategory(ctx context.Context, id int64) error
 	DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) error
 	DeleteUser(ctx context.Context, id int64) error
+	FailPaymentPrepay(ctx context.Context, arg FailPaymentPrepayParams) (Payment, error)
+	FinalizePaymentPrepay(ctx context.Context, arg FinalizePaymentPrepayParams) (Payment, error)
+	GetActivePaymentByOrder(ctx context.Context, orderID int64) (Payment, error)
 	GetActivePaymentByOrderChannel(ctx context.Context, arg GetActivePaymentByOrderChannelParams) (Payment, error)
 	GetCategory(ctx context.Context, id int64) (Category, error)
 	GetDefaultShippingAddress(ctx context.Context, userID int64) (ShippingAddress, error)
@@ -36,54 +43,72 @@ type Querier interface {
 	GetOrder(ctx context.Context, id int64) (Order, error)
 	// 通过商户订单号(orders.out_trade_no)查询订单。
 	// 统一支付 API 的入口:order_no -> order。
-	GetOrderByOrderNo(ctx context.Context, outTradeNo pgtype.Text) (Order, error)
+	GetOrderByOrderNo(ctx context.Context, outTradeNo string) (Order, error)
 	GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) (Order, error)
 	GetOrderByUserForUpdate(ctx context.Context, arg GetOrderByUserForUpdateParams) (Order, error)
+	GetOrderByUserIdempotency(ctx context.Context, arg GetOrderByUserIdempotencyParams) (Order, error)
 	GetOrderForUpdate(ctx context.Context, id int64) (Order, error)
+	GetOrderRefundByPaymentID(ctx context.Context, paymentID pgtype.Int8) (OrderRefund, error)
 	GetPayment(ctx context.Context, id int64) (Payment, error)
-	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo pgtype.Text) (Payment, error)
+	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (Payment, error)
 	GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID pgtype.Text) (Payment, error)
 	GetPaymentForUpdate(ctx context.Context, id int64) (Payment, error)
 	GetPaymentNotification(ctx context.Context, id int64) (PaymentNotification, error)
+	GetPaymentNotificationByEvent(ctx context.Context, arg GetPaymentNotificationByEventParams) (PaymentNotification, error)
+	GetPaymentNotificationByPayload(ctx context.Context, arg GetPaymentNotificationByPayloadParams) (PaymentNotification, error)
 	GetProduct(ctx context.Context, id int64) (Product, error)
 	GetProductForOrder(ctx context.Context, id int64) (Product, error)
 	GetShippingAddress(ctx context.Context, arg GetShippingAddressParams) (ShippingAddress, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error)
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
-	HasOngoingPayments(ctx context.Context, userID int64) (bool, error)
-	HasSuccessfulPaymentByOrder(ctx context.Context, orderID int64) (bool, error)
 	IncrementProductStock(ctx context.Context, arg IncrementProductStockParams) error
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
 	ListEventsByStatus(ctx context.Context, arg ListEventsByStatusParams) ([]Event, error)
 	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)
 	ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error)
 	ListOrdersByUser(ctx context.Context, arg ListOrdersByUserParams) ([]Order, error)
+	// Backstop for expire_order jobs that were discarded after exhausting retries;
+	// the partial index idx_orders_pending_expiry keeps this scan cheap.
+	ListOverduePendingOrders(ctx context.Context, arg ListOverduePendingOrdersParams) ([]int64, error)
 	ListPaymentsByOrderForUpdate(ctx context.Context, orderID int64) ([]Payment, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]Product, error)
+	// 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
 	ListProductsByCategory(ctx context.Context, arg ListProductsByCategoryParams) ([]Product, error)
 	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
+	ListStalePendingRefunds(ctx context.Context, arg ListStalePendingRefundsParams) ([]OrderRefund, error)
 	ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error)
 	ListTopCategories(ctx context.Context) ([]Category, error)
 	ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error)
+	// Lock the request identity BEFORE reading stock or checking for a replay.
+	LockOrderIdempotency(ctx context.Context, arg LockOrderIdempotencyParams) error
 	MarkOrderCancelled(ctx context.Context, id int64) (Order, error)
 	MarkOrderCancelling(ctx context.Context, id int64) (Order, error)
 	MarkOrderPaid(ctx context.Context, id int64) (Order, error)
+	MarkOrderRefundSuccess(ctx context.Context, arg MarkOrderRefundSuccessParams) (OrderRefund, error)
 	MarkPaymentClosePending(ctx context.Context, id int64) (Payment, error)
 	MarkPaymentClosed(ctx context.Context, id int64) (Payment, error)
-	MarkPaymentNotificationFailed(ctx context.Context, arg MarkPaymentNotificationFailedParams) error
-	MarkPaymentNotificationProcessed(ctx context.Context, id int64) error
-	MarkPaymentPending(ctx context.Context, arg MarkPaymentPendingParams) (Payment, error)
-	MarkPaymentReconcileRequired(ctx context.Context, id int64) (Payment, error)
-	MarkPaymentSuccess(ctx context.Context, arg MarkPaymentSuccessParams) (Payment, error)
+	MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedParams) (Payment, error)
+	MarkPaymentNotificationFailed(ctx context.Context, arg MarkPaymentNotificationFailedParams) (int64, error)
+	MarkPaymentNotificationProcessed(ctx context.Context, id int64) (int64, error)
+	// Expiry decisions must use the database clock, not the application server's,
+	// so instances with skewed clocks cannot extend or shrink the payment window.
+	OrderIsExpired(ctx context.Context, id int64) (bool, error)
+	RecordOrderRefundError(ctx context.Context, arg RecordOrderRefundErrorParams) (OrderRefund, error)
+	RecordPaymentNotificationError(ctx context.Context, arg RecordPaymentNotificationErrorParams) (int64, error)
+	RecordPaymentPrepayError(ctx context.Context, arg RecordPaymentPrepayErrorParams) (int64, error)
+	RecordPaymentSuccess(ctx context.Context, arg RecordPaymentSuccessParams) (Payment, error)
+	RequirePaymentReconciliation(ctx context.Context, arg RequirePaymentReconciliationParams) (Payment, error)
 	RestoreOrderItemStock(ctx context.Context, orderID int64) error
+	RetryOrderRefund(ctx context.Context, id int64) (OrderRefund, error)
 	SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) error
+	SetPaymentNotificationRiverJob(ctx context.Context, arg SetPaymentNotificationRiverJobParams) error
 	SoftDeleteEvent(ctx context.Context, id int64) error
 	SoftDeleteProduct(ctx context.Context, id int64) error
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event, error)
 	UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) error
-	UpdatePaymentRefunded(ctx context.Context, id int64) error
+	UpdatePaymentRefunded(ctx context.Context, id int64) (int64, error)
 	UpdateProduct(ctx context.Context, arg UpdateProductParams) (Product, error)
 	UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) error
 	UpdateShippingAddress(ctx context.Context, arg UpdateShippingAddressParams) (ShippingAddress, error)

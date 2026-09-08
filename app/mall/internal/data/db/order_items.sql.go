@@ -12,7 +12,7 @@ import (
 const createOrderItem = `-- name: CreateOrderItem :one
 INSERT INTO order_items (order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, order_id, product_id, quantity, unit_price_minor, created_at, product_name_snapshot, cover_image_snapshot
+RETURNING id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at
 `
 
 type CreateOrderItemParams struct {
@@ -40,15 +40,15 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		&i.ProductID,
 		&i.Quantity,
 		&i.UnitPriceMinor,
-		&i.CreatedAt,
 		&i.ProductNameSnapshot,
 		&i.CoverImageSnapshot,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listOrderItems = `-- name: ListOrderItems :many
-SELECT id, order_id, product_id, quantity, unit_price_minor, created_at, product_name_snapshot, cover_image_snapshot FROM order_items WHERE order_id = $1
+SELECT id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at FROM order_items WHERE order_id = $1
 `
 
 func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error) {
@@ -66,9 +66,9 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderIte
 			&i.ProductID,
 			&i.Quantity,
 			&i.UnitPriceMinor,
-			&i.CreatedAt,
 			&i.ProductNameSnapshot,
 			&i.CoverImageSnapshot,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

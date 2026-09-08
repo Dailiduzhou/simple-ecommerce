@@ -224,12 +224,12 @@ func (x *OrderInfo) GetCurrency() string {
 }
 
 type CreateOrderRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	AddressId     int64                  `protobuf:"varint,2,opt,name=address_id,json=addressId,proto3" json:"address_id,omitempty"`
-	Items         []*OrderItemInput      `protobuf:"bytes,3,rep,name=items,proto3" json:"items,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AddressId      int64                  `protobuf:"varint,1,opt,name=address_id,json=addressId,proto3" json:"address_id,omitempty"`
+	Items          []*OrderItemInput      `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CreateOrderRequest) Reset() {
@@ -262,13 +262,6 @@ func (*CreateOrderRequest) Descriptor() ([]byte, []int) {
 	return file_order_v1_order_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *CreateOrderRequest) GetUserId() int64 {
-	if x != nil {
-		return x.UserId
-	}
-	return 0
-}
-
 func (x *CreateOrderRequest) GetAddressId() int64 {
 	if x != nil {
 		return x.AddressId
@@ -281,6 +274,13 @@ func (x *CreateOrderRequest) GetItems() []*OrderItemInput {
 		return x.Items
 	}
 	return nil
+}
+
+func (x *CreateOrderRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
 }
 
 type OrderItemInput struct {
@@ -624,12 +624,12 @@ const file_order_v1_order_proto_rawDesc = "" +
 	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x19\n" +
 	"\border_no\x18\n" +
 	" \x01(\tR\aorderNo\x12\x1a\n" +
-	"\bcurrency\x18\v \x01(\tR\bcurrency\"\x80\x01\n" +
-	"\x12CreateOrderRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1d\n" +
+	"\bcurrency\x18\v \x01(\tR\bcurrency\"\x90\x01\n" +
+	"\x12CreateOrderRequest\x12\x1d\n" +
 	"\n" +
-	"address_id\x18\x02 \x01(\x03R\taddressId\x122\n" +
-	"\x05items\x18\x03 \x03(\v2\x1c.api.order.v1.OrderItemInputR\x05items\"K\n" +
+	"address_id\x18\x01 \x01(\x03R\taddressId\x122\n" +
+	"\x05items\x18\x02 \x03(\v2\x1c.api.order.v1.OrderItemInputR\x05items\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"K\n" +
 	"\x0eOrderItemInput\x12\x1d\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\x03R\tproductId\x12\x1a\n" +

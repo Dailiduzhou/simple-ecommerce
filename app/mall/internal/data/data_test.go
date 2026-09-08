@@ -50,4 +50,7 @@ func TestEmbeddedMigrationsAvailable(t *testing.T) {
 	assert.Contains(t, string(initSchema), "sort_order INTEGER")
 	assert.Contains(t, string(initSchema), "CREATE TABLE payment_notifications")
 	assert.Contains(t, string(initSchema), "CREATE TABLE payment_reconciliation_failures")
+	assert.Contains(t, string(initSchema), "payment_id BIGINT")
+	assert.Contains(t, string(initSchema), "last_error TEXT NOT NULL DEFAULT ''")
+	assert.Contains(t, string(initSchema), "CREATE UNIQUE INDEX idx_order_refunds_payment_id")
 }

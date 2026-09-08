@@ -5,13 +5,12 @@ import (
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
 
 func canonicalPaymentResultFixture() (db.Payment, biz.PaymentMethod, *biz.PaymentQueryResult) {
 	method := biz.PaymentMethod{Provider: "wechat", Product: "native"}
-	payment := db.Payment{ID: 1, AmountMinor: 10000, Currency: "CNY", PayChannel: method.String(), OutTradeNo: pgtype.Text{String: "pay_1", Valid: true}}
+	payment := db.Payment{ID: 1, AmountMinor: 10000, Currency: "CNY", PayChannel: method.String(), OutTradeNo: "pay_1"}
 	result := &biz.PaymentQueryResult{Method: method, OutTradeNo: "pay_1", TransactionID: "tx_1", TradeState: biz.TradeStateSuccess, Amount: 10000, Currency: "CNY"}
 	return payment, method, result
 }

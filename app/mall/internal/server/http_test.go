@@ -36,6 +36,12 @@ func (u *callbackPaymentUsecase) QueryPayment(context.Context, string, int64) (*
 func (u *callbackPaymentUsecase) ClosePayment(context.Context, string, int64) (*biz.PaymentCloseResult, error) {
 	return nil, nil
 }
+func (u *callbackPaymentUsecase) RefundPayment(context.Context, int64) (*biz.PaymentRefundResult, error) {
+	return nil, nil
+}
+func (u *callbackPaymentUsecase) ReconcilePendingRefunds(context.Context, time.Duration, int) (int, error) {
+	return 0, nil
+}
 func (u *callbackPaymentUsecase) CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*biz.MQJob, error) {
 	return nil, nil
 }
@@ -52,6 +58,9 @@ func (u *callbackPaymentUsecase) NotificationAck(provider string, success bool) 
 		return biz.PaymentNotificationAck{StatusCode: http.StatusOK, ContentType: "text/plain", Body: []byte(body)}
 	}
 	return biz.DefaultPaymentNotificationAck()
+}
+func (u *callbackPaymentUsecase) SupportsNotificationProvider(provider string) bool {
+	return provider == "wechat" || provider == "alipay"
 }
 
 func newHTTPTestServer(uc biz.PaymentUsecase) http.Handler {
@@ -79,6 +88,16 @@ func TestPaymentCallbackPersistenceFailureReturnsProviderFailureAck(t *testing.T
 	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	require.Equal(t, "fail", response.Body.String())
+}
+
+func TestUnsupportedPaymentCallbackProviderIsRejectedBeforeUsecase(t *testing.T) {
+	uc := &callbackPaymentUsecase{}
+	server := newHTTPTestServer(uc)
+	request := httptest.NewRequest(http.MethodPost, "/v1/payments/random/notify", strings.NewReader("payload"))
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Empty(t, uc.provider)
 }
 
 func TestAnonymousBusinessPaymentAPIStillRequiresJWT(t *testing.T) {

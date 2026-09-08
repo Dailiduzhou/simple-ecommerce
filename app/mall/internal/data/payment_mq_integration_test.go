@@ -1,6 +1,7 @@
 package data
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -17,4 +18,10 @@ func TestCheckPayInsertOptsSeparatesTechnicalAttemptsAndActiveUniqueness(t *test
 	require.Contains(t, opts.UniqueOpts.ByState, rivertype.JobStateScheduled)
 	require.NotContains(t, opts.UniqueOpts.ByState, rivertype.JobStateCompleted)
 	require.NotContains(t, opts.UniqueOpts.ByState, rivertype.JobStateDiscarded)
+}
+
+func TestCheckPayArgsUsesNotificationIDAsUniqueDimension(t *testing.T) {
+	field, ok := reflect.TypeOf(biz.CheckPayArgs{}).FieldByName("NotificationID")
+	require.True(t, ok)
+	require.Equal(t, "unique", field.Tag.Get("river"))
 }
