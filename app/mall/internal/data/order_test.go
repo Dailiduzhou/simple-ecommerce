@@ -45,6 +45,7 @@ func TestOrderRepo_CreateCalculatesDatabasePriceAndSnapshotsAtomically(t *testin
 	ctrl := gomock.NewController(t)
 	q := mockdb.NewMockQuerier(ctrl)
 	redisServer := miniredis.RunT(t)
+	q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 	q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 	q.EXPECT().GetShippingAddress(gomock.Any(), db.GetShippingAddressParams{ID: 9, UserID: 42}).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
 	product := db.Product{ID: 3, CategoryID: 7, Name: "server product", PriceMinor: 5000, Stock: 10, Status: 1, CoverImage: []byte(`[{"OssURL":"cover"}]`)}
@@ -87,6 +88,7 @@ func TestOrderRepo_CreateIdempotency(t *testing.T) {
 		redisServer := miniredis.RunT(t)
 		existing := db.Order{ID: 7, UserID: 42, AddressID: 9, Status: biz.OrderStatusPendingPayment,
 			OutTradeNo: "original-order-no", IdempotencyKey: "checkout-42", RequestHash: "same-hash"}
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), db.GetOrderByUserIdempotencyParams{
 			UserID: 42, IdempotencyKey: "checkout-42",
 		}).Return(existing, nil)
@@ -115,6 +117,7 @@ func TestOrderRepo_CreateIdempotency(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		q := mockdb.NewMockQuerier(ctrl)
 		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{RequestHash: "first-hash"}, nil)
 		d := newTestData(t, q, redisServer)
 		repo := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger)
@@ -132,6 +135,7 @@ func TestOrderRepo_CreateMapsConcurrentConstraintErrors(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		q := mockdb.NewMockQuerier(ctrl)
 		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
 		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
@@ -159,6 +163,7 @@ func TestOrderRepo_CreateMapsConcurrentConstraintErrors(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		q := mockdb.NewMockQuerier(ctrl)
 		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
 		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
@@ -182,6 +187,7 @@ func TestOrderRepo_CreateRejectsInvalidAmountAndPropagatesAtomicFailures(t *test
 		ctrl := gomock.NewController(t)
 		q := mockdb.NewMockQuerier(ctrl)
 		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
 		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 0, Stock: 10, Status: 1}, nil)
@@ -200,6 +206,7 @@ func TestOrderRepo_CreateRejectsInvalidAmountAndPropagatesAtomicFailures(t *test
 		ctrl := gomock.NewController(t)
 		q := mockdb.NewMockQuerier(ctrl)
 		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
 		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
@@ -220,6 +227,7 @@ func TestOrderRepo_CreateRejectsInvalidAmountAndPropagatesAtomicFailures(t *test
 		ctrl := gomock.NewController(t)
 		q := mockdb.NewMockQuerier(ctrl)
 		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
 		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, CategoryID: 7, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
@@ -286,6 +294,7 @@ func TestOrderRepo_ReplayAgainstCancelledOrderRequiresNewKey(t *testing.T) {
 	redisServer := miniredis.RunT(t)
 	cancelled := db.Order{ID: 7, UserID: 42, Status: biz.OrderStatusCancelled,
 		IdempotencyKey: "checkout-42", RequestHash: "same-hash"}
+	q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 	q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), db.GetOrderByUserIdempotencyParams{
 		UserID: 42, IdempotencyKey: "checkout-42",
 	}).Return(cancelled, nil)
@@ -296,4 +305,53 @@ func TestOrderRepo_ReplayAgainstCancelledOrderRequiresNewKey(t *testing.T) {
 		Items: []biz.OrderItemInput{{ProductID: 3, Quantity: 2}},
 	})
 	require.ErrorIs(t, err, biz.ErrIdempotencyKeyReused)
+}
+
+func TestOrderDetailsDoNotReadOrRefillStalePaymentState(t *testing.T) {
+	ctx := context.Background()
+	q := mockdb.NewMockQuerier(gomock.NewController(t))
+	d := newTestData(t, q, miniredis.RunT(t))
+	repo := NewOrderRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	// Even a pre-upgrade cache entry must no longer supply mutable state.
+	require.NoError(t, d.rdb.Set(ctx, "order:7", `{"ID":7,"Status":"pending_payment"}`, time.Hour).Err())
+	loaded := make(chan struct{})
+	release := make(chan struct{})
+	q.EXPECT().GetOrder(gomock.Any(), int64(7)).DoAndReturn(func(context.Context, int64) (db.Order, error) {
+		close(loaded)
+		<-release
+		return db.Order{ID: 7, Status: biz.OrderStatusPendingPayment}, nil
+	})
+	q.EXPECT().GetOrder(gomock.Any(), int64(7)).Return(db.Order{ID: 7, Status: biz.OrderStatusPaid}, nil).Times(2)
+	q.EXPECT().ListOrderItems(gomock.Any(), int64(7)).Return(nil, nil).Times(3)
+	done := make(chan error, 1)
+	go func() { _, err := repo.GetOrder(ctx, 7); done <- err }()
+	select {
+	case <-loaded:
+	case <-time.After(3 * time.Second):
+		t.Fatal("detail read incorrectly used old cache")
+	}
+	// Payment commits while the first reader still holds an old snapshot.
+	repo.invalidateOrder(ctx, biz.Order{ID: 7})
+	order, err := repo.GetOrder(ctx, 7)
+	require.NoError(t, err)
+	require.Equal(t, biz.OrderStatusPaid, order.Status)
+	close(release)
+	require.NoError(t, <-done)
+	order, err = repo.GetOrder(ctx, 7)
+	require.NoError(t, err)
+	require.Equal(t, biz.OrderStatusPaid, order.Status)
+	require.False(t, d.rdb.Exists(ctx, "order:7").Val() > 0, "old reader must not republish its snapshot")
+}
+
+func TestOrderIdempotencyLockPrecedesReplay(t *testing.T) {
+	q := mockdb.NewMockQuerier(gomock.NewController(t))
+	gomock.InOrder(
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "key"}).Return(nil),
+		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), db.GetOrderByUserIdempotencyParams{UserID: 42, IdempotencyKey: "key"}).Return(db.Order{ID: 7, RequestHash: "hash"}, nil),
+		q.EXPECT().ListOrderItems(gomock.Any(), int64(7)).Return(nil, nil),
+	)
+	d := newTestData(t, q, miniredis.RunT(t))
+	order, err := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger).CreateOrder(context.Background(), biz.CreateOrderArgs{UserID: 42, IdempotencyKey: "key", RequestHash: "hash"})
+	require.NoError(t, err)
+	require.Equal(t, int64(7), order.ID)
 }

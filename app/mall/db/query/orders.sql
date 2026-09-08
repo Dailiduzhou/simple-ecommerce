@@ -68,7 +68,12 @@ SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired FROM orders WHERE
 -- Backstop for expire_order jobs that were discarded after exhausting retries;
 -- the partial index idx_orders_pending_expiry keeps this scan cheap.
 SELECT id FROM orders
-WHERE status = 'pending_payment'
+WHERE id > sqlc.arg(after_id)::bigint AND status = 'pending_payment'
   AND expires_at <= now() - make_interval(secs => sqlc.arg(grace_seconds)::double precision)
-ORDER BY expires_at
+ORDER BY id
 LIMIT sqlc.arg(limit_rows);
+
+-- name: LockOrderIdempotency :exec
+-- Lock the request identity BEFORE reading stock or checking for a replay.
+SELECT pg_advisory_xact_lock(hashtextextended(
+  'order-idempotency:' || sqlc.arg(user_id)::bigint::text || ':' || sqlc.arg(idempotency_key)::text, 0));

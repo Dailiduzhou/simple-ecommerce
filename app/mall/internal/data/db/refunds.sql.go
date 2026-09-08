@@ -258,3 +258,31 @@ func (q *Queries) RecordOrderRefundError(ctx context.Context, arg RecordOrderRef
 	)
 	return i, err
 }
+
+const retryOrderRefund = `-- name: RetryOrderRefund :one
+UPDATE order_refunds
+SET status = 'pending', last_error = '', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'failed'
+RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, status, last_error, created_at, updated_at
+`
+
+func (q *Queries) RetryOrderRefund(ctx context.Context, id int64) (OrderRefund, error) {
+	row := q.db.QueryRow(ctx, retryOrderRefund, id)
+	var i OrderRefund
+	err := row.Scan(
+		&i.ID,
+		&i.OrderID,
+		&i.UserID,
+		&i.PaymentID,
+		&i.OutRefundNo,
+		&i.TotalAmountMinor,
+		&i.RefundAmountMinor,
+		&i.Currency,
+		&i.Reason,
+		&i.Status,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

@@ -80,6 +80,8 @@ type Querier interface {
 	ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error)
 	ListTopCategories(ctx context.Context) ([]Category, error)
 	ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error)
+	// Lock the request identity BEFORE reading stock or checking for a replay.
+	LockOrderIdempotency(ctx context.Context, arg LockOrderIdempotencyParams) error
 	MarkOrderCancelled(ctx context.Context, id int64) (Order, error)
 	MarkOrderCancelling(ctx context.Context, id int64) (Order, error)
 	MarkOrderPaid(ctx context.Context, id int64) (Order, error)
@@ -98,6 +100,7 @@ type Querier interface {
 	RecordPaymentSuccess(ctx context.Context, arg RecordPaymentSuccessParams) (Payment, error)
 	RequirePaymentReconciliation(ctx context.Context, arg RequirePaymentReconciliationParams) (Payment, error)
 	RestoreOrderItemStock(ctx context.Context, orderID int64) error
+	RetryOrderRefund(ctx context.Context, id int64) (OrderRefund, error)
 	SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) error
 	SetPaymentNotificationRiverJob(ctx context.Context, arg SetPaymentNotificationRiverJobParams) error
 	SoftDeleteEvent(ctx context.Context, id int64) error

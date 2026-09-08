@@ -17,6 +17,9 @@ type paymentTestGateway struct {
 	prepayCalled    bool
 	prepayResult    *PaymentPrepayResult
 	closeResult     *PaymentCloseResult
+	closeErr        error
+	queryResult     *PaymentQueryResult
+	queryErr        error
 	refundReq       PaymentRefundRequest
 	refundResult    *PaymentRefundResult
 	refundErr       error
@@ -39,13 +42,13 @@ func (g *paymentTestGateway) Prepay(_ context.Context, req PaymentPrepayRequest)
 	return g.prepayResult, nil
 }
 func (g *paymentTestGateway) Query(context.Context, PaymentQueryRequest) (*PaymentQueryResult, error) {
-	return nil, nil
+	return g.queryResult, g.queryErr
 }
 func (g *paymentTestGateway) Close(context.Context, PaymentCloseRequest) (*PaymentCloseResult, error) {
 	if g.txActive != nil && *g.txActive {
 		panic("provider close executed in database transaction")
 	}
-	return g.closeResult, nil
+	return g.closeResult, g.closeErr
 }
 func (g *paymentTestGateway) Refund(_ context.Context, req PaymentRefundRequest) (*PaymentRefundResult, error) {
 	if g.txActive != nil && *g.txActive {
@@ -68,6 +71,7 @@ type paymentTestRepo struct {
 	pendingAction         PaymentAction
 	closePending          bool
 	applied               bool
+	appliedResult         *PaymentQueryResult
 	refund                *PaymentRefund
 	refundApplied         bool
 	refundError           string
@@ -118,8 +122,9 @@ func (r *paymentTestRepo) RecordPaymentNotificationError(context.Context, int64,
 func (r *paymentTestRepo) MarkPaymentNotificationFailed(context.Context, int64, string) error {
 	return nil
 }
-func (r *paymentTestRepo) ApplyPayQuery(context.Context, CheckPayArgs, *PaymentQueryResult) error {
+func (r *paymentTestRepo) ApplyPayQuery(_ context.Context, _ CheckPayArgs, result *PaymentQueryResult) error {
 	r.applied = true
+	r.appliedResult = result
 	return nil
 }
 func (r *paymentTestRepo) MarkPayClosePending(context.Context, CheckPayArgs) error {
@@ -231,7 +236,7 @@ func TestPrepayForOrder_UsesDatabaseAmountAndCallsProviderOutsideTransaction(t *
 	actionPayload := json.RawMessage(`{"url":"https://pay.example"}`)
 	gateway := &paymentTestGateway{txActive: &tx.active, prepayResult: &PaymentPrepayResult{Action: PaymentAction{Type: PaymentActionRedirect, Payload: actionPayload}}}
 	repo := &paymentTestRepo{}
-	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 10000, Currency: "CNY", Status: OrderStatusPendingPayment, OutTradeNo: "order_5"}}
+	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 10000, Currency: "CNY", Status: OrderStatusPendingPayment, OutTradeNo: "order_5", ExpiresAt: time.Now().Add(time.Minute)}}
 	uc := NewPaymentUsecase(gateway, repo, nil, orders, nil, tx, paymentTestID{}, log.DefaultLogger)
 
 	result, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{OrderNo: "order_5", UserID: 42, Method: PaymentMethod{Provider: "alipay", Product: "wap"}})
@@ -239,6 +244,7 @@ func TestPrepayForOrder_UsesDatabaseAmountAndCallsProviderOutsideTransaction(t *
 	require.Equal(t, int64(10000), gateway.prepayReq.Amount)
 	require.Equal(t, int64(10000), repo.created.Amount)
 	require.Equal(t, "CNY", gateway.prepayReq.Currency)
+	require.Equal(t, orders.order.ExpiresAt, gateway.prepayReq.ExpiresAt)
 	require.Equal(t, "Order order_5", gateway.prepayReq.Description)
 	require.Equal(t, PaymentActionRedirect, result.Prepay.Action.Type)
 }
@@ -346,8 +352,7 @@ func TestPrepayForOrder_CapabilitiesErrorPreventsProviderPrepay(t *testing.T) {
 	_, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{OrderNo: "order_5", UserID: 42, Method: PaymentMethod{Provider: "alipay", Product: "wap"}})
 	require.Error(t, err)
 	require.False(t, gateway.prepayCalled, "provider prepay must not run when capabilities lookup fails")
-	require.NotNil(t, repo.payment)
-	require.Empty(t, repo.payment.PrepayLeaseToken, "prepay lease must not be claimed before capabilities are known")
+	require.Nil(t, repo.payment, "unsupported methods must not create an active payment row")
 }
 
 func TestHandleNotification_RejectsVerifiedAmountMismatchAndRequiresReconciliation(t *testing.T) {
@@ -464,3 +469,35 @@ func TestReconcilePendingRefunds_SkipsConflictWithoutSettling(t *testing.T) {
 	require.Equal(t, 0, settled)
 	require.False(t, gateway.refundCalled)
 }
+
+func TestClosePayment_ConflictingCloseSettlesActualPaidState(t *testing.T) {
+	payment := &PaymentDO{ID: 7, UserID: 42, Method: "alipay:wap", OutTradeNo: "pay_7", Status: PaymentStatusPending}
+	repo := &paymentTestRepo{payment: payment}
+	gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsClose: true}, closeErr: ErrProviderTradeStateConflict,
+		queryResult: &PaymentQueryResult{Method: PaymentMethod{Provider: "alipay", Product: "wap"}, OutTradeNo: "pay_7", TradeState: TradeStateSuccess}}
+	uc := NewPaymentUsecase(gateway, repo, nil, nil, &paymentTestJobs{}, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	result, err := uc.ClosePayment(context.Background(), "pay_7", 42)
+	require.NoError(t, err)
+	require.False(t, result.Success, "payment won; close was not successful")
+	require.True(t, repo.applied)
+	require.Equal(t, TradeStateSuccess, repo.appliedResult.TradeState)
+}
+
+func TestPrepayForOrder_UnsupportedMethodsNeverCreateRows(t *testing.T) {
+	gateway := NewPaymentGateway([]PaymentAdapter{&gatewayTestAdapter{provider: "alipay"}})
+	for _, method := range []PaymentMethod{{Provider: "unknown", Product: "wap"}, {Provider: "alipay", Product: "unknown"}} {
+		repo := &paymentTestRepo{}
+		uc := NewPaymentUsecase(gateway, repo, nil, nil, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+		_, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{Method: method})
+		require.ErrorIs(t, err, ErrPaymentProviderUnavailable)
+		require.Nil(t, repo.payment)
+	}
+}
+
+type gatewayTestAdapter struct {
+	PaymentAdapter
+	provider string
+}
+
+func (a *gatewayTestAdapter) Provider() string                   { return a.provider }
+func (a *gatewayTestAdapter) Supports(method PaymentMethod) bool { return method.Product == "wap" }

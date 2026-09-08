@@ -182,9 +182,6 @@ func (a *WechatPaymentAdapter) Query(ctx context.Context, req biz.PaymentQueryRe
 		return nil, fmt.Errorf("wechat query returned empty response")
 	}
 	if err := a.validateWechatResponse(responseBody, response.ReturnCode, response.ResultCode, response.ErrCode, response.Appid, response.MchId); err != nil {
-		if response.ErrCode == "ORDERNOTEXIST" {
-			return nil, biz.ErrProviderOrderNotExist
-		}
 		return nil, err
 	}
 	state := biz.ParseTradeState(response.TradeState)
@@ -290,6 +287,9 @@ func (a *WechatPaymentAdapter) validateWechatResponse(signed any, returnCode, re
 		return fmt.Errorf("wechat response merchant identity mismatch")
 	}
 	if resultCode != "SUCCESS" {
+		if errCode == "ORDERNOTEXIST" {
+			return biz.ErrProviderOrderNotExist
+		}
 		return fmt.Errorf("wechat business request failed: %s", errCode)
 	}
 	return nil
@@ -297,6 +297,7 @@ func (a *WechatPaymentAdapter) validateWechatResponse(signed any, returnCode, re
 
 type AlipayPaymentAdapter struct {
 	client                    *alipayv3.ClientV3
+	wapSigner                 *alipay.Client // v2 local signer; v3 WAP helper overrides product_code incorrectly
 	tradeRequester            alipayTradeRequester
 	notifyURL, publicCertPath string
 	expectedAppID             string
@@ -341,7 +342,15 @@ func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	// time_expire bounds BOTH initial invocation and payment, unlike timeout_express:
+	// https://opendocs.alipay.com/support/01rfuw
+	// Alipay interprets it in China Standard Time, at second precision.
+	deadline := req.ExpiresAt.Truncate(time.Second)
+	if deadline.IsZero() || !time.Now().Before(deadline) {
+		return nil, biz.ErrOrderExpired
+	}
 	body := make(gopay.BodyMap)
+	body.Set("time_expire", deadline.In(time.FixedZone("CST", 8*60*60)).Format("2006-01-02 15:04:05"))
 	body.Set("subject", req.Description).Set("out_trade_no", req.OutTradeNo).Set("total_amount", fenToYuan(req.Amount))
 	if a.notifyURL != "" {
 		body.Set("notify_url", a.notifyURL)
@@ -351,9 +360,13 @@ func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 	var err error
 	switch req.Method.Product {
 	case "wap":
-		payload, err = a.client.TradeWapPay(ctx, body)
+		if a.wapSigner == nil {
+			return nil, paymentProviderNotConfigured("alipay wap signer")
+		}
+		payload, err = a.wapSigner.TradeWapPay(ctx, body)
 		actionType = biz.PaymentActionRedirect
 	case "app":
+		body.Set("product_code", "QUICK_MSECURITY_PAY")
 		payload, err = a.client.TradeAppPay(ctx, body)
 		actionType = biz.PaymentActionInvoke
 	default:
@@ -362,11 +375,14 @@ func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 	if err != nil {
 		return nil, err
 	}
-	return &biz.PaymentPrepayResult{Action: paymentAction(actionType, map[string]string{"payload": payload})}, nil
+	return &biz.PaymentPrepayResult{Action: paymentAction(actionType, biz.SignedPaymentPayload{Payload: payload, ExpiresAt: deadline.UTC(), ProviderAccount: a.providerAccount()})}, nil
 }
 func (a *AlipayPaymentAdapter) Query(ctx context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
 	if a.client == nil {
 		return nil, paymentProviderNotConfigured("alipay")
+	}
+	if req.ExpectedProviderAccount != "" && req.ExpectedProviderAccount != a.providerAccount() {
+		return nil, fmt.Errorf("alipay query account or environment differs from signed payment parameters")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -426,6 +442,9 @@ func (a *AlipayPaymentAdapter) Close(ctx context.Context, req biz.PaymentCloseRe
 		result.Success = true
 		return result, nil
 	}
+	if response.ErrResponse.Code == "ACQ.TRADE_STATUS_ERROR" {
+		return result, biz.ErrProviderTradeStateConflict
+	}
 	if _, ok := alipayCodeAlreadyClosed[response.ErrResponse.Code]; ok {
 		result.Success = true
 		return result, nil
@@ -458,9 +477,9 @@ func (a *AlipayPaymentAdapter) Refund(ctx context.Context, req biz.PaymentRefund
 			TransactionID: orEmpty(response.TradeNo, req.TransactionID), OutRefundNo: req.OutRefundNo,
 			Currency: req.Currency, FundChanged: strings.EqualFold(response.FundChange, "Y"),
 			RawCode: response.ErrResponse.Code,
-			// Only a parsed 4xx counts as a definitive business rejection;
-			// 5xx and transport errors are transient and may be retried.
-			Rejection: response.StatusCode >= 400 && response.StatusCode < 500,
+			// Only known business rejections are definitive. Throttling, signature
+			// failures and unknown/system errors must remain reconcilable.
+			Rejection: err == nil && response.StatusCode == http.StatusBadRequest && alipayDefinitiveRefundRejection(response.ErrResponse.Code),
 		}
 	}
 	if err != nil {
@@ -604,6 +623,9 @@ func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentA
 		}
 		payments, err := q.ListPaymentsByOrderForUpdate(ctx, order.ID)
 		if err != nil {
+			return err
+		}
+		if err := recoverUnsupportedPayments(ctx, q, r.data, r.log, payments); err != nil {
 			return err
 		}
 		for _, payment := range payments {
@@ -773,6 +795,11 @@ func (r *PaymentRepo) PreparePaymentRefund(ctx context.Context, paymentID int64,
 			}
 			if payment.Status != biz.PaymentStatusSuccess && payment.Status != biz.PaymentStatusRefunded {
 				return biz.ErrPaymentStateConflict
+			}
+			if refund.Status == biz.PaymentRefundStatusFailed {
+				// Commit pending before any retry can move money. Keep the original number.
+				refund, err = q.RetryOrderRefund(ctx, refund.ID)
+				return err
 			}
 			return nil
 		}

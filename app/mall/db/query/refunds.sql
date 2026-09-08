@@ -55,3 +55,9 @@ WHERE status = 'pending'
   AND updated_at < now() - make_interval(secs => sqlc.arg(older_than_seconds)::double precision)
 ORDER BY updated_at
 LIMIT sqlc.arg(limit_rows);
+
+-- name: RetryOrderRefund :one
+UPDATE order_refunds
+SET status = 'pending', last_error = '', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'failed'
+RETURNING *;

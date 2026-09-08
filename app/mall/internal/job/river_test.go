@@ -2,6 +2,8 @@ package job
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -15,10 +17,12 @@ import (
 )
 
 type workerGateway struct {
-	result  *biz.PaymentQueryResult
-	err     error
-	query   biz.PaymentQueryRequest
-	queries int
+	result     *biz.PaymentQueryResult
+	err        error
+	query      biz.PaymentQueryRequest
+	queries    int
+	closeErr   error
+	afterClose *biz.PaymentQueryResult
 }
 
 func (g *workerGateway) Capabilities(biz.PaymentMethod) (biz.PaymentCapabilities, error) {
@@ -33,7 +37,10 @@ func (g *workerGateway) Query(_ context.Context, req biz.PaymentQueryRequest) (*
 	return g.result, g.err
 }
 func (g *workerGateway) Close(context.Context, biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
-	return &biz.PaymentCloseResult{Success: true}, nil
+	if g.afterClose != nil {
+		g.result = g.afterClose
+	}
+	return &biz.PaymentCloseResult{Success: g.closeErr == nil}, g.closeErr
 }
 func (g *workerGateway) Refund(context.Context, biz.PaymentRefundRequest) (*biz.PaymentRefundResult, error) {
 	return nil, nil
@@ -203,7 +210,7 @@ func TestClosePayWorker_AppliesAuthoritativeTerminalState(t *testing.T) {
 
 func TestClosePayWorker_ProviderOrderNotExistSettlesAsClosed(t *testing.T) {
 	method := biz.PaymentMethod{Provider: "wechat", Product: "native"}
-	payment := &biz.PaymentDO{ID: 8, Method: method.String(), OutTradeNo: "pay_8", Amount: 10000, Currency: "CNY"}
+	payment := &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusClosePending, Method: method.String(), OutTradeNo: "pay_8", Amount: 10000, Currency: "CNY"}
 	gateway := &workerGateway{err: biz.ErrProviderOrderNotExist}
 	repo := &workerRepo{payment: payment}
 	worker := NewClosePayWorker(gateway, repo)
@@ -332,4 +339,73 @@ func TestPeriodicJobsCoverBothBackstops(t *testing.T) {
 	// the workers themselves, here we only guard the schedule count so a new
 	// sweep cannot be added without extending this test.
 	require.Len(t, NewPeriodicJobs(), 2)
+}
+
+func TestClosePayWorker_RequeriesPaymentThatWinsCloseRace(t *testing.T) {
+	for _, state := range []biz.TradeState{biz.TradeStateSuccess, biz.TradeStateClosed, biz.TradeStateNotPay} {
+		t.Run(string(state), func(t *testing.T) {
+			method := biz.PaymentMethod{Provider: "alipay", Product: "wap"}
+			payment := &biz.PaymentDO{ID: 8, Method: method.String(), OutTradeNo: "pay_8", Amount: 100, Currency: "CNY"}
+			gateway := &workerGateway{result: &biz.PaymentQueryResult{TradeState: biz.TradeStateNotPay}, closeErr: biz.ErrProviderTradeStateConflict,
+				afterClose: &biz.PaymentQueryResult{Method: method, OutTradeNo: "pay_8", TransactionID: "paid_tx", Amount: 100, Currency: "CNY", TradeState: state}}
+			repo := &workerRepo{payment: payment}
+			err := NewClosePayWorker(gateway, repo).Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: "alipay"}})
+			require.Equal(t, 2, gateway.queries)
+			if state.IsTerminal() {
+				require.NoError(t, err)
+				require.Equal(t, state, repo.appliedResult.TradeState)
+			} else {
+				require.ErrorIs(t, err, biz.ErrProviderTradeStateConflict)
+				require.False(t, repo.applied)
+			}
+		})
+	}
+}
+
+func TestClosePayWorker_UnopenedAlipayRequiresExpiredSignedParameters(t *testing.T) {
+	for _, product := range []string{"app", "wap"} {
+		for _, tc := range []struct {
+			name           string
+			deadline       time.Time
+			closed, snooze bool
+		}{
+			{"still payable", time.Now().Add(time.Hour), false, true},
+			{"inside safety margin", time.Now().Add(-time.Second), false, true},
+			{"expired safely", time.Now().Add(-2 * biz.PaymentExpirySafetyMargin), true, false},
+			{"legacy unbounded", time.Time{}, false, false},
+		} {
+			t.Run(product+"/"+tc.name, func(t *testing.T) {
+				payload, err := json.Marshal(biz.SignedPaymentPayload{Payload: "signed_parameters", ExpiresAt: tc.deadline, ProviderAccount: "account_1"})
+				require.NoError(t, err)
+				payment := &biz.PaymentDO{ID: 8, Method: "alipay:" + product, OutTradeNo: "pay_8", Amount: 100, Currency: "CNY", PrepayAttempts: 1,
+					Action: biz.PaymentAction{Type: biz.PaymentActionInvoke, Payload: payload}}
+				repo := &workerRepo{payment: payment}
+				gateway := &workerGateway{err: biz.ErrProviderOrderNotExist}
+				err = NewClosePayWorker(gateway, repo).Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: "alipay"}})
+				if tc.snooze {
+					var snooze *river.JobSnoozeError
+					require.True(t, errors.As(err, &snooze))
+					require.Nil(t, repo.reconciled)
+				} else {
+					require.NoError(t, err)
+					if !tc.closed {
+						require.NotNil(t, repo.reconciled)
+					}
+				}
+				require.Equal(t, tc.closed, repo.applied)
+				if tc.closed {
+					require.Equal(t, biz.TradeStateClosed, repo.appliedResult.TradeState)
+				}
+			})
+		}
+	}
+}
+
+func TestClosePayWorker_MissingActionDoesNotProveNoDispatch(t *testing.T) {
+	payment := &biz.PaymentDO{ID: 8, Method: "wechat:native", OutTradeNo: "pay_8", PrepayAttempts: 1}
+	repo := &workerRepo{payment: payment}
+	err := NewClosePayWorker(&workerGateway{err: biz.ErrProviderOrderNotExist}, repo).Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: "wechat"}})
+	require.NoError(t, err)
+	require.False(t, repo.applied)
+	require.NotNil(t, repo.reconciled)
 }

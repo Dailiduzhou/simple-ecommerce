@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 )
 
 var _ biz.OrderRepo = (*OrderRepo)(nil)
@@ -42,6 +41,9 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		q := querierFromContext(ctx, nil)
 		if q == nil {
 			return fmt.Errorf("missing transaction querier")
+		}
+		if err := q.LockOrderIdempotency(ctx, db.LockOrderIdempotencyParams{UserID: args.UserID, IdempotencyKey: args.IdempotencyKey}); err != nil {
+			return err
 		}
 		existing, err := q.GetOrderByUserIdempotency(ctx, db.GetOrderByUserIdempotencyParams{
 			UserID: args.UserID, IdempotencyKey: args.IdempotencyKey,
@@ -174,11 +176,6 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", item.CategoryID, "gen"))
 		}
 	}
-	r.setCache(ctx, redisKey("order", result.ID), &result)
-	r.setCache(ctx, redisKey("order", "user", result.ID, result.UserID), &result)
-	if result.OutTradeNo != "" {
-		r.setCache(ctx, redisKey("order", "no", result.OutTradeNo), &result)
-	}
 	return result, nil
 }
 
@@ -190,53 +187,37 @@ func multiplyMoney(amount, quantity int64) (int64, bool) {
 }
 
 func (r *OrderRepo) GetOrder(ctx context.Context, id int64) (biz.Order, error) {
-	return r.getOrder(ctx, redisKey("order", id), func() (db.Order, error) {
+	return r.getOrder(ctx, func() (db.Order, error) {
 		return querierFromContext(ctx, r.data.q).GetOrder(ctx, id)
 	})
 }
 
 func (r *OrderRepo) GetOrderByOrderNo(ctx context.Context, orderNo string) (biz.Order, error) {
-	return r.getOrder(ctx, redisKey("order", "no", orderNo), func() (db.Order, error) {
+	return r.getOrder(ctx, func() (db.Order, error) {
 		return querierFromContext(ctx, r.data.q).GetOrderByOrderNo(ctx, orderNo)
 	})
 }
 
 func (r *OrderRepo) GetOrderByUser(ctx context.Context, id, userID int64) (biz.Order, error) {
-	return r.getOrder(ctx, redisKey("order", "user", id, userID), func() (db.Order, error) {
+	return r.getOrder(ctx, func() (db.Order, error) {
 		return querierFromContext(ctx, r.data.q).GetOrderByUser(ctx, db.GetOrderByUserParams{ID: id, UserID: userID})
 	})
 }
 
-func (r *OrderRepo) getOrder(ctx context.Context, cacheKey string, load func() (db.Order, error)) (biz.Order, error) {
-	if cached, err := r.getCache(ctx, cacheKey); err == nil {
-		return *cached, nil
-	} else if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorw("msg", "read order cache failed", "key", cacheKey, "error", err)
+// Order details contain mutable money/fulfilment state. Read through to PostgreSQL:
+// invalidation alone cannot prevent an older reader refilling stale state, and
+// singleflight would also share a pre-transition snapshot with a later reader.
+func (r *OrderRepo) getOrder(ctx context.Context, load func() (db.Order, error)) (biz.Order, error) {
+	row, err := load()
+	if stderrors.Is(err, pgx.ErrNoRows) {
+		return biz.Order{}, biz.ErrOrderNotFound
 	}
-	value, err, _ := r.data.sg.Do("sf:"+cacheKey, func() (any, error) {
-		if cached, err := r.getCache(ctx, cacheKey); err == nil {
-			return *cached, nil
-		}
-		row, err := load()
-		if err != nil {
-			if stderrors.Is(err, pgx.ErrNoRows) {
-				return biz.Order{}, biz.ErrOrderNotFound
-			}
-			return biz.Order{}, err
-		}
-		order := toBizOrder(row)
-		items, err := r.loadItems(ctx, row.ID)
-		if err != nil {
-			return biz.Order{}, err
-		}
-		order.Items = items
-		r.setCache(ctx, cacheKey, &order)
-		return order, nil
-	})
 	if err != nil {
 		return biz.Order{}, err
 	}
-	return value.(biz.Order), nil
+	order := toBizOrder(row)
+	order.Items, err = r.loadItems(ctx, row.ID)
+	return order, err
 }
 
 func (r *OrderRepo) HasOngoingOrders(ctx context.Context, userID int64) (bool, error) {
@@ -316,6 +297,9 @@ func (r *OrderRepo) CancelOrderByUser(ctx context.Context, id, userID int64) err
 		if err != nil {
 			return err
 		}
+		if err := recoverUnsupportedPayments(ctx, q, r.data, r.log, payments); err != nil {
+			return err
+		}
 		hasActive := false
 		for _, payment := range payments {
 			if payment.ReconciliationStatus == biz.ReconciliationStatusRequired {
@@ -388,18 +372,6 @@ func (r *OrderRepo) invalidateUserLists(ctx context.Context, userID int64) {
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("order", "user", "ongoing", userID, "gen"))
 }
 
-func (r *OrderRepo) getCache(ctx context.Context, key string) (*biz.Order, error) {
-	value, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var order biz.Order
-	if err := json.Unmarshal(value, &order); err != nil {
-		return nil, err
-	}
-	return &order, nil
-}
-
 func (r *OrderRepo) getListCache(ctx context.Context, key string) ([]biz.Order, error) {
 	value, err := r.data.rdb.Get(ctx, key).Bytes()
 	if err != nil {
@@ -410,19 +382,6 @@ func (r *OrderRepo) getListCache(ctx context.Context, key string) ([]biz.Order, 
 		return nil, err
 	}
 	return orders, nil
-}
-
-func (r *OrderRepo) setCache(ctx context.Context, key string, order *biz.Order) {
-	afterCommit(ctx, func() {
-		value, err := json.Marshal(order)
-		if err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "marshal order cache failed", "error", err)
-			return
-		}
-		if err := r.data.rdb.Set(ctx, key, value, 10*time.Minute+time.Duration(mrand.Intn(600))*time.Second).Err(); err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write order cache failed", "key", key, "error", err)
-		}
-	})
 }
 
 func (r *OrderRepo) setListCache(ctx context.Context, key string, orders []biz.Order) {
