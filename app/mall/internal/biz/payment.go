@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -35,9 +36,10 @@ var (
 	ErrPaymentPrepayInProgress       = errors.Conflict("PAYMENT_PREPAY_IN_PROGRESS", "payment prepay is already in progress")
 	ErrPaymentReconciliationRequired = errors.Conflict("PAYMENT_RECONCILIATION_REQUIRED", "payment requires reconciliation")
 	ErrOrderExpired                  = errors.Conflict("ORDER_EXPIRED", "order payment window has expired")
+	ErrProviderTradeStateConflict    = errors.Conflict("PAYMENT_PROVIDER_TRADE_STATE_CONFLICT", "provider trade state conflicts with close")
 	// ErrProviderOrderNotExist means the provider has no record of the trade:
-	// the prepay never reached the provider or the order was purged. Safe to
-	// treat as closed during the close flow.
+	// the prepay never reached the provider or the order was purged. This alone
+	// does not prove it is safe to release stock or invalidate signed links.
 	ErrProviderOrderNotExist = errors.NotFound("PAYMENT_PROVIDER_ORDER_NOT_EXIST", "provider has no record of this trade")
 )
 
@@ -86,7 +88,20 @@ type PaymentAction struct {
 	Payload json.RawMessage
 }
 
+// SignedPaymentPayload records local parameter generation, not channel trade creation.
+// ExpiresAt is the absolute deadline included in the signed channel request; zero
+// means a legacy/unbounded action and must never authorize missing-trade closure.
+type SignedPaymentPayload struct {
+	Payload         string    `json:"payload"`
+	ExpiresAt       time.Time `json:"channel_expires_at"`
+	ProviderAccount string    `json:"provider_account"`
+}
+
+// Allow channel propagation and bounded clock skew before querying for absence.
+const PaymentExpirySafetyMargin = time.Minute
+
 type PaymentPrepayRequest struct {
+	ExpiresAt   time.Time
 	Method      PaymentMethod
 	OutTradeNo  string
 	Description string
@@ -154,9 +169,12 @@ func ParseTradeState(state string) TradeState {
 }
 
 type PaymentQueryRequest struct {
-	Method        PaymentMethod
-	OutTradeNo    string
-	TransactionID string
+	// ExpectedProviderAccount binds absence checks to the account/environment
+	// that signed the action; a configuration change cannot prove trade absence.
+	ExpectedProviderAccount string
+	Method                  PaymentMethod
+	OutTradeNo              string
+	TransactionID           string
 }
 
 type PaymentQueryResult struct {
@@ -582,6 +600,11 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 	if method.String() == "" {
 		return nil, errors.BadRequest("PAYMENT_METHOD_REQUIRED", "payment method is required")
 	}
+	// Reject unsupported methods before creating any active payment row.
+	capabilities, err := uc.gateway.Capabilities(method)
+	if err != nil {
+		return nil, err
+	}
 	order, err := uc.orderRepo.GetOrderByOrderNo(ctx, args.OrderNo)
 	if err != nil {
 		return nil, err
@@ -618,12 +641,6 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 		}
 		return nil, ErrPaymentStateConflict
 	}
-	// Capabilities 是纯本地查询,放在渠道建单之前:一旦它失败,不会留下
-	// "渠道已建单但本地无法收尾" 的中间态。
-	capabilities, err := uc.gateway.Capabilities(method)
-	if err != nil {
-		return nil, err
-	}
 	leaseToken := uc.idGen.GenerateString()
 	payment, err = prepayRepo.ClaimPaymentPrepay(ctx, payment.ID, leaseToken, uc.policy.PrepayLeaseDuration)
 	if err != nil {
@@ -641,7 +658,7 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 	}
 	prepay, err := uc.gateway.Prepay(ctx, PaymentPrepayRequest{
 		Method: method, OutTradeNo: payment.OutTradeNo, Description: description,
-		Amount: order.TotalAmount, Currency: order.Currency, ClientIP: args.ClientIP, Extension: args.Extension,
+		Amount: order.TotalAmount, Currency: order.Currency, ClientIP: args.ClientIP, Extension: args.Extension, ExpiresAt: order.ExpiresAt,
 	})
 	if err != nil {
 		if recordErr := prepayRepo.RecordPaymentPrepayError(ctx, payment.ID, leaseToken, err.Error()); recordErr != nil {
@@ -741,8 +758,23 @@ func (uc *paymentUsecase) ClosePayment(ctx context.Context, outTradeNo string, u
 		return nil, err
 	}
 	result, err := uc.gateway.Close(ctx, PaymentCloseRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+	if stderrors.Is(err, ErrProviderTradeStateConflict) {
+		query, queryErr := uc.gateway.Query(ctx, PaymentQueryRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		if query != nil && query.TradeState.IsTerminal() {
+			if applyErr := uc.paymentRepo.ApplyPayQuery(ctx, closeArgs, query); applyErr != nil {
+				return nil, applyErr
+			}
+			return &PaymentCloseResult{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: query.TransactionID, Success: query.TradeState == TradeStateClosed}, nil
+		}
+	}
 	if err != nil {
 		return nil, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("payment provider returned an empty close result")
 	}
 	if result.Success {
 		err = uc.paymentRepo.ApplyPayQuery(ctx, CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "api_close"}, &PaymentQueryResult{

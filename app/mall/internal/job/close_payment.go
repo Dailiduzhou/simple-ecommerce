@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -39,17 +40,31 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	if method.Provider != args.Provider {
 		return river.JobCancel(fmt.Errorf("close_pay provider does not match payment"))
 	}
-	query, err := w.gateway.Query(ctx, biz.PaymentQueryRequest{
-		Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID,
-	})
+	var signed biz.SignedPaymentPayload
+	localSigning := method.Provider == "alipay" && (method.Product == "app" || method.Product == "wap") && payment.Action.Type != ""
+	if localSigning {
+		localSigning = json.Unmarshal(payment.Action.Payload, &signed) == nil
+	}
+	queryRequest := biz.PaymentQueryRequest{Method: method, OutTradeNo: payment.OutTradeNo,
+		TransactionID: payment.ThirdPartyTxID, ExpectedProviderAccount: signed.ProviderAccount}
+	queryStarted := time.Now()
+	query, err := w.gateway.Query(ctx, queryRequest)
 	applyArgs := biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "close_pay"}
 	if errors.Is(err, biz.ErrProviderOrderNotExist) {
-		// "Order not exist" only proves the trade never reached the provider
-		// when prepay never finalized (no action recorded). A payment that did
-		// complete prepay must be visible to the provider — if it is not, the
-		// query may have hit the wrong merchant account or environment, and
-		// auto-closing could discard money the user actually paid. Reconcile.
-		if payment.Action.Type == "" {
+		// APP/WAP only generate signed parameters locally. Absence is normal,
+		// but query only counts as closure evidence after those parameters expire.
+		safeAbsent := payment.Status == biz.PaymentStatusClosePending && payment.Action.Type == "" && payment.PrepayAttempts == 0 && payment.PrepayLeaseUntil == nil && payment.ThirdPartyTxID == ""
+		if localSigning {
+			if signed.ProviderAccount != "" && signed.Payload != "" && !signed.ExpiresAt.IsZero() {
+				safeAt := signed.ExpiresAt.Add(biz.PaymentExpirySafetyMargin)
+				if queryStarted.Before(safeAt) {
+					// Snoozing does not exhaust River attempts; re-query AFTER cutoff.
+					return river.JobSnooze(max(time.Second, time.Until(safeAt)))
+				}
+				safeAbsent = true
+			}
+		}
+		if safeAbsent {
 			return w.repo.ApplyPayQuery(ctx, applyArgs, &biz.PaymentQueryResult{
 				Method: method, OutTradeNo: payment.OutTradeNo,
 				TradeState: biz.TradeStateClosed, Amount: payment.Amount, Currency: payment.Currency,
@@ -58,7 +73,7 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 		return w.repo.MarkReconciliationRequired(ctx, biz.ReconciliationFailure{
 			PaymentID: payment.ID, Provider: method.Provider, Attempt: max(1, job.Attempt),
 			Reason:    "provider_order_not_exist",
-			LastError: "provider has no record of a payment whose prepay was finalized; possible gateway misconfiguration",
+			LastError: "provider absence without proof that previously issued payment parameters are unusable",
 		})
 	}
 	if err != nil {
@@ -83,6 +98,16 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	closed, err := w.gateway.Close(ctx, biz.PaymentCloseRequest{
 		Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID,
 	})
+	if errors.Is(err, biz.ErrProviderTradeStateConflict) {
+		// Payment may have won between the initial query and the close request.
+		query, queryErr := w.gateway.Query(ctx, queryRequest)
+		if queryErr != nil {
+			return queryErr
+		}
+		if query != nil && query.TradeState.IsTerminal() {
+			return w.repo.ApplyPayQuery(ctx, applyArgs, query)
+		}
+	}
 	if err != nil {
 		return err
 	}

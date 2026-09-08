@@ -60,6 +60,9 @@ func (r *OrderExpiryRepo) ExpireOrder(ctx context.Context, orderID int64) error 
 		if err != nil {
 			return err
 		}
+		if err := recoverUnsupportedPayments(ctx, q, r.data, r.log, payments); err != nil {
+			return err
+		}
 		for _, payment := range payments {
 			if payment.ReconciliationStatus == biz.ReconciliationStatusRequired {
 				return biz.ErrPaymentReconciliationRequired
@@ -166,22 +169,31 @@ func (r *OrderExpiryRepo) ReapOverdueOrders(ctx context.Context, grace time.Dura
 	if r.jobs == nil {
 		return nil, fmt.Errorf("order mq is not configured")
 	}
-	orderIDs, err := r.data.q.ListOverduePendingOrders(ctx, db.ListOverduePendingOrdersParams{
-		GraceSeconds: grace.Seconds(), LimitRows: int32(limit),
-	})
-	if err != nil {
-		return nil, err
-	}
-	requeued := make([]int64, 0, len(orderIDs))
-	for _, id := range orderIDs {
-		job, err := r.jobs.EnqueueExpireOrder(ctx, biz.ExpireOrderArgs{OrderID: id}, time.Time{})
+	// limit bounds each query, not the sweep. Always advance past stuck rows,
+	// including rows whose enqueue fails or is deduplicated by an active job.
+	var afterID int64
+	requeued := make([]int64, 0)
+	for {
+		orderIDs, err := r.data.q.ListOverduePendingOrders(ctx, db.ListOverduePendingOrdersParams{
+			GraceSeconds: grace.Seconds(), LimitRows: int32(limit), AfterID: afterID,
+		})
 		if err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "re-enqueue overdue expire order failed", "order_id", id, "error", err)
-			continue
+			return requeued, err
 		}
-		if !job.Deduplicated {
-			requeued = append(requeued, id)
+		for _, id := range orderIDs {
+			job, err := r.jobs.EnqueueExpireOrder(ctx, biz.ExpireOrderArgs{OrderID: id}, time.Time{})
+			if err != nil {
+				r.log.WithContext(ctx).Errorw("msg", "re-enqueue overdue expire order failed", "order_id", id, "error", err)
+				continue
+			}
+			if !job.Deduplicated {
+				requeued = append(requeued, id)
+			}
 		}
+		if len(orderIDs) < limit {
+			break
+		}
+		afterID = orderIDs[len(orderIDs)-1]
 	}
 	if len(requeued) > 0 {
 		r.log.WithContext(ctx).Warnw("msg", "reaper found overdue pending orders", "count", len(requeued), "grace", grace.String())

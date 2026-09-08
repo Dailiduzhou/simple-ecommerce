@@ -334,13 +334,14 @@ func (q *Queries) ListOrdersByUser(ctx context.Context, arg ListOrdersByUserPara
 
 const listOverduePendingOrders = `-- name: ListOverduePendingOrders :many
 SELECT id FROM orders
-WHERE status = 'pending_payment'
-  AND expires_at <= now() - make_interval(secs => $1::double precision)
-ORDER BY expires_at
-LIMIT $2
+WHERE id > $1::bigint AND status = 'pending_payment'
+  AND expires_at <= now() - make_interval(secs => $2::double precision)
+ORDER BY id
+LIMIT $3
 `
 
 type ListOverduePendingOrdersParams struct {
+	AfterID      int64
 	GraceSeconds float64
 	LimitRows    int32
 }
@@ -348,7 +349,7 @@ type ListOverduePendingOrdersParams struct {
 // Backstop for expire_order jobs that were discarded after exhausting retries;
 // the partial index idx_orders_pending_expiry keeps this scan cheap.
 func (q *Queries) ListOverduePendingOrders(ctx context.Context, arg ListOverduePendingOrdersParams) ([]int64, error) {
-	rows, err := q.db.Query(ctx, listOverduePendingOrders, arg.GraceSeconds, arg.LimitRows)
+	rows, err := q.db.Query(ctx, listOverduePendingOrders, arg.AfterID, arg.GraceSeconds, arg.LimitRows)
 	if err != nil {
 		return nil, err
 	}
@@ -365,6 +366,22 @@ func (q *Queries) ListOverduePendingOrders(ctx context.Context, arg ListOverdueP
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockOrderIdempotency = `-- name: LockOrderIdempotency :exec
+SELECT pg_advisory_xact_lock(hashtextextended(
+  'order-idempotency:' || $1::bigint::text || ':' || $2::text, 0))
+`
+
+type LockOrderIdempotencyParams struct {
+	UserID         int64
+	IdempotencyKey string
+}
+
+// Lock the request identity BEFORE reading stock or checking for a replay.
+func (q *Queries) LockOrderIdempotency(ctx context.Context, arg LockOrderIdempotencyParams) error {
+	_, err := q.db.Exec(ctx, lockOrderIdempotency, arg.UserID, arg.IdempotencyKey)
+	return err
 }
 
 const markOrderCancelled = `-- name: MarkOrderCancelled :one

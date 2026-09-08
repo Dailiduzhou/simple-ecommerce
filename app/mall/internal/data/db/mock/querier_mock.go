@@ -991,6 +991,20 @@ func (mr *MockQuerierMockRecorder) ListUpcomingEvents(ctx, arg interface{}) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUpcomingEvents", reflect.TypeOf((*MockQuerier)(nil).ListUpcomingEvents), ctx, arg)
 }
 
+// LockOrderIdempotency mocks base method.
+func (m *MockQuerier) LockOrderIdempotency(ctx context.Context, arg db.LockOrderIdempotencyParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockOrderIdempotency", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LockOrderIdempotency indicates an expected call of LockOrderIdempotency.
+func (mr *MockQuerierMockRecorder) LockOrderIdempotency(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockOrderIdempotency", reflect.TypeOf((*MockQuerier)(nil).LockOrderIdempotency), ctx, arg)
+}
+
 // MarkOrderCancelled mocks base method.
 func (m *MockQuerier) MarkOrderCancelled(ctx context.Context, id int64) (db.Order, error) {
 	m.ctrl.T.Helper()
@@ -1228,6 +1242,21 @@ func (m *MockQuerier) RestoreOrderItemStock(ctx context.Context, orderID int64) 
 func (mr *MockQuerierMockRecorder) RestoreOrderItemStock(ctx, orderID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RestoreOrderItemStock", reflect.TypeOf((*MockQuerier)(nil).RestoreOrderItemStock), ctx, orderID)
+}
+
+// RetryOrderRefund mocks base method.
+func (m *MockQuerier) RetryOrderRefund(ctx context.Context, id int64) (db.OrderRefund, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RetryOrderRefund", ctx, id)
+	ret0, _ := ret[0].(db.OrderRefund)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RetryOrderRefund indicates an expected call of RetryOrderRefund.
+func (mr *MockQuerierMockRecorder) RetryOrderRefund(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RetryOrderRefund", reflect.TypeOf((*MockQuerier)(nil).RetryOrderRefund), ctx, id)
 }
 
 // SetDefaultShippingAddress mocks base method.
