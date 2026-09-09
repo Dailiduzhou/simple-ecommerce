@@ -24,23 +24,29 @@ type workerGateway struct {
 func (g *workerGateway) Capabilities(biz.PaymentMethod) (biz.PaymentCapabilities, error) {
 	return biz.PaymentCapabilities{SupportsClose: true}, nil
 }
+
 func (g *workerGateway) Prepay(context.Context, biz.PaymentPrepayRequest) (*biz.PaymentPrepayResult, error) {
 	return nil, nil
 }
+
 func (g *workerGateway) Query(_ context.Context, req biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
 	g.query = req
 	g.queries++
 	return g.result, g.err
 }
+
 func (g *workerGateway) Close(context.Context, biz.PaymentCloseRequest) (*biz.PaymentCloseResult, error) {
 	return &biz.PaymentCloseResult{Success: true}, nil
 }
+
 func (g *workerGateway) Refund(context.Context, biz.PaymentRefundRequest) (*biz.PaymentRefundResult, error) {
 	return nil, nil
 }
+
 func (g *workerGateway) ParseAndVerifyNotification(string, *http.Request) (*biz.PaymentNotification, error) {
 	return nil, nil
 }
+
 func (g *workerGateway) NotificationAck(string, bool) (biz.PaymentNotificationAck, error) {
 	return biz.DefaultPaymentNotificationAck(), nil
 }
@@ -61,36 +67,46 @@ type workerRepo struct {
 func (r *workerRepo) CreatePayment(context.Context, biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
 	return nil, nil
 }
+
 func (r *workerRepo) MarkPaymentPending(context.Context, int64, biz.PaymentAction) (*biz.PaymentDO, error) {
 	return nil, nil
 }
+
 func (r *workerRepo) GetPayment(context.Context, int64) (*biz.PaymentDO, error) {
 	return r.payment, nil
 }
+
 func (r *workerRepo) GetPaymentByUser(context.Context, int64, int64) (*biz.PaymentDO, error) {
 	return r.payment, nil
 }
+
 func (r *workerRepo) GetLatestPaymentByOrder(context.Context, int64) (*biz.PaymentDO, error) {
 	return r.payment, nil
 }
+
 func (r *workerRepo) GetActivePaymentByOrderMethod(context.Context, int64, string) (*biz.PaymentDO, error) {
 	return r.payment, nil
 }
+
 func (r *workerRepo) GetPaymentByOutTradeNo(context.Context, string) (*biz.PaymentDO, error) {
 	return r.payment, nil
 }
+
 func (r *workerRepo) BeginPaymentNotificationProcessing(_ context.Context, id int64, _, _ string) (bool, error) {
 	r.notificationBegun = id
 	return !r.skipNotification, r.notificationBeginErr
 }
+
 func (r *workerRepo) RecordPaymentNotificationError(_ context.Context, _ int64, lastError string) error {
 	r.notificationError = lastError
 	return nil
 }
+
 func (r *workerRepo) MarkPaymentNotificationFailed(_ context.Context, _ int64, lastError string) error {
 	r.notificationFailed = lastError
 	return nil
 }
+
 func (r *workerRepo) ApplyPayQuery(_ context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
 	r.applied = true
 	r.appliedArgs = args
@@ -101,6 +117,7 @@ func (r *workerRepo) MarkPayClosePending(context.Context, biz.CheckPayArgs) erro
 func (r *workerRepo) PreparePaymentRefund(context.Context, int64, string) (*biz.PaymentDO, *biz.PaymentRefund, error) {
 	return nil, nil, nil
 }
+
 func (r *workerRepo) RecordPaymentRefundError(context.Context, int64, string, bool) error {
 	return nil
 }
@@ -108,11 +125,13 @@ func (r *workerRepo) ApplyPaymentRefund(context.Context, int64, int64) error { r
 func (r *workerRepo) ListStalePendingRefunds(context.Context, time.Duration, int) ([]biz.PaymentRefund, error) {
 	return nil, nil
 }
+
 func (r *workerRepo) MarkReconciliationRequired(_ context.Context, failure biz.ReconciliationFailure) error {
 	failureCopy := failure
 	r.reconciled = &failureCopy
 	return nil
 }
+
 func (r *workerRepo) RecordReconciliationFailure(context.Context, biz.ReconciliationFailure) error {
 	return nil
 }
@@ -291,29 +310,37 @@ type reaperPaymentUsecase struct {
 func (u *reaperPaymentUsecase) PrepayForOrder(context.Context, biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
 	return nil, nil
 }
+
 func (u *reaperPaymentUsecase) GetPayment(context.Context, int64, int64) (*biz.PaymentDO, error) {
 	return nil, nil
 }
+
 func (u *reaperPaymentUsecase) GetPaymentByOrder(context.Context, int64, int64) (*biz.PaymentDO, error) {
 	return nil, nil
 }
+
 func (u *reaperPaymentUsecase) QueryPayment(context.Context, string, int64) (*biz.PaymentQueryResult, error) {
 	return nil, nil
 }
+
 func (u *reaperPaymentUsecase) ClosePayment(context.Context, string, int64) (*biz.PaymentCloseResult, error) {
 	return nil, nil
 }
+
 func (u *reaperPaymentUsecase) RefundPayment(context.Context, int64) (*biz.PaymentRefundResult, error) {
 	return nil, nil
 }
+
 func (u *reaperPaymentUsecase) ReconcilePendingRefunds(_ context.Context, olderThan time.Duration, limit int) (int, error) {
 	u.olderThan = olderThan
 	u.limit = limit
 	return u.settled, u.err
 }
+
 func (u *reaperPaymentUsecase) CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*biz.MQJob, error) {
 	return nil, nil
 }
+
 func (u *reaperPaymentUsecase) HandleNotification(context.Context, string, *http.Request) error {
 	return nil
 }
@@ -331,5 +358,5 @@ func TestPeriodicJobsCoverBothBackstops(t *testing.T) {
 	// One periodic schedule per backstop sweep; the args kinds are asserted by
 	// the workers themselves, here we only guard the schedule count so a new
 	// sweep cannot be added without extending this test.
-	require.Len(t, NewPeriodicJobs(), 2)
+	require.Len(t, NewPeriodicJobs(), 4)
 }

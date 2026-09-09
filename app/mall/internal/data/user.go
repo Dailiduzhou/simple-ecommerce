@@ -138,16 +138,18 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName 
 }
 
 func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
-	u, err := r.data.q.GetUserByID(ctx, id)
+	u, err := r.data.DB(ctx).GetUserByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	err = r.data.q.DeleteUser(ctx, id)
+	err = r.data.DB(ctx).DeleteUser(ctx, id)
 	if err != nil {
 		return err
 	}
-	r.deleteCache(ctx, redisKey("user", id))
-	r.deleteCache(ctx, redisKey("user", "phone", u.PhoneHash))
+	afterCommit(ctx, func() {
+		r.deleteCache(ctx, redisKey("user", id))
+		r.deleteCache(ctx, redisKey("user", "phone", u.PhoneHash))
+	})
 	return nil
 }
 

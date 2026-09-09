@@ -285,3 +285,110 @@ CREATE TABLE events (
 
 CREATE INDEX idx_events_status ON events(status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_events_time_range ON events(start_at, end_at) WHERE deleted_at IS NULL;
+
+CREATE TABLE product_browsing_history (
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  first_viewed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_viewed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, product_id),
+  CHECK (last_viewed_at >= first_viewed_at)
+);
+CREATE INDEX idx_history_recent ON product_browsing_history(user_id, last_viewed_at DESC, product_id DESC);
+CREATE INDEX idx_history_expiry ON product_browsing_history(last_viewed_at, user_id, product_id);
+CREATE INDEX idx_history_product ON product_browsing_history(product_id);
+
+CREATE TABLE posts (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  author_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  version BIGINT NOT NULL DEFAULT 1 CHECK (version > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMPTZ,
+  CHECK (deleted_at IS NOT NULL OR (char_length(btrim(title)) BETWEEN 1 AND 100 AND char_length(btrim(content)) BETWEEN 1 AND 5000))
+);
+CREATE INDEX idx_posts_feed ON posts(created_at DESC, id DESC) WHERE deleted_at IS NULL;
+CREATE INDEX idx_posts_author_feed ON posts(author_id, created_at DESC, id DESC) WHERE deleted_at IS NULL;
+-- Also covers retained soft-deleted posts during physical user deletion.
+CREATE INDEX idx_posts_author ON posts(author_id);
+
+CREATE TABLE media_assets (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  owner_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  provider TEXT NOT NULL,
+  bucket_name TEXT NOT NULL,
+  object_key TEXT NOT NULL,
+  staging_key TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  size_bytes BIGINT NOT NULL CHECK (size_bytes BETWEEN 1 AND 10485760),
+  width INTEGER NOT NULL DEFAULT 0 CHECK (width BETWEEN 0 AND 10000),
+  height INTEGER NOT NULL DEFAULT 0 CHECK (height BETWEEN 0 AND 10000),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'deleting', 'deleted')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  upload_expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (provider, bucket_name, object_key)
+);
+CREATE INDEX idx_media_expiry ON media_assets(status, expires_at, id);
+CREATE INDEX idx_media_stale_deleting ON media_assets(updated_at, id) WHERE status='deleting';
+CREATE INDEX idx_media_owner ON media_assets(owner_id);
+
+CREATE TABLE post_images (
+  post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  media_id BIGINT NOT NULL REFERENCES media_assets(id),
+  sort_order INTEGER NOT NULL CHECK (sort_order BETWEEN 0 AND 8),
+  PRIMARY KEY (post_id, media_id),
+  UNIQUE (media_id),
+  UNIQUE (post_id, sort_order)
+);
+CREATE TABLE post_likes (
+  post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (post_id, user_id)
+);
+CREATE INDEX idx_post_likes_user ON post_likes(user_id, post_id);
+
+CREATE TABLE post_comments (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  author_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  root_comment_id BIGINT,
+  reply_to_comment_id BIGINT,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMPTZ,
+  UNIQUE (post_id, id),
+  FOREIGN KEY (post_id, root_comment_id) REFERENCES post_comments(post_id, id),
+  FOREIGN KEY (post_id, reply_to_comment_id) REFERENCES post_comments(post_id, id),
+  CHECK ((root_comment_id IS NULL) = (reply_to_comment_id IS NULL)),
+  CHECK (root_comment_id <> id AND reply_to_comment_id <> id),
+  CHECK ((deleted_at IS NULL AND char_length(btrim(content)) BETWEEN 1 AND 1000) OR (deleted_at IS NOT NULL AND content = ''))
+);
+CREATE INDEX idx_comments_roots ON post_comments(post_id, created_at DESC, id DESC) WHERE root_comment_id IS NULL;
+CREATE INDEX idx_comments_replies ON post_comments(post_id, root_comment_id, created_at, id);
+CREATE INDEX idx_comments_target ON post_comments(post_id, reply_to_comment_id);
+CREATE INDEX idx_comments_visible ON post_comments(post_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_comments_author ON post_comments(author_id);
+
+-- Relationships are immutable, so checking the referenced rows at insertion
+-- cannot race with a later reparenting into a third level or another thread.
+CREATE FUNCTION check_post_comment_relationship() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND (NEW.post_id, NEW.root_comment_id, NEW.reply_to_comment_id)
+      IS DISTINCT FROM (OLD.post_id, OLD.root_comment_id, OLD.reply_to_comment_id) THEN
+    RAISE EXCEPTION 'comment relationships are immutable' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.root_comment_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM post_comments r WHERE r.post_id=NEW.post_id AND r.id=NEW.root_comment_id AND r.root_comment_id IS NULL)
+       OR NOT EXISTS (SELECT 1 FROM post_comments t WHERE t.post_id=NEW.post_id AND t.id=NEW.reply_to_comment_id AND (t.id=NEW.root_comment_id OR t.root_comment_id=NEW.root_comment_id)) THEN
+      RAISE EXCEPTION 'invalid two-level comment relationship' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER post_comment_relationship BEFORE INSERT OR UPDATE ON post_comments
+  FOR EACH ROW EXECUTE FUNCTION check_post_comment_relationship();

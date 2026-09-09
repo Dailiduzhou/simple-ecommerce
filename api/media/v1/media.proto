@@ -1,0 +1,50 @@
+syntax = "proto3";
+package api.media.v1;
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
+option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/media/v1;v1";
+service Media {
+  rpc CreateImageUpload(CreateImageUploadRequest)
+      returns (CreateImageUploadReply) {
+    option (google.api.http) = {
+      post: "/v1/media/images/uploads"
+      body: "*"
+    };
+  }
+  rpc CompleteImageUpload(ImageRequest) returns (ImageAsset) {
+    option (google.api.http) = {
+      post: "/v1/media/images/{id}/complete"
+      body: "*"
+    };
+  }
+  rpc GetImage(ImageRequest) returns (ImageAsset) {
+    option (google.api.http) = {
+      get: "/v1/media/images/{id}"
+    };
+  }
+}
+message CreateImageUploadRequest {
+  string content_type = 1 [(buf.validate.field).string = {
+    in: [ "image/jpeg", "image/png", "image/webp" ]
+  }];
+  int64 size_bytes = 2 [(buf.validate.field).int64 = { gt: 0, lte: 10485760 }];
+}
+message CreateImageUploadReply {
+  int64 id = 1;
+  string upload_url = 2;
+  map<string, string> form_fields = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+message ImageAsset {
+  int64 id = 1;
+  string url = 2;
+  string content_type = 3;
+  int64 size_bytes = 4;
+  int32 width = 5;
+  int32 height = 6;
+  string status = 7;
+}
+message ImageRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+}
