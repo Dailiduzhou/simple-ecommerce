@@ -21,3 +21,55 @@ jobs:
 
       - name: Run tests
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ecommerce_integration
+          POSTGRES_USER: integration
+          POSTGRES_PASSWORD: integration-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U integration -d ecommerce_integration"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      ECOMMERCE_INTEGRATION_EXCLUSIVE: "true"
+      ECOMMERCE_INTEGRATION_POSTGRES_URL: postgres://integration:integration-only@127.0.0.1:5432/ecommerce_integration?sslmode=disable
+      ECOMMERCE_INTEGRATION_REDIS_ADDR: 127.0.0.1:6379
+      ECOMMERCE_INTEGRATION_S3_ENDPOINT: 127.0.0.1:19000
+      ECOMMERCE_INTEGRATION_S3_BUCKET: ecommerce-integration
+      # Ephemeral local CI credentials, never production credentials.
+      ECOMMERCE_INTEGRATION_S3_ACCESS_KEY: integration-only
+      ECOMMERCE_INTEGRATION_S3_SECRET_KEY: integration-only-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Start isolated MinIO
+        run: |
+          docker run -d --name ecommerce-integration-minio \
+            -p 127.0.0.1:19000:9000 \
+            -e MINIO_ROOT_USER="$ECOMMERCE_INTEGRATION_S3_ACCESS_KEY" \
+            -e MINIO_ROOT_PASSWORD="$ECOMMERCE_INTEGRATION_S3_SECRET_KEY" \
+            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:19000/minio/health/ready; then exit 0; fi
+            sleep 2
+          done
+          echo 'MinIO did not become ready' >&2
+          exit 1
+      - name: Required real integration tests (no missing-env skips)
+        run: bash .github/scripts/integration-test.sh
+      - name: Remove job-owned MinIO
+        if: always()
+        run: docker rm -f ecommerce-integration-minio
