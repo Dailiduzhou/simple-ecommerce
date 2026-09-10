@@ -1,0 +1,24 @@
+groups:
+  - name: community
+    rules:
+      - alert: CommunityMaintenanceJobDiscarded
+        expr: increase(river_job_discarded_total{kind=~"cleanup_browsing_history|sweep_media|delete_media"}[15m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Community maintenance exhausted retries; inspect River and storage"
+      - alert: CommunityStorageCleanupFailing
+        expr: increase(community_operation_total{operation="media_delete",result="error"}[15m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Media deletion repeatedly failing; deleting rows are retained for compensation"
+      - alert: CommunityWriteLimiterUnavailable
+        expr: increase(community_operation_total{operation="rate_limit",result="unavailable"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis write limiter unavailable; fail-closed policy is active by default"
