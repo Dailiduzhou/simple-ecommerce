@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 
+	communityv1 "github.com/Dailiduzhou/simple-ecommerce/api/community/v1"
 	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
+	mediav1 "github.com/Dailiduzhou/simple-ecommerce/api/media/v1"
 	orderv1 "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
 	paymentv1 "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
@@ -32,7 +34,7 @@ const (
 )
 
 // NewHTTPServer new an HTTP server.
-func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, logger log.Logger) *http.Server {
+func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, community *service.CommunityService, media *service.MediaService, limiter biz.WriteLimiter, logger log.Logger) *http.Server {
 	jwtMiddleware := kratosjwt.Server(
 		func(t *jwtv5.Token) (any, error) {
 			return []byte(ac.AccessTokenSecret), nil
@@ -44,6 +46,7 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 	)
 
 	opts := []http.ServerOption{
+		http.Filter(custommid.CommunityBodyLimit),
 		http.Middleware(
 			recovery.Recovery(),
 			tracing.Server(),
@@ -56,6 +59,7 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 			).
 				Match(newWhiteListMatcher()).
 				Build(),
+			custommid.CommunityWriteLimit(limiter),
 		),
 	}
 	if c.Http.Network != "" {
@@ -68,6 +72,8 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 		opts = append(opts, http.Timeout(c.Http.Timeout.AsDuration()))
 	}
 	srv := http.NewServer(opts...)
+	communityv1.RegisterCommunityHTTPServer(srv, community)
+	mediav1.RegisterMediaHTTPServer(srv, media)
 	mallv1.RegisterMallHTTPServer(srv, mall)
 	userv1.RegisterUserHTTPServer(srv, user)
 	orderv1.RegisterOrderHTTPServer(srv, order)

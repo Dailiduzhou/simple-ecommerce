@@ -6,8 +6,6 @@ import (
 	stderrors "errors"
 	"fmt"
 	"math"
-	mrand "math/rand"
-	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
@@ -226,8 +224,8 @@ func (r *OrderRepo) HasOngoingOrders(ctx context.Context, userID int64) (bool, e
 
 func (r *OrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]biz.Order, error) {
 	genKey := redisKey("order", "user", "ongoing", userID, "gen")
-	generation := cacheGeneration(ctx, r.data.rdb, r.log, genKey)
-	cacheKey := redisKey("order", "user", "ongoing", userID, generation)
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, genKey)
+	cacheKey := generationCacheKey(generation, redisKey("order", "user", "ongoing", userID, generation))
 	return r.listOrders(ctx, cacheKey, func() ([]db.Order, error) {
 		return querierFromContext(ctx, r.data.q).ListOngoingOrdersByUser(ctx, userID)
 	})
@@ -235,21 +233,15 @@ func (r *OrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64) (
 
 func (r *OrderRepo) ListOrdersByUser(ctx context.Context, userID int64, limit, offset int32) ([]biz.Order, error) {
 	genKey := redisKey("order", "user", userID, "gen")
-	generation := cacheGeneration(ctx, r.data.rdb, r.log, genKey)
-	cacheKey := redisKey("order", "user", userID, generation, limit, offset)
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, genKey)
+	cacheKey := generationCacheKey(generation, redisKey("order", "user", userID, generation, limit, offset))
 	return r.listOrders(ctx, cacheKey, func() ([]db.Order, error) {
 		return querierFromContext(ctx, r.data.q).ListOrdersByUser(ctx, db.ListOrdersByUserParams{UserID: userID, Limit: limit, Offset: offset})
 	})
 }
 
 func (r *OrderRepo) listOrders(ctx context.Context, cacheKey string, load func() ([]db.Order, error)) ([]biz.Order, error) {
-	if cached, err := r.getListCache(ctx, cacheKey); err == nil {
-		return cached, nil
-	}
-	value, err, _ := r.data.sg.Do("sf:"+cacheKey, func() (any, error) {
-		if cached, err := r.getListCache(ctx, cacheKey); err == nil {
-			return cached, nil
-		}
+	return cacheAside(ctx, r.data, r.log, cacheKey, r.getListCache, r.setListCache, func() ([]biz.Order, error) {
 		rows, err := load()
 		if err != nil {
 			return nil, err
@@ -262,13 +254,8 @@ func (r *OrderRepo) listOrders(ctx context.Context, cacheKey string, load func()
 				return nil, err
 			}
 		}
-		r.setListCache(ctx, cacheKey, orders)
 		return orders, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return value.([]biz.Order), nil
 }
 
 func (r *OrderRepo) CountOrdersByUser(ctx context.Context, userID int64) (int64, error) {
@@ -373,35 +360,15 @@ func (r *OrderRepo) invalidateUserLists(ctx context.Context, userID int64) {
 }
 
 func (r *OrderRepo) getListCache(ctx context.Context, key string) ([]biz.Order, error) {
-	value, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var orders []biz.Order
-	if err := json.Unmarshal(value, &orders); err != nil {
-		return nil, err
-	}
-	return orders, nil
+	return readJSONCache[[]biz.Order](ctx, r.data, key)
 }
 
 func (r *OrderRepo) setListCache(ctx context.Context, key string, orders []biz.Order) {
-	afterCommit(ctx, func() {
-		value, err := json.Marshal(orders)
-		if err != nil {
-			return
-		}
-		if err := r.data.rdb.Set(ctx, key, value, 10*time.Minute+time.Duration(mrand.Intn(600))*time.Second).Err(); err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write order list cache failed", "key", key, "error", err)
-		}
-	})
+	writeJSONCache(ctx, r.data, r.log, key, orders, cacheTTL())
 }
 
 func (r *OrderRepo) deleteKey(ctx context.Context, key string) {
-	afterCommit(ctx, func() {
-		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "delete cache failed", "key", key, "error", err)
-		}
-	})
+	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
 func toBizOrder(row db.Order) biz.Order {

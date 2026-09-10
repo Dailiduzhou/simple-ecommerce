@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 
+	communityv1 "github.com/Dailiduzhou/simple-ecommerce/api/community/v1"
 	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
+	mediav1 "github.com/Dailiduzhou/simple-ecommerce/api/media/v1"
 	orderv1 "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
 	paymentv1 "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
@@ -24,7 +26,7 @@ import (
 )
 
 // NewGRPCServer new a gRPC server.
-func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, logger log.Logger) *grpc.Server {
+func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *service.MallService, user *service.UserService, order *service.OrderService, payment *service.PaymentService, community *service.CommunityService, media *service.MediaService, limiter biz.WriteLimiter, logger log.Logger) *grpc.Server {
 	jwtMiddleware := kratosjwt.Server(
 		func(t *jwtv5.Token) (any, error) {
 			return []byte(ac.AccessTokenSecret), nil
@@ -48,6 +50,7 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 			).
 				Match(grpcWhiteListMatcher()).
 				Build(),
+			custommid.CommunityWriteLimit(limiter),
 		),
 	}
 	if c.Grpc.Network != "" {
@@ -60,6 +63,8 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 		opts = append(opts, grpc.Timeout(c.Grpc.Timeout.AsDuration()))
 	}
 	srv := grpc.NewServer(opts...)
+	communityv1.RegisterCommunityServer(srv, community)
+	mediav1.RegisterMediaServer(srv, media)
 	mallv1.RegisterMallServer(srv, mall)
 	userv1.RegisterUserServer(srv, user)
 	orderv1.RegisterOrderServer(srv, order)
