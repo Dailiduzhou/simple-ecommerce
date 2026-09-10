@@ -1,0 +1,15 @@
+syntax = "proto3";
+package api.community.v1;
+import "errors/errors.proto";
+option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/community/v1;v1";
+enum ErrorReason {
+  option (errors.default_code) = 500;
+  POST_NOT_FOUND = 0 [(errors.code) = 404];
+  COMMENT_NOT_FOUND = 1 [(errors.code) = 404];
+  INVALID_REPLY_TARGET = 2 [(errors.code) = 400];
+  COMMENT_THREAD_CLOSED = 3 [(errors.code) = 409];
+  POST_VERSION_CONFLICT = 4 [(errors.code) = 409];
+  INVALID_CONTENT = 5 [(errors.code) = 400];
+  FORBIDDEN = 6 [(errors.code) = 403];
+  INVALID_CURSOR = 7 [(errors.code) = 400];
+}
