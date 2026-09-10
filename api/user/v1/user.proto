@@ -3,6 +3,7 @@ syntax = "proto3";
 package api.user.v1;
 
 import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1";
@@ -10,6 +11,18 @@ option java_multiple_files = true;
 option java_package = "api.user.v1";
 
 service User {
+  rpc RecordProductView(RecordProductViewRequest) returns (RecordProductViewReply) {
+    option (google.api.http) = {post: "/v1/users/me/browsing-history" body: "*"};
+  }
+  rpc ListBrowsingHistory(ListBrowsingHistoryRequest) returns (ListBrowsingHistoryReply) {
+    option (google.api.http) = {get: "/v1/users/me/browsing-history"};
+  }
+  rpc DeleteBrowsingHistoryItem(DeleteBrowsingHistoryItemRequest) returns (DeleteBrowsingHistoryItemReply) {
+    option (google.api.http) = {delete: "/v1/users/me/browsing-history/{product_id}"};
+  }
+  rpc ClearBrowsingHistory(ClearBrowsingHistoryRequest) returns (ClearBrowsingHistoryReply) {
+    option (google.api.http) = {delete: "/v1/users/me/browsing-history"};
+  }
   rpc Register(RegisterRequest) returns (RegisterReply) {
     option (google.api.http) = {
       post: "/v1/users/register"
@@ -174,3 +187,35 @@ message RefreshReply {
   string access_token = 1;
   string refresh_token = 2;
 }
+
+message RecordProductViewRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+message RecordProductViewReply { google.protobuf.Timestamp last_viewed_at = 1; }
+message ListBrowsingHistoryRequest {
+  string cursor = 1 [(buf.validate.field).string.max_len = 1024];
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0, lte: 50}];
+  // Optional inclusive lower bound and exclusive upper bound on last_viewed_at.
+  // Both are instants on the server timeline; clients derive local day boundaries
+  // and send RFC 3339 values with an explicit offset.
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
+}
+message BrowsingHistoryItem {
+  int64 product_id = 1;
+  string name = 2;
+  int64 price_minor = 3;
+  bool available = 4;
+  google.protobuf.Timestamp last_viewed_at = 5;
+  string cover_image_json = 6;
+}
+message ListBrowsingHistoryReply {
+  repeated BrowsingHistoryItem items = 1;
+  string next_cursor = 2;
+}
+message DeleteBrowsingHistoryItemRequest {
+  int64 product_id = 1 [(buf.validate.field).int64.gt = 0];
+}
+message DeleteBrowsingHistoryItemReply {}
+message ClearBrowsingHistoryRequest {}
+message ClearBrowsingHistoryReply {}

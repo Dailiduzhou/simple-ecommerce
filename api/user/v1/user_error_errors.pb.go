@@ -82,3 +82,27 @@ func IsInvalidPassword(err error) bool {
 func ErrorInvalidPassword(format string, args ...interface{}) *errors.Error {
 	return errors.New(400, ErrorReason_INVALID_PASSWORD.String(), fmt.Sprintf(format, args...))
 }
+
+func IsProductNotAvailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PRODUCT_NOT_AVAILABLE.String() && e.Code == 404
+}
+
+func ErrorProductNotAvailable(format string, args ...interface{}) *errors.Error {
+	return errors.New(404, ErrorReason_PRODUCT_NOT_AVAILABLE.String(), fmt.Sprintf(format, args...))
+}
+
+func IsInvalidTimeRange(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_INVALID_TIME_RANGE.String() && e.Code == 400
+}
+
+func ErrorInvalidTimeRange(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_INVALID_TIME_RANGE.String(), fmt.Sprintf(format, args...))
+}
