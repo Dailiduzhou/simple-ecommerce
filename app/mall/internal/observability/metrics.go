@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	communityOperation            = counter("community_operation_total")
 	meter                         = otel.Meter("simple-ecommerce/mall")
 	paymentStateTransition        = counter("payment_state_transition_total")
 	paymentStateConflict          = counter("payment_state_conflict_total")
@@ -56,4 +57,9 @@ func CacheFailure(ctx context.Context, operation, entity string) {
 }
 func AuthorizationDenied(ctx context.Context, operation, reason string) {
 	add(ctx, authorizationDenied, attribute.String("operation", operation), attribute.String("reason", reason))
+}
+
+// CommunityEvent uses only bounded operation/result labels, never content or IDs.
+func CommunityEvent(ctx context.Context, operation, result string) {
+	add(ctx, communityOperation, attribute.String("operation", operation), attribute.String("result", result))
 }

@@ -14,12 +14,14 @@ type UserService struct {
 	authUc         biz.AuthUsecase
 	uc             biz.UserUsecase
 	shippingAddrUc biz.ShippingAddressUsecase
+	history        *biz.BrowsingHistoryUsecase
 	log            *log.Helper
 }
 
-func NewUserService(authUc biz.AuthUsecase, userUc biz.UserUsecase, shippingAddrUc biz.ShippingAddressUsecase, logger log.Logger) *UserService {
+func NewUserService(authUc biz.AuthUsecase, userUc biz.UserUsecase, shippingAddrUc biz.ShippingAddressUsecase, history *biz.BrowsingHistoryUsecase, logger log.Logger) *UserService {
 	return &UserService{
 		authUc:         authUc,
+		history:        history,
 		uc:             userUc,
 		shippingAddrUc: shippingAddrUc,
 		log:            log.NewHelper(logger),

@@ -24,7 +24,7 @@ import (
 // Injectors from wire.go:
 
 // wireApp init kratos application.
-func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snowflake *conf.Snowflake, payment *conf.Payment, logger log.Logger) (*kratos.App, func(), error) {
+func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snowflake *conf.Snowflake, payment *conf.Payment, community *conf.Community, storage *conf.Storage, logger log.Logger) (*kratos.App, func(), error) {
 	pool, cleanup, err := data.NewPgxPool(confData)
 	if err != nil {
 		return nil, nil, err
@@ -39,9 +39,23 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 		cleanup()
 		return nil, nil, err
 	}
-	userRepo := data.NewUserRepo(dataData, logger)
+	txManager := data.NewTransaction(pool, logger)
+	riverInsertClient, err := data.NewRiverInsertClient(pool)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	communityPolicy, err := data.NewCommunityPolicy(community)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	mediaRepo := data.NewMediaRepo(dataData, txManager, riverInsertClient, communityPolicy)
+	communityUserRepo := data.NewCommunityUserRepo(dataData, txManager, mediaRepo, logger)
 	authRepo := data.NewAuthRepo(client, logger)
-	authUsecase := biz.NewAuthUsecase(userRepo, authRepo, auth)
+	authUsecase := biz.NewAuthUsecase(communityUserRepo, authRepo, auth)
 	productRepo := data.NewProductRepo(dataData, logger)
 	productUsecase := biz.NewProductUsecase(productRepo, logger)
 	categoryRepo := data.NewCategoryRepo(dataData, logger)
@@ -49,17 +63,12 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	eventRepo := data.NewEventRepo(dataData, logger)
 	eventUsecase := biz.NewEventUsecase(eventRepo, logger)
 	mallService := service.NewMallService(productUsecase, categoryUsecase, eventUsecase, logger)
-	userUsecase := biz.NewUserUsecase(userRepo, auth, logger)
-	txManager := data.NewTransaction(pool, logger)
+	userUsecase := biz.NewUserUsecase(communityUserRepo, auth, logger)
 	shippingAddressRepo := data.NewShippingAddressRepo(dataData, txManager, logger)
 	shippingAddressUsecase := biz.NewShippingAddressUsecase(shippingAddressRepo, auth, logger)
-	userService := service.NewUserService(authUsecase, userUsecase, shippingAddressUsecase, logger)
-	riverInsertClient, err := data.NewRiverInsertClient(pool)
-	if err != nil {
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
+	browsingHistoryRepo := data.NewBrowsingHistoryRepo(dataData, txManager, communityPolicy)
+	browsingHistoryUsecase := biz.NewBrowsingHistoryUsecase(browsingHistoryRepo)
+	userService := service.NewUserService(authUsecase, userUsecase, shippingAddressUsecase, browsingHistoryUsecase, logger)
 	paymentMQRepo := data.NewPaymentMQRepoForWire(riverInsertClient, logger)
 	orderRepo := data.NewOrderRepoWithJobs(dataData, txManager, paymentMQRepo, logger)
 	snowflakeGenerator, err := data.NewSnowflakeIDGenerator(snowflake)
@@ -84,18 +93,46 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	paymentPolicy := data.NewPaymentPolicy(payment)
 	paymentUsecase := biz.NewConfiguredPaymentUsecase(paymentGateway, paymentRepo, paymentNotificationRepo, orderRepo, paymentJobUsecase, txManager, snowflakeGenerator, paymentPolicy, logger)
 	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase, logger)
-	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
-	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, logger)
+	postRepo := data.NewPostRepo(dataData, txManager, mediaRepo)
+	objectStorage, err := data.NewObjectStorage(storage)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	mediaPolicy, err := data.NewMediaPolicy(storage)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	postUsecase := biz.NewPostUsecase(postRepo, objectStorage, mediaPolicy)
+	commentRepo := data.NewCommentRepo(dataData, txManager)
+	commentUsecase := biz.NewCommentUsecase(commentRepo)
+	communityService := service.NewCommunityService(postUsecase, commentUsecase)
+	mediaUsecase := biz.NewMediaUsecase(mediaRepo, objectStorage, mediaPolicy)
+	mediaService := service.NewMediaService(mediaUsecase)
+	writeLimiter, err := data.NewWriteLimiter(client, community)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	grpcServer := server.NewGRPCServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, communityService, mediaService, writeLimiter, logger)
+	httpServer := server.NewHTTPServer(confServer, auth, authUsecase, mallService, userService, orderService, paymentService, communityService, mediaService, writeLimiter, logger)
 	checkPayWorker := job.NewCheckPayWorker(paymentGateway, paymentRepo, logger)
 	orderExpiryRepo := data.NewOrderExpiryRepo(dataData, txManager, paymentMQRepo, logger)
 	expireOrderWorker := job.NewExpireOrderWorker(orderExpiryRepo)
 	closePayWorker := job.NewClosePayWorker(paymentGateway, paymentRepo)
 	reapExpiredOrdersWorker := job.NewReapExpiredOrdersWorker(orderExpiryRepo, logger)
 	reconcileRefundsWorker := job.NewReconcileRefundsWorker(paymentUsecase, logger)
-	workers := job.NewWorkers(checkPayWorker, expireOrderWorker, closePayWorker, reapExpiredOrdersWorker, reconcileRefundsWorker, logger)
+	browsingHistoryCleanupWorker := job.NewBrowsingHistoryCleanupWorker(browsingHistoryUsecase)
+	mediaSweepWorker := job.NewMediaSweepWorker(mediaUsecase)
+	mediaDeleteWorker := job.NewMediaDeleteWorker(mediaUsecase)
+	workers := job.NewWorkers(checkPayWorker, expireOrderWorker, closePayWorker, reapExpiredOrdersWorker, reconcileRefundsWorker, browsingHistoryCleanupWorker, mediaSweepWorker, mediaDeleteWorker, logger)
 	v2 := job.NewPeriodicJobs()
 	paymentRiverErrorHandler := data.NewPaymentRiverErrorHandler(pool, client, logger)
-	riverClient, err := data.NewRiverClient(pool, workers, v2, paymentRiverErrorHandler)
+	riverClient, err := data.NewConfiguredRiverClient(pool, workers, v2, paymentRiverErrorHandler, community)
 	if err != nil {
 		cleanup2()
 		cleanup()

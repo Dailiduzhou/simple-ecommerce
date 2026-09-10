@@ -954,32 +954,18 @@ func notificationErrorText(value string) pgtype.Text {
 // row just before a state change can only repopulate keys under the old
 // generation, which no future read will ever consult.
 func (r *PaymentRepo) getPayment(ctx context.Context, keyForGen func(int64) string, load func() (db.Payment, error)) (*biz.PaymentDO, error) {
-	gen := r.paymentGeneration(ctx)
-	key := keyForGen(gen)
-	if cached, err := r.getCache(ctx, key); err == nil {
-		return cached, nil
-	} else if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorw("msg", "read payment cache failed", "key", key, "error", err)
-	}
-	value, err, _ := r.data.sg.Do("sf:"+key, func() (any, error) {
-		if cached, err := r.getCache(ctx, key); err == nil {
-			return cached, nil
-		}
+	gen := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("payment", "gen"))
+	key := generationCacheKey(gen, keyForGen(gen))
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.PaymentDO, error) {
 		row, err := load()
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return nil, biz.ErrPaymentNotFound
+		}
 		if err != nil {
-			if stderrors.Is(err, pgx.ErrNoRows) {
-				return nil, biz.ErrPaymentNotFound
-			}
 			return nil, err
 		}
-		payment := toBizPayment(row)
-		r.setCache(ctx, key, payment)
-		return payment, nil
+		return toBizPayment(row), nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return value.(*biz.PaymentDO), nil
 }
 
 func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, result *biz.PaymentQueryResult) error {
@@ -1467,27 +1453,18 @@ func createReconciliationFailure(ctx context.Context, q db.Querier, failure biz.
 }
 
 func (r *PaymentRepo) getCache(ctx context.Context, key string) (*biz.PaymentDO, error) {
-	value, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
+	payment, err := readJSONCache[*biz.PaymentDO](ctx, r.data, key)
+	// Payment lookups have an explicit not-found error, not a nil success.
+	if err == nil && payment == nil {
+		return nil, redis.Nil
 	}
-	var payment biz.PaymentDO
-	if err := json.Unmarshal(value, &payment); err != nil {
-		return nil, err
-	}
-	return &payment, nil
+	return payment, err
 }
+
 func (r *PaymentRepo) setCache(ctx context.Context, key string, payment *biz.PaymentDO) {
-	afterCommit(ctx, func() {
-		value, err := json.Marshal(payment)
-		if err == nil {
-			err = r.data.rdb.Set(ctx, key, value, 15*time.Minute).Err()
-		}
-		if err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write payment cache failed", "key", key, "error", err)
-		}
-	})
+	writeJSONCache(ctx, r.data, r.log, key, payment, 15*time.Minute)
 }
+
 func (r *PaymentRepo) paymentGeneration(ctx context.Context) int64 {
 	return paymentCacheGeneration(ctx, r.data.rdb, r.log)
 }
@@ -1507,6 +1484,9 @@ func paymentCacheKeysFor(payment db.Payment, gen int64) []string {
 }
 func (r *PaymentRepo) cachePayment(ctx context.Context, payment *biz.PaymentDO) {
 	gen := r.paymentGeneration(ctx)
+	if gen < 0 {
+		return
+	}
 	for _, key := range paymentCacheKeysFor(db.Payment{ID: payment.ID, OrderID: payment.OrderID, PayChannel: payment.Method, OutTradeNo: payment.OutTradeNo}, gen) {
 		r.setCache(ctx, key, payment)
 	}
@@ -1538,11 +1518,7 @@ func (r *PaymentRepo) invalidateOrder(ctx context.Context, orderID int64) {
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("order", "user", "ongoing", order.UserID, "gen"))
 }
 func (r *PaymentRepo) deleteCache(ctx context.Context, key string) {
-	afterCommit(ctx, func() {
-		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "delete cache failed", "key", key, "error", err)
-		}
-	})
+	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
 func toBizPayment(row db.Payment) *biz.PaymentDO {

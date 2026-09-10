@@ -36,6 +36,20 @@ func (m *MockQuerier) EXPECT() *MockQuerierMockRecorder {
 	return m.recorder
 }
 
+// AcquireMediaIOLock mocks base method.
+func (m *MockQuerier) AcquireMediaIOLock(ctx context.Context, dollar_1 int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AcquireMediaIOLock", ctx, dollar_1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AcquireMediaIOLock indicates an expected call of AcquireMediaIOLock.
+func (mr *MockQuerierMockRecorder) AcquireMediaIOLock(ctx, dollar_1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AcquireMediaIOLock", reflect.TypeOf((*MockQuerier)(nil).AcquireMediaIOLock), ctx, dollar_1)
+}
+
 // BeginPaymentNotificationProcessing mocks base method.
 func (m *MockQuerier) BeginPaymentNotificationProcessing(ctx context.Context, id int64) (db.PaymentNotification, error) {
 	m.ctrl.T.Helper()
@@ -51,6 +65,35 @@ func (mr *MockQuerierMockRecorder) BeginPaymentNotificationProcessing(ctx, id in
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginPaymentNotificationProcessing", reflect.TypeOf((*MockQuerier)(nil).BeginPaymentNotificationProcessing), ctx, id)
 }
 
+// BindPostImage mocks base method.
+func (m *MockQuerier) BindPostImage(ctx context.Context, arg db.BindPostImageParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BindPostImage", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BindPostImage indicates an expected call of BindPostImage.
+func (mr *MockQuerierMockRecorder) BindPostImage(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BindPostImage", reflect.TypeOf((*MockQuerier)(nil).BindPostImage), ctx, arg)
+}
+
+// CanReadMedia mocks base method.
+func (m *MockQuerier) CanReadMedia(ctx context.Context, arg db.CanReadMediaParams) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CanReadMedia", ctx, arg)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CanReadMedia indicates an expected call of CanReadMedia.
+func (mr *MockQuerierMockRecorder) CanReadMedia(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CanReadMedia", reflect.TypeOf((*MockQuerier)(nil).CanReadMedia), ctx, arg)
+}
+
 // ClaimPaymentPrepay mocks base method.
 func (m *MockQuerier) ClaimPaymentPrepay(ctx context.Context, arg db.ClaimPaymentPrepayParams) (db.Payment, error) {
 	m.ctrl.T.Helper()
@@ -64,6 +107,35 @@ func (m *MockQuerier) ClaimPaymentPrepay(ctx context.Context, arg db.ClaimPaymen
 func (mr *MockQuerierMockRecorder) ClaimPaymentPrepay(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimPaymentPrepay", reflect.TypeOf((*MockQuerier)(nil).ClaimPaymentPrepay), ctx, arg)
+}
+
+// CleanupBrowsingHistory mocks base method.
+func (m *MockQuerier) CleanupBrowsingHistory(ctx context.Context, arg db.CleanupBrowsingHistoryParams) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CleanupBrowsingHistory", ctx, arg)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CleanupBrowsingHistory indicates an expected call of CleanupBrowsingHistory.
+func (mr *MockQuerierMockRecorder) CleanupBrowsingHistory(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CleanupBrowsingHistory", reflect.TypeOf((*MockQuerier)(nil).CleanupBrowsingHistory), ctx, arg)
+}
+
+// ClearBrowsingHistory mocks base method.
+func (m *MockQuerier) ClearBrowsingHistory(ctx context.Context, userID int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearBrowsingHistory", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearBrowsingHistory indicates an expected call of ClearBrowsingHistory.
+func (mr *MockQuerierMockRecorder) ClearBrowsingHistory(ctx, userID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearBrowsingHistory", reflect.TypeOf((*MockQuerier)(nil).ClearBrowsingHistory), ctx, userID)
 }
 
 // ClearDefaultShippingAddress mocks base method.
@@ -125,6 +197,21 @@ func (mr *MockQuerierMockRecorder) CreateCategory(ctx, arg interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateCategory", reflect.TypeOf((*MockQuerier)(nil).CreateCategory), ctx, arg)
 }
 
+// CreateComment mocks base method.
+func (m *MockQuerier) CreateComment(ctx context.Context, arg db.CreateCommentParams) (db.PostComment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateComment", ctx, arg)
+	ret0, _ := ret[0].(db.PostComment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateComment indicates an expected call of CreateComment.
+func (mr *MockQuerierMockRecorder) CreateComment(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateComment", reflect.TypeOf((*MockQuerier)(nil).CreateComment), ctx, arg)
+}
+
 // CreateEvent mocks base method.
 func (m *MockQuerier) CreateEvent(ctx context.Context, arg db.CreateEventParams) (db.Event, error) {
 	m.ctrl.T.Helper()
@@ -138,6 +225,21 @@ func (m *MockQuerier) CreateEvent(ctx context.Context, arg db.CreateEventParams)
 func (mr *MockQuerierMockRecorder) CreateEvent(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEvent", reflect.TypeOf((*MockQuerier)(nil).CreateEvent), ctx, arg)
+}
+
+// CreateMediaAsset mocks base method.
+func (m *MockQuerier) CreateMediaAsset(ctx context.Context, arg db.CreateMediaAssetParams) (db.MediaAsset, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateMediaAsset", ctx, arg)
+	ret0, _ := ret[0].(db.MediaAsset)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateMediaAsset indicates an expected call of CreateMediaAsset.
+func (mr *MockQuerierMockRecorder) CreateMediaAsset(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateMediaAsset", reflect.TypeOf((*MockQuerier)(nil).CreateMediaAsset), ctx, arg)
 }
 
 // CreateOrder mocks base method.
@@ -245,6 +347,21 @@ func (mr *MockQuerierMockRecorder) CreatePaymentWithOutTradeNo(ctx, arg interfac
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePaymentWithOutTradeNo", reflect.TypeOf((*MockQuerier)(nil).CreatePaymentWithOutTradeNo), ctx, arg)
 }
 
+// CreatePost mocks base method.
+func (m *MockQuerier) CreatePost(ctx context.Context, arg db.CreatePostParams) (db.Post, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreatePost", ctx, arg)
+	ret0, _ := ret[0].(db.Post)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreatePost indicates an expected call of CreatePost.
+func (mr *MockQuerierMockRecorder) CreatePost(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePost", reflect.TypeOf((*MockQuerier)(nil).CreatePost), ctx, arg)
+}
+
 // CreateProduct mocks base method.
 func (m *MockQuerier) CreateProduct(ctx context.Context, arg db.CreateProductParams) (db.Product, error) {
 	m.ctrl.T.Helper()
@@ -305,6 +422,20 @@ func (mr *MockQuerierMockRecorder) DecrProductStock(ctx, arg interface{}) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DecrProductStock", reflect.TypeOf((*MockQuerier)(nil).DecrProductStock), ctx, arg)
 }
 
+// DeleteBrowsingHistoryItem mocks base method.
+func (m *MockQuerier) DeleteBrowsingHistoryItem(ctx context.Context, arg db.DeleteBrowsingHistoryItemParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteBrowsingHistoryItem", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteBrowsingHistoryItem indicates an expected call of DeleteBrowsingHistoryItem.
+func (mr *MockQuerierMockRecorder) DeleteBrowsingHistoryItem(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteBrowsingHistoryItem", reflect.TypeOf((*MockQuerier)(nil).DeleteBrowsingHistoryItem), ctx, arg)
+}
+
 // DeleteCategory mocks base method.
 func (m *MockQuerier) DeleteCategory(ctx context.Context, id int64) error {
 	m.ctrl.T.Helper()
@@ -317,6 +448,21 @@ func (m *MockQuerier) DeleteCategory(ctx context.Context, id int64) error {
 func (mr *MockQuerierMockRecorder) DeleteCategory(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteCategory", reflect.TypeOf((*MockQuerier)(nil).DeleteCategory), ctx, id)
+}
+
+// DeleteComment mocks base method.
+func (m *MockQuerier) DeleteComment(ctx context.Context, arg db.DeleteCommentParams) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteComment", ctx, arg)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteComment indicates an expected call of DeleteComment.
+func (mr *MockQuerierMockRecorder) DeleteComment(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteComment", reflect.TypeOf((*MockQuerier)(nil).DeleteComment), ctx, arg)
 }
 
 // DeleteShippingAddress mocks base method.
@@ -345,6 +491,20 @@ func (m *MockQuerier) DeleteUser(ctx context.Context, id int64) error {
 func (mr *MockQuerierMockRecorder) DeleteUser(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUser", reflect.TypeOf((*MockQuerier)(nil).DeleteUser), ctx, id)
+}
+
+// DeleteUserComments mocks base method.
+func (m *MockQuerier) DeleteUserComments(ctx context.Context, authorID pgtype.Int8) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteUserComments", ctx, authorID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteUserComments indicates an expected call of DeleteUserComments.
+func (mr *MockQuerierMockRecorder) DeleteUserComments(ctx, authorID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserComments", reflect.TypeOf((*MockQuerier)(nil).DeleteUserComments), ctx, authorID)
 }
 
 // FailPaymentPrepay mocks base method.
@@ -422,6 +582,21 @@ func (mr *MockQuerierMockRecorder) GetCategory(ctx, id interface{}) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCategory", reflect.TypeOf((*MockQuerier)(nil).GetCategory), ctx, id)
 }
 
+// GetComment mocks base method.
+func (m *MockQuerier) GetComment(ctx context.Context, arg db.GetCommentParams) (db.PostComment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetComment", ctx, arg)
+	ret0, _ := ret[0].(db.PostComment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetComment indicates an expected call of GetComment.
+func (mr *MockQuerierMockRecorder) GetComment(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetComment", reflect.TypeOf((*MockQuerier)(nil).GetComment), ctx, arg)
+}
+
 // GetDefaultShippingAddress mocks base method.
 func (m *MockQuerier) GetDefaultShippingAddress(ctx context.Context, userID int64) (db.ShippingAddress, error) {
 	m.ctrl.T.Helper()
@@ -465,6 +640,36 @@ func (m *MockQuerier) GetLatestPaymentByOrder(ctx context.Context, orderID int64
 func (mr *MockQuerierMockRecorder) GetLatestPaymentByOrder(ctx, orderID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestPaymentByOrder", reflect.TypeOf((*MockQuerier)(nil).GetLatestPaymentByOrder), ctx, orderID)
+}
+
+// GetMediaAsset mocks base method.
+func (m *MockQuerier) GetMediaAsset(ctx context.Context, id int64) (db.MediaAsset, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMediaAsset", ctx, id)
+	ret0, _ := ret[0].(db.MediaAsset)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMediaAsset indicates an expected call of GetMediaAsset.
+func (mr *MockQuerierMockRecorder) GetMediaAsset(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMediaAsset", reflect.TypeOf((*MockQuerier)(nil).GetMediaAsset), ctx, id)
+}
+
+// GetMediaBinding mocks base method.
+func (m *MockQuerier) GetMediaBinding(ctx context.Context, mediaID int64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMediaBinding", ctx, mediaID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMediaBinding indicates an expected call of GetMediaBinding.
+func (mr *MockQuerierMockRecorder) GetMediaBinding(ctx, mediaID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMediaBinding", reflect.TypeOf((*MockQuerier)(nil).GetMediaBinding), ctx, mediaID)
 }
 
 // GetOrder mocks base method.
@@ -677,6 +882,36 @@ func (mr *MockQuerierMockRecorder) GetPaymentNotificationByPayload(ctx, arg inte
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPaymentNotificationByPayload", reflect.TypeOf((*MockQuerier)(nil).GetPaymentNotificationByPayload), ctx, arg)
 }
 
+// GetPostImages mocks base method.
+func (m *MockQuerier) GetPostImages(ctx context.Context, postIds []int64) ([]db.GetPostImagesRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPostImages", ctx, postIds)
+	ret0, _ := ret[0].([]db.GetPostImagesRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPostImages indicates an expected call of GetPostImages.
+func (mr *MockQuerierMockRecorder) GetPostImages(ctx, postIds interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPostImages", reflect.TypeOf((*MockQuerier)(nil).GetPostImages), ctx, postIds)
+}
+
+// GetPostStats mocks base method.
+func (m *MockQuerier) GetPostStats(ctx context.Context, arg db.GetPostStatsParams) ([]db.GetPostStatsRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPostStats", ctx, arg)
+	ret0, _ := ret[0].([]db.GetPostStatsRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPostStats indicates an expected call of GetPostStats.
+func (mr *MockQuerierMockRecorder) GetPostStats(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPostStats", reflect.TypeOf((*MockQuerier)(nil).GetPostStats), ctx, arg)
+}
+
 // GetProduct mocks base method.
 func (m *MockQuerier) GetProduct(ctx context.Context, id int64) (db.Product, error) {
 	m.ctrl.T.Helper()
@@ -752,6 +987,21 @@ func (mr *MockQuerierMockRecorder) GetUserByPhoneHash(ctx, phoneHash interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserByPhoneHash", reflect.TypeOf((*MockQuerier)(nil).GetUserByPhoneHash), ctx, phoneHash)
 }
 
+// GetVisiblePost mocks base method.
+func (m *MockQuerier) GetVisiblePost(ctx context.Context, id int64) (db.GetVisiblePostRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVisiblePost", ctx, id)
+	ret0, _ := ret[0].(db.GetVisiblePostRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVisiblePost indicates an expected call of GetVisiblePost.
+func (mr *MockQuerierMockRecorder) GetVisiblePost(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVisiblePost", reflect.TypeOf((*MockQuerier)(nil).GetVisiblePost), ctx, id)
+}
+
 // HasOngoingOrders mocks base method.
 func (m *MockQuerier) HasOngoingOrders(ctx context.Context, userID int64) (bool, error) {
 	m.ctrl.T.Helper()
@@ -767,6 +1017,20 @@ func (mr *MockQuerierMockRecorder) HasOngoingOrders(ctx, userID interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasOngoingOrders", reflect.TypeOf((*MockQuerier)(nil).HasOngoingOrders), ctx, userID)
 }
 
+// HideUserPosts mocks base method.
+func (m *MockQuerier) HideUserPosts(ctx context.Context, authorID pgtype.Int8) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HideUserPosts", ctx, authorID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// HideUserPosts indicates an expected call of HideUserPosts.
+func (mr *MockQuerierMockRecorder) HideUserPosts(ctx, authorID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HideUserPosts", reflect.TypeOf((*MockQuerier)(nil).HideUserPosts), ctx, authorID)
+}
+
 // IncrementProductStock mocks base method.
 func (m *MockQuerier) IncrementProductStock(ctx context.Context, arg db.IncrementProductStockParams) error {
 	m.ctrl.T.Helper()
@@ -779,6 +1043,50 @@ func (m *MockQuerier) IncrementProductStock(ctx context.Context, arg db.Incremen
 func (mr *MockQuerierMockRecorder) IncrementProductStock(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementProductStock", reflect.TypeOf((*MockQuerier)(nil).IncrementProductStock), ctx, arg)
+}
+
+// LikePost mocks base method.
+func (m *MockQuerier) LikePost(ctx context.Context, arg db.LikePostParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LikePost", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LikePost indicates an expected call of LikePost.
+func (mr *MockQuerierMockRecorder) LikePost(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LikePost", reflect.TypeOf((*MockQuerier)(nil).LikePost), ctx, arg)
+}
+
+// ListBrowsingHistory mocks base method.
+func (m *MockQuerier) ListBrowsingHistory(ctx context.Context, arg db.ListBrowsingHistoryParams) ([]db.ListBrowsingHistoryRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBrowsingHistory", ctx, arg)
+	ret0, _ := ret[0].([]db.ListBrowsingHistoryRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListBrowsingHistory indicates an expected call of ListBrowsingHistory.
+func (mr *MockQuerierMockRecorder) ListBrowsingHistory(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBrowsingHistory", reflect.TypeOf((*MockQuerier)(nil).ListBrowsingHistory), ctx, arg)
+}
+
+// ListCommentReplies mocks base method.
+func (m *MockQuerier) ListCommentReplies(ctx context.Context, arg db.ListCommentRepliesParams) ([]db.ListCommentRepliesRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListCommentReplies", ctx, arg)
+	ret0, _ := ret[0].([]db.ListCommentRepliesRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListCommentReplies indicates an expected call of ListCommentReplies.
+func (mr *MockQuerierMockRecorder) ListCommentReplies(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListCommentReplies", reflect.TypeOf((*MockQuerier)(nil).ListCommentReplies), ctx, arg)
 }
 
 // ListEvents mocks base method.
@@ -886,6 +1194,21 @@ func (mr *MockQuerierMockRecorder) ListPaymentsByOrderForUpdate(ctx, orderID int
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPaymentsByOrderForUpdate", reflect.TypeOf((*MockQuerier)(nil).ListPaymentsByOrderForUpdate), ctx, orderID)
 }
 
+// ListPosts mocks base method.
+func (m *MockQuerier) ListPosts(ctx context.Context, arg db.ListPostsParams) ([]db.ListPostsRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPosts", ctx, arg)
+	ret0, _ := ret[0].([]db.ListPostsRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPosts indicates an expected call of ListPosts.
+func (mr *MockQuerierMockRecorder) ListPosts(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPosts", reflect.TypeOf((*MockQuerier)(nil).ListPosts), ctx, arg)
+}
+
 // ListProducts mocks base method.
 func (m *MockQuerier) ListProducts(ctx context.Context, arg db.ListProductsParams) ([]db.Product, error) {
 	m.ctrl.T.Helper()
@@ -914,6 +1237,21 @@ func (m *MockQuerier) ListProductsByCategory(ctx context.Context, arg db.ListPro
 func (mr *MockQuerierMockRecorder) ListProductsByCategory(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListProductsByCategory", reflect.TypeOf((*MockQuerier)(nil).ListProductsByCategory), ctx, arg)
+}
+
+// ListRootComments mocks base method.
+func (m *MockQuerier) ListRootComments(ctx context.Context, arg db.ListRootCommentsParams) ([]db.ListRootCommentsRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRootComments", ctx, arg)
+	ret0, _ := ret[0].([]db.ListRootCommentsRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRootComments indicates an expected call of ListRootComments.
+func (mr *MockQuerierMockRecorder) ListRootComments(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRootComments", reflect.TypeOf((*MockQuerier)(nil).ListRootComments), ctx, arg)
 }
 
 // ListShippingAddressesByUser mocks base method.
@@ -1155,6 +1493,21 @@ func (mr *MockQuerierMockRecorder) OrderIsExpired(ctx, id interface{}) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OrderIsExpired", reflect.TypeOf((*MockQuerier)(nil).OrderIsExpired), ctx, id)
 }
 
+// ReadyMediaAsset mocks base method.
+func (m *MockQuerier) ReadyMediaAsset(ctx context.Context, arg db.ReadyMediaAssetParams) (db.MediaAsset, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadyMediaAsset", ctx, arg)
+	ret0, _ := ret[0].(db.MediaAsset)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadyMediaAsset indicates an expected call of ReadyMediaAsset.
+func (mr *MockQuerierMockRecorder) ReadyMediaAsset(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadyMediaAsset", reflect.TypeOf((*MockQuerier)(nil).ReadyMediaAsset), ctx, arg)
+}
+
 // RecordOrderRefundError mocks base method.
 func (m *MockQuerier) RecordOrderRefundError(ctx context.Context, arg db.RecordOrderRefundErrorParams) (db.OrderRefund, error) {
 	m.ctrl.T.Helper()
@@ -1213,6 +1566,36 @@ func (m *MockQuerier) RecordPaymentSuccess(ctx context.Context, arg db.RecordPay
 func (mr *MockQuerierMockRecorder) RecordPaymentSuccess(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordPaymentSuccess", reflect.TypeOf((*MockQuerier)(nil).RecordPaymentSuccess), ctx, arg)
+}
+
+// RecordProductView mocks base method.
+func (m *MockQuerier) RecordProductView(ctx context.Context, arg db.RecordProductViewParams) (db.ProductBrowsingHistory, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordProductView", ctx, arg)
+	ret0, _ := ret[0].(db.ProductBrowsingHistory)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RecordProductView indicates an expected call of RecordProductView.
+func (mr *MockQuerierMockRecorder) RecordProductView(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordProductView", reflect.TypeOf((*MockQuerier)(nil).RecordProductView), ctx, arg)
+}
+
+// ReleaseMediaIOLock mocks base method.
+func (m *MockQuerier) ReleaseMediaIOLock(ctx context.Context, dollar_1 int64) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReleaseMediaIOLock", ctx, dollar_1)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReleaseMediaIOLock indicates an expected call of ReleaseMediaIOLock.
+func (mr *MockQuerierMockRecorder) ReleaseMediaIOLock(ctx, dollar_1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReleaseMediaIOLock", reflect.TypeOf((*MockQuerier)(nil).ReleaseMediaIOLock), ctx, dollar_1)
 }
 
 // RequirePaymentReconciliation mocks base method.
@@ -1301,6 +1684,21 @@ func (mr *MockQuerierMockRecorder) SoftDeleteEvent(ctx, id interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SoftDeleteEvent", reflect.TypeOf((*MockQuerier)(nil).SoftDeleteEvent), ctx, id)
 }
 
+// SoftDeletePost mocks base method.
+func (m *MockQuerier) SoftDeletePost(ctx context.Context, arg db.SoftDeletePostParams) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SoftDeletePost", ctx, arg)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SoftDeletePost indicates an expected call of SoftDeletePost.
+func (mr *MockQuerierMockRecorder) SoftDeletePost(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SoftDeletePost", reflect.TypeOf((*MockQuerier)(nil).SoftDeletePost), ctx, arg)
+}
+
 // SoftDeleteProduct mocks base method.
 func (m *MockQuerier) SoftDeleteProduct(ctx context.Context, id int64) error {
 	m.ctrl.T.Helper()
@@ -1313,6 +1711,62 @@ func (m *MockQuerier) SoftDeleteProduct(ctx context.Context, id int64) error {
 func (mr *MockQuerierMockRecorder) SoftDeleteProduct(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SoftDeleteProduct", reflect.TypeOf((*MockQuerier)(nil).SoftDeleteProduct), ctx, id)
+}
+
+// TouchDeletingMedia mocks base method.
+func (m *MockQuerier) TouchDeletingMedia(ctx context.Context, id int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TouchDeletingMedia", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TouchDeletingMedia indicates an expected call of TouchDeletingMedia.
+func (mr *MockQuerierMockRecorder) TouchDeletingMedia(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TouchDeletingMedia", reflect.TypeOf((*MockQuerier)(nil).TouchDeletingMedia), ctx, id)
+}
+
+// UnbindPostImages mocks base method.
+func (m *MockQuerier) UnbindPostImages(ctx context.Context, postID int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UnbindPostImages", ctx, postID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UnbindPostImages indicates an expected call of UnbindPostImages.
+func (mr *MockQuerierMockRecorder) UnbindPostImages(ctx, postID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnbindPostImages", reflect.TypeOf((*MockQuerier)(nil).UnbindPostImages), ctx, postID)
+}
+
+// UnbindUserImages mocks base method.
+func (m *MockQuerier) UnbindUserImages(ctx context.Context, ownerID pgtype.Int8) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UnbindUserImages", ctx, ownerID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UnbindUserImages indicates an expected call of UnbindUserImages.
+func (mr *MockQuerierMockRecorder) UnbindUserImages(ctx, ownerID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnbindUserImages", reflect.TypeOf((*MockQuerier)(nil).UnbindUserImages), ctx, ownerID)
+}
+
+// UnlikePost mocks base method.
+func (m *MockQuerier) UnlikePost(ctx context.Context, arg db.UnlikePostParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UnlikePost", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UnlikePost indicates an expected call of UnlikePost.
+func (mr *MockQuerierMockRecorder) UnlikePost(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnlikePost", reflect.TypeOf((*MockQuerier)(nil).UnlikePost), ctx, arg)
 }
 
 // UpdateCategory mocks base method.
@@ -1372,6 +1826,21 @@ func (m *MockQuerier) UpdatePaymentRefunded(ctx context.Context, id int64) (int6
 func (mr *MockQuerierMockRecorder) UpdatePaymentRefunded(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePaymentRefunded", reflect.TypeOf((*MockQuerier)(nil).UpdatePaymentRefunded), ctx, id)
+}
+
+// UpdatePost mocks base method.
+func (m *MockQuerier) UpdatePost(ctx context.Context, arg db.UpdatePostParams) (db.Post, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdatePost", ctx, arg)
+	ret0, _ := ret[0].(db.Post)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdatePost indicates an expected call of UpdatePost.
+func (mr *MockQuerierMockRecorder) UpdatePost(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePost", reflect.TypeOf((*MockQuerier)(nil).UpdatePost), ctx, arg)
 }
 
 // UpdateProduct mocks base method.

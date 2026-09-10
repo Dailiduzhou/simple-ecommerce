@@ -65,10 +65,10 @@ func (u *callbackPaymentUsecase) SupportsNotificationProvider(provider string) b
 
 func newHTTPTestServer(uc biz.PaymentUsecase) http.Handler {
 	mall := service.NewMallService(nil, nil, nil, log.DefaultLogger)
-	user := service.NewUserService(nil, nil, nil, log.DefaultLogger)
+	user := service.NewUserService(nil, nil, nil, nil, log.DefaultLogger)
 	order := service.NewOrderService(nil)
 	payment := service.NewPaymentService(uc, nil, log.DefaultLogger)
-	return NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{}}, &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)}, nil, mall, user, order, payment, log.DefaultLogger)
+	return NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{}}, &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)}, nil, mall, user, order, payment, service.NewCommunityService(nil, nil), service.NewMediaService(nil), &communityLimiter{}, log.DefaultLogger)
 }
 
 func TestPaymentCallbackIsPublicAndUsesProviderAck(t *testing.T) {

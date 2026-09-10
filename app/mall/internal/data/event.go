@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
-	"fmt"
-	mrand "math/rand"
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
@@ -14,7 +12,6 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 )
 
 var _ biz.EventRepo = (*EventRepo)(nil)
@@ -38,7 +35,7 @@ func (r *EventRepo) CreateEvent(ctx context.Context, name string, status int16, 
 		return nil, err
 	}
 
-	e, err := r.data.q.CreateEvent(ctx, db.CreateEventParams{
+	e, err := r.data.DB(ctx).CreateEvent(ctx, db.CreateEventParams{
 		Name:        name,
 		Status:      status,
 		StartAt:     toPgTimestamp(startAt),
@@ -58,7 +55,7 @@ func (r *EventRepo) CreateEvent(ctx context.Context, name string, status int16, 
 }
 
 func (r *EventRepo) DeleteEvent(ctx context.Context, id int64) error {
-	if err := r.data.q.SoftDeleteEvent(ctx, id); err != nil {
+	if err := r.data.DB(ctx).SoftDeleteEvent(ctx, id); err != nil {
 		return err
 	}
 	r.deleteCache(ctx, eventCacheKey(id))
@@ -67,83 +64,36 @@ func (r *EventRepo) DeleteEvent(ctx context.Context, id int64) error {
 }
 
 func (r *EventRepo) GetEvent(ctx context.Context, id int64) (*biz.Event, error) {
-	cacheKey := eventCacheKey(id)
-
-	e, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return e, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get event cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:%s", cacheKey)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		e, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return e, nil
-		}
-		dbe, err := r.data.q.GetEvent(ctx, id)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.Event)(nil), nil
-			}
-			return (*biz.Event)(nil), err
-		}
-		bizEvent := toBizEvent(dbe)
-		r.setCache(ctx, cacheKey, &bizEvent)
-		return &bizEvent, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return val.(*biz.Event), nil
-}
-
-func (r *EventRepo) ListEvents(ctx context.Context, status int32, limit int32, offset int32) ([]biz.Event, error) {
-	generation := cacheGeneration(ctx, r.data.rdb, r.log, "event:list:gen")
-	cacheKey := eventListCacheKey(generation, status, limit, offset)
-
-	es, err := r.getListCache(ctx, cacheKey)
-	if err == nil {
-		return es, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get event list cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:%s", cacheKey)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		es, err := r.getListCache(ctx, cacheKey)
-		if err == nil {
-			return es, nil
-		}
-
-		var dbes []db.Event
-		if status > 0 {
-			dbes, err = r.data.q.ListEventsByStatus(ctx, db.ListEventsByStatusParams{
-				Status: int16(status),
-				Limit:  limit,
-				Offset: offset,
-			})
-		} else {
-			dbes, err = r.data.q.ListEvents(ctx, db.ListEventsParams{
-				Limit:  limit,
-				Offset: offset,
-			})
+	return cacheAside(ctx, r.data, r.log, redisKey("event", id), r.getCache, r.setCache, func() (*biz.Event, error) {
+		row, err := r.data.DB(ctx).GetEvent(ctx, id)
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
 		}
 		if err != nil {
 			return nil, err
 		}
-
-		bizEvents := toBizEvents(dbes)
-		r.setListCache(ctx, cacheKey, bizEvents)
-		return bizEvents, nil
+		value := toBizEvent(row)
+		return &value, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return val.([]biz.Event), nil
+}
+
+func (r *EventRepo) ListEvents(ctx context.Context, status int32, limit int32, offset int32) ([]biz.Event, error) {
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, "event:list:gen")
+	key := generationCacheKey(generation, eventListCacheKey(generation, status, limit, offset))
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Event, error) {
+		var rows []db.Event
+		var err error
+		q := r.data.DB(ctx)
+		if status > 0 {
+			rows, err = q.ListEventsByStatus(ctx, db.ListEventsByStatusParams{Status: int16(status), Limit: limit, Offset: offset})
+		} else {
+			rows, err = q.ListEvents(ctx, db.ListEventsParams{Limit: limit, Offset: offset})
+		}
+		if err != nil {
+			return nil, err
+		}
+		return toBizEvents(rows), nil
+	})
 }
 
 func (r *EventRepo) UpdateEvent(ctx context.Context, id int64, name string, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
@@ -156,7 +106,7 @@ func (r *EventRepo) UpdateEvent(ctx context.Context, id int64, name string, cove
 		return nil, err
 	}
 
-	e, err := r.data.q.UpdateEvent(ctx, db.UpdateEventParams{
+	e, err := r.data.DB(ctx).UpdateEvent(ctx, db.UpdateEventParams{
 		ID:          id,
 		Name:        name,
 		StartAt:     toPgTimestamp(startAt),
@@ -180,7 +130,7 @@ func (r *EventRepo) UpdateEvent(ctx context.Context, id int64, name string, cove
 }
 
 func (r *EventRepo) UpdateEventStatus(ctx context.Context, id int64, status int32) error {
-	if err := r.data.q.UpdateEventStatus(ctx, db.UpdateEventStatusParams{
+	if err := r.data.DB(ctx).UpdateEventStatus(ctx, db.UpdateEventStatusParams{
 		ID:     id,
 		Status: int16(status),
 	}); err != nil {
@@ -192,59 +142,23 @@ func (r *EventRepo) UpdateEventStatus(ctx context.Context, id int64, status int3
 }
 
 func (r *EventRepo) getCache(ctx context.Context, key string) (*biz.Event, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var e biz.Event
-	if err := json.Unmarshal(val, &e); err != nil {
-		return nil, err
-	}
-	return &e, nil
+	return readJSONCache[*biz.Event](ctx, r.data, key)
 }
 
 func (r *EventRepo) getListCache(ctx context.Context, key string) ([]biz.Event, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var es []biz.Event
-	if err := json.Unmarshal(val, &es); err != nil {
-		return nil, err
-	}
-	return es, nil
+	return readJSONCache[[]biz.Event](ctx, r.data, key)
 }
 
-func (r *EventRepo) setCache(ctx context.Context, key string, e *biz.Event) {
-	afterCommit(ctx, func() {
-		data, err := json.Marshal(e)
-		if err == nil {
-			err = r.data.rdb.Set(ctx, key, data, eventCacheExpiration()).Err()
-		}
-		if err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write event cache failed", "key", key, "error", err)
-		}
-	})
+func (r *EventRepo) setCache(ctx context.Context, key string, value *biz.Event) {
+	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
-func (r *EventRepo) setListCache(ctx context.Context, key string, es []biz.Event) {
-	afterCommit(ctx, func() {
-		data, err := json.Marshal(es)
-		if err == nil {
-			err = r.data.rdb.Set(ctx, key, data, eventCacheExpiration()).Err()
-		}
-		if err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write event list cache failed", "key", key, "error", err)
-		}
-	})
+func (r *EventRepo) setListCache(ctx context.Context, key string, value []biz.Event) {
+	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *EventRepo) deleteCache(ctx context.Context, key string) {
-	afterCommit(ctx, func() {
-		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-			r.log.WithContext(ctx).Errorf("delete cache %s", key)
-		}
-	})
+	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
 func (r *EventRepo) deleteListCaches(ctx context.Context) {
@@ -271,10 +185,7 @@ func eventListCacheKey(generationOrStatus int64, values ...int32) string {
 	return redisKey("event", "list", generation, "all", limit, offset)
 }
 
-func eventCacheExpiration() time.Duration {
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	return jitter + 10*time.Minute
-}
+func eventCacheExpiration() time.Duration { return cacheTTL() }
 
 func toPgTimestamp(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: !t.IsZero()}

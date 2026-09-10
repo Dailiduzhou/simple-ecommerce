@@ -11,6 +11,8 @@ message Bootstrap {
   Auth auth = 3;
   Snowflake snowflake = 4;
   Payment payment = 5;
+  Community community = 6;
+  Storage storage = 7;
 }
 
 message Snowflake {
@@ -89,4 +91,30 @@ message CheckPayJob {
   int32 max_polls = 2;
   // 每次轮询间隔。
   google.protobuf.Duration poll_interval = 3;
+}
+
+message Community {
+  int32 history_retention_days = 1;
+  int32 cleanup_batch_size = 2;
+  int32 maintenance_workers = 3;
+  int32 media_workers = 4;
+  int32 posts_per_minute = 5;
+  int32 comments_per_minute = 6;
+  int32 uploads_per_minute = 7;
+  int32 interactions_per_minute = 8;
+  bool rate_limit_fail_open = 9;
+}
+message Storage {
+  string provider = 1;
+  string endpoint = 2;
+  string public_endpoint = 3;
+  string bucket = 4;
+  string region = 5;
+  string access_key_env = 6;
+  string secret_key_env = 7;
+  bool use_tls = 8;
+  bool public_use_tls = 9;
+  int32 upload_ttl_seconds = 10;
+  int32 read_ttl_seconds = 11;
+  int32 unused_retention_hours = 12;
 }
