@@ -33,21 +33,23 @@ type Event struct {
 }
 
 type MediaAsset struct {
-	ID              int64
-	OwnerID         pgtype.Int8
-	Provider        string
-	BucketName      string
-	ObjectKey       string
-	StagingKey      string
-	ContentType     string
-	SizeBytes       int64
-	Width           int32
-	Height          int32
-	Status          string
-	ExpiresAt       pgtype.Timestamptz
-	UploadExpiresAt pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
+	ID               int64
+	OwnerID          pgtype.Int8
+	Provider         string
+	BucketName       string
+	ObjectKey        string
+	StagingKey       string
+	StagingCleaned   bool
+	StagingCleanupAt pgtype.Timestamptz
+	ContentType      string
+	SizeBytes        int64
+	Width            int32
+	Height           int32
+	Status           string
+	ExpiresAt        pgtype.Timestamptz
+	UploadExpiresAt  pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
 }
 
 type Order struct {

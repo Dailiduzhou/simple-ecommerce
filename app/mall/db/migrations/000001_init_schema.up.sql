@@ -321,6 +321,8 @@ CREATE TABLE media_assets (
   bucket_name TEXT NOT NULL,
   object_key TEXT NOT NULL,
   staging_key TEXT NOT NULL,
+  staging_cleaned BOOLEAN NOT NULL DEFAULT false,
+  staging_cleanup_at TIMESTAMPTZ,
   content_type TEXT NOT NULL,
   size_bytes BIGINT NOT NULL CHECK (size_bytes BETWEEN 1 AND 10485760),
   width INTEGER NOT NULL DEFAULT 0 CHECK (width BETWEEN 0 AND 10000),
@@ -334,6 +336,8 @@ CREATE TABLE media_assets (
 );
 CREATE INDEX idx_media_expiry ON media_assets(status, expires_at, id);
 CREATE INDEX idx_media_stale_deleting ON media_assets(updated_at, id) WHERE status='deleting';
+CREATE INDEX idx_media_staging_cleanup ON media_assets(upload_expires_at, id) WHERE status='ready' AND NOT staging_cleaned AND staging_cleanup_at IS NULL;
+CREATE INDEX idx_media_staging_retry ON media_assets(staging_cleanup_at, id) WHERE status='ready' AND NOT staging_cleaned AND staging_cleanup_at IS NOT NULL;
 CREATE INDEX idx_media_owner ON media_assets(owner_id);
 
 CREATE TABLE post_images (

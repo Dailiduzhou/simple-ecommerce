@@ -38,28 +38,30 @@ func (q *Queries) GetMediaBinding(ctx context.Context, mediaID int64) (int64, er
 }
 
 const getPostImages = `-- name: GetPostImages :many
-SELECT i.post_id,i.sort_order,m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM post_images i JOIN media_assets m ON m.id=i.media_id
+SELECT i.post_id,i.sort_order,m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM post_images i JOIN media_assets m ON m.id=i.media_id
 JOIN posts p ON p.id=i.post_id WHERE i.post_id=ANY($1::bigint[]) AND p.deleted_at IS NULL AND m.status='ready' ORDER BY i.post_id,i.sort_order
 `
 
 type GetPostImagesRow struct {
-	PostID          int64
-	SortOrder       int32
-	ID              int64
-	OwnerID         pgtype.Int8
-	Provider        string
-	BucketName      string
-	ObjectKey       string
-	StagingKey      string
-	ContentType     string
-	SizeBytes       int64
-	Width           int32
-	Height          int32
-	Status          string
-	ExpiresAt       pgtype.Timestamptz
-	UploadExpiresAt pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
+	PostID           int64
+	SortOrder        int32
+	ID               int64
+	OwnerID          pgtype.Int8
+	Provider         string
+	BucketName       string
+	ObjectKey        string
+	StagingKey       string
+	StagingCleaned   bool
+	StagingCleanupAt pgtype.Timestamptz
+	ContentType      string
+	SizeBytes        int64
+	Width            int32
+	Height           int32
+	Status           string
+	ExpiresAt        pgtype.Timestamptz
+	UploadExpiresAt  pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
 }
 
 func (q *Queries) GetPostImages(ctx context.Context, postIds []int64) ([]GetPostImagesRow, error) {
@@ -80,6 +82,8 @@ func (q *Queries) GetPostImages(ctx context.Context, postIds []int64) ([]GetPost
 			&i.BucketName,
 			&i.ObjectKey,
 			&i.StagingKey,
+			&i.StagingCleaned,
+			&i.StagingCleanupAt,
 			&i.ContentType,
 			&i.SizeBytes,
 			&i.Width,
@@ -101,7 +105,7 @@ func (q *Queries) GetPostImages(ctx context.Context, postIds []int64) ([]GetPost
 }
 
 const lockPostImageAssets = `-- name: LockPostImageAssets :many
-SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM media_assets m JOIN post_images i ON i.media_id=m.id WHERE i.post_id=$1 ORDER BY m.id FOR UPDATE OF m
+SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM media_assets m JOIN post_images i ON i.media_id=m.id WHERE i.post_id=$1 ORDER BY m.id FOR UPDATE OF m
 `
 
 func (q *Queries) LockPostImageAssets(ctx context.Context, postID int64) ([]MediaAsset, error) {
@@ -120,6 +124,8 @@ func (q *Queries) LockPostImageAssets(ctx context.Context, postID int64) ([]Medi
 			&i.BucketName,
 			&i.ObjectKey,
 			&i.StagingKey,
+			&i.StagingCleaned,
+			&i.StagingCleanupAt,
 			&i.ContentType,
 			&i.SizeBytes,
 			&i.Width,

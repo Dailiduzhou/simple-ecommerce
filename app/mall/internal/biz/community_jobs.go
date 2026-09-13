@@ -19,7 +19,8 @@ type MediaSweepArgs struct{}
 func (MediaSweepArgs) Kind() string { return MediaSweepKind }
 
 type MediaDeleteArgs struct {
-	MediaID int64 `json:"media_id"`
+	MediaID     int64 `json:"media_id"`
+	StagingOnly bool  `json:"staging_only,omitempty"`
 }
 
 func (MediaDeleteArgs) Kind() string { return MediaDeleteKind }

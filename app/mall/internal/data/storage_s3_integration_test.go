@@ -180,3 +180,44 @@ func TestCommunityIntegrationMinIOPolicyCannotChangeKeyOrOutliveExpiry(t *testin
 	time.Sleep(time.Until(g.ExpiresAt) + 150*time.Millisecond)
 	require.GreaterOrEqual(t, postImageForm(t, g, []byte{0}), 400)
 }
+
+func TestCommunityIntegrationMinIOBoundStagingCleanup(t *testing.T) {
+	storage := integrationS3(t)
+	f := newCommunityFixture(t)
+	policy, e := NewMediaPolicy(nil)
+	require.NoError(t, e)
+	uc := biz.NewMediaUsecase(f.media, storage, policy)
+	var imageBytes bytes.Buffer
+	require.NoError(t, png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 3, 4))))
+	b := imageBytes.Bytes()
+	m, grant, e := uc.CreateUpload(f.ctx, f.actor, "image/png", int64(len(b)))
+	require.NoError(t, e)
+	f.mediaIDs = append(f.mediaIDs, m.ID)
+	t.Cleanup(func() {
+		for _, key := range []string{m.Object.Key, m.StagingKey} {
+			require.NoError(t, storage.client.RemoveObject(f.ctx, m.Object.Bucket, key, minio.RemoveObjectOptions{}))
+		}
+	})
+	require.Less(t, postImageForm(t, grant, b), 300)
+	_, e = uc.Complete(f.ctx, f.actor, m.ID)
+	require.NoError(t, e)
+	post := f.post(t, f.actor, m.ID)
+	require.ErrorIs(t, uc.RemoveStaging(f.ctx, m.ID), biz.ErrMediaCleanupNotDue)
+	// Time travel only the cleanup grace. The test does not reuse the live grant.
+	_, e = f.pool.Exec(f.ctx, `UPDATE media_assets SET upload_expires_at=clock_timestamp()-interval '2 minutes' WHERE id=$1`, m.ID)
+	require.NoError(t, e)
+	_, e = uc.Sweep(f.ctx)
+	require.NoError(t, e)
+	require.NoError(t, uc.RemoveStaging(f.ctx, m.ID))
+	require.NoError(t, uc.RemoveStaging(f.ctx, m.ID))
+	_, e = storage.client.StatObject(f.ctx, m.Object.Bucket, m.StagingKey, minio.StatObjectOptions{})
+	require.Equal(t, "NoSuchKey", minio.ToErrorResponse(e).Code)
+	final, e := storage.ReadObject(f.ctx, m.Object, biz.MaxImageBytes)
+	require.NoError(t, e)
+	require.Equal(t, b, final)
+	retained, e := f.posts.Get(f.ctx, f.other.ID, post.ID)
+	require.NoError(t, e)
+	require.Len(t, retained.Images, 1)
+	_, e = uc.Get(f.ctx, f.other, m.ID)
+	require.NoError(t, e)
+}

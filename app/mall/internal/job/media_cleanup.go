@@ -37,7 +37,12 @@ func (w *MediaDeleteWorker) Work(ctx context.Context, j *river.Job[biz.MediaDele
 		observability.CommunityEvent(ctx, "media_delete", "invalid_args")
 		return river.JobCancel(errors.New("invalid media ID"))
 	}
-	e := w.uc.Remove(ctx, j.Args.MediaID)
+	var e error
+	if j.Args.StagingOnly {
+		e = w.uc.RemoveStaging(ctx, j.Args.MediaID)
+	} else {
+		e = w.uc.Remove(ctx, j.Args.MediaID)
+	}
 	if errors.Is(e, biz.ErrMediaCleanupNotDue) {
 		return river.JobSnooze(time.Minute)
 	}

@@ -56,3 +56,28 @@ SELECT pg_advisory_unlock(1279476052,hashint8($1::bigint))::boolean AS unlocked;
 
 -- name: TouchDeletingMedia :exec
 UPDATE media_assets SET updated_at=clock_timestamp() WHERE id=$1 AND status='deleting';
+
+-- name: LockStagingCleanupMedia :many
+-- First scheduling and retries have separate budgets. Touch the scheduled time
+-- in the enqueue transaction, so failing/queued jobs cannot starve later rows.
+-- Expired unbound resources are handled by full cleanup, not a second job.
+WITH fresh AS (
+ SELECT m.* FROM media_assets m WHERE m.status='ready' AND NOT m.staging_cleaned
+ AND m.staging_cleanup_at IS NULL
+ AND m.upload_expires_at <= clock_timestamp()-interval '1 minute'
+ AND (m.expires_at>clock_timestamp() OR EXISTS(SELECT 1 FROM post_images i WHERE i.media_id=m.id))
+ ORDER BY m.upload_expires_at,m.id LIMIT $1 FOR UPDATE SKIP LOCKED
+), stale AS (
+ SELECT m.* FROM media_assets m WHERE m.status='ready' AND NOT m.staging_cleaned
+ AND m.staging_cleanup_at <= clock_timestamp()-interval '10 minutes'
+ AND m.upload_expires_at <= clock_timestamp()-interval '1 minute'
+ AND (m.expires_at>clock_timestamp() OR EXISTS(SELECT 1 FROM post_images i WHERE i.media_id=m.id))
+ ORDER BY m.staging_cleanup_at,m.id LIMIT $1 FOR UPDATE SKIP LOCKED
+)
+SELECT * FROM fresh UNION ALL SELECT * FROM stale;
+
+-- name: TouchMediaStagingCleanup :exec
+UPDATE media_assets SET staging_cleanup_at=clock_timestamp() WHERE id=$1;
+
+-- name: MarkMediaStagingCleaned :exec
+UPDATE media_assets SET staging_cleaned=true WHERE id=$1;

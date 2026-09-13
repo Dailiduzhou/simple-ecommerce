@@ -119,10 +119,15 @@ type Querier interface {
 	LockOrderIdempotency(ctx context.Context, arg LockOrderIdempotencyParams) error
 	LockPost(ctx context.Context, id int64) (Post, error)
 	LockPostImageAssets(ctx context.Context, postID int64) ([]MediaAsset, error)
+	// First scheduling and retries have separate budgets. Touch the scheduled time
+	// in the enqueue transaction, so failing/queued jobs cannot starve later rows.
+	// Expired unbound resources are handled by full cleanup, not a second job.
+	LockStagingCleanupMedia(ctx context.Context, limit int32) ([]LockStagingCleanupMediaRow, error)
 	LockUserCommunityPosts(ctx context.Context, authorID pgtype.Int8) ([]Post, error)
 	LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]MediaAsset, error)
 	MarkMediaDeleted(ctx context.Context, id int64) error
 	MarkMediaDeleting(ctx context.Context, id int64) (int64, error)
+	MarkMediaStagingCleaned(ctx context.Context, id int64) error
 	MarkOrderCancelled(ctx context.Context, id int64) (Order, error)
 	MarkOrderCancelling(ctx context.Context, id int64) (Order, error)
 	MarkOrderPaid(ctx context.Context, id int64) (Order, error)
@@ -154,6 +159,7 @@ type Querier interface {
 	SoftDeletePost(ctx context.Context, arg SoftDeletePostParams) (int64, error)
 	SoftDeleteProduct(ctx context.Context, id int64) error
 	TouchDeletingMedia(ctx context.Context, id int64) error
+	TouchMediaStagingCleanup(ctx context.Context, id int64) error
 	UnbindPostImages(ctx context.Context, postID int64) error
 	UnbindUserImages(ctx context.Context, ownerID pgtype.Int8) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
