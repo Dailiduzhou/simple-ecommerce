@@ -108,8 +108,19 @@ type Querier interface {
 	ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error)
 	ListTopCategories(ctx context.Context) ([]Category, error)
 	ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error)
+	LockCommunityUser(ctx context.Context, id int64) (User, error)
+	// Each class gets its own bounded budget: arbitrarily many failed deletions
+	// cannot consume the slots needed to transition fresh expirations.
+	LockExpiredMedia(ctx context.Context, limit int32) ([]LockExpiredMediaRow, error)
+	LockMediaAssets(ctx context.Context, ids []int64) ([]MediaAsset, error)
 	// Lock the request identity BEFORE reading stock or checking for a replay.
 	LockOrderIdempotency(ctx context.Context, arg LockOrderIdempotencyParams) error
+	LockPost(ctx context.Context, id int64) (Post, error)
+	LockPostImageAssets(ctx context.Context, postID int64) ([]MediaAsset, error)
+	LockUserCommunityPosts(ctx context.Context, authorID pgtype.Int8) ([]Post, error)
+	LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]MediaAsset, error)
+	MarkMediaDeleted(ctx context.Context, id int64) error
+	MarkMediaDeleting(ctx context.Context, id int64) (int64, error)
 	MarkOrderCancelled(ctx context.Context, id int64) (Order, error)
 	MarkOrderCancelling(ctx context.Context, id int64) (Order, error)
 	MarkOrderPaid(ctx context.Context, id int64) (Order, error)
