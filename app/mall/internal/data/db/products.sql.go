@@ -12,6 +12,28 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const countProducts = `-- name: CountProducts :one
+SELECT count(*) FROM products WHERE deleted_at IS NULL
+`
+
+func (q *Queries) CountProducts(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countProducts)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countProductsByCategory = `-- name: CountProductsByCategory :one
+SELECT count(*) FROM products WHERE category_id=$1 AND status=1 AND deleted_at IS NULL
+`
+
+func (q *Queries) CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countProductsByCategory, categoryID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createProduct = `-- name: CreateProduct :one
 INSERT INTO products (category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)

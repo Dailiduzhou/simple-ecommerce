@@ -169,6 +169,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 	if created {
 		r.invalidateUserLists(ctx, result.UserID)
 		for _, item := range result.Items {
+			bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", item.ProductID, "gen"))
 			r.deleteKey(ctx, redisKey("product", item.ProductID))
 			bumpCacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
 			bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", item.CategoryID, "gen"))

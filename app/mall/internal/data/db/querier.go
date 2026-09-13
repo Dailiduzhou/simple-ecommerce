@@ -26,6 +26,8 @@ type Querier interface {
 	ClearDefaultShippingAddress(ctx context.Context, userID int64) error
 	ConfirmPaymentRefunded(ctx context.Context, id int64) (Payment, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
+	CountProducts(ctx context.Context) (int64, error)
+	CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateComment(ctx context.Context, arg CreateCommentParams) (PostComment, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)

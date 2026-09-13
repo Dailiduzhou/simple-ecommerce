@@ -43,3 +43,9 @@ WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: SoftDeleteProduct :exec
 UPDATE products SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1;
+
+-- name: CountProducts :one
+SELECT count(*) FROM products WHERE deleted_at IS NULL;
+
+-- name: CountProductsByCategory :one
+SELECT count(*) FROM products WHERE category_id=$1 AND status=1 AND deleted_at IS NULL;
