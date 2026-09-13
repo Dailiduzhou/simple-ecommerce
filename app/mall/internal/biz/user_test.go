@@ -176,3 +176,7 @@ func TestUserUsecase_GetUpdateDelete(t *testing.T) {
 	err = uc.DeleteUser(context.Background(), 3)
 	assert.ErrorIs(t, err, deleteErr)
 }
+
+func (r *fakeUserRepo) GetAuthUser(ctx context.Context, id int64) (*User, error) {
+	return r.GetUserByID(ctx, id)
+}

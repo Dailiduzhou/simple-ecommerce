@@ -38,3 +38,10 @@ func (r *AuthRepo) IsBlacklisted(ctx context.Context, tokenID string) (bool, err
 	}
 	return exists > 0, nil
 }
+
+func (r *AuthRepo) ConsumeRefresh(ctx context.Context, tokenID string, expiration time.Duration) (bool, error) {
+	if expiration <= 0 {
+		return false, nil
+	}
+	return r.rdb.SetNX(ctx, redisKey("jwt", "blacklist", tokenID), "1", expiration).Result()
+}

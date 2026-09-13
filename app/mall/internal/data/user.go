@@ -59,6 +59,17 @@ func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEnc
 	return bizUser, nil
 }
 
+func (r *UserRepo) GetAuthUser(ctx context.Context, id int64) (*biz.User, error) {
+	row, err := r.data.DB(ctx).GetUserByID(ctx, id)
+	if stderrors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toBizUser(row), nil
+}
+
 func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error) {
 	return cacheAside(ctx, r.data, r.log, redisKey("user", id), r.getCache, r.setCache, func() (*biz.User, error) {
 		row, err := r.data.DB(ctx).GetUserByID(ctx, id)

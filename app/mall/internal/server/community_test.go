@@ -226,3 +226,7 @@ func TestCommunityGRPCAuthenticationAndErrorMappings(t *testing.T) {
 	_, e = pc.DeleteComment(auth(2, "admin", "live"), &communityv1.DeleteCommentRequest{PostId: 1, Id: 1})
 	require.NoError(t, e)
 }
+
+func (*communityAuth) ValidateAccount(ctx context.Context, claims *biz.EcommerceClaims) error {
+	return nil
+}
