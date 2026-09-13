@@ -1329,6 +1329,51 @@ func (mr *MockQuerierMockRecorder) ListUpcomingEvents(ctx, arg interface{}) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUpcomingEvents", reflect.TypeOf((*MockQuerier)(nil).ListUpcomingEvents), ctx, arg)
 }
 
+// LockCommunityUser mocks base method.
+func (m *MockQuerier) LockCommunityUser(ctx context.Context, id int64) (db.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockCommunityUser", ctx, id)
+	ret0, _ := ret[0].(db.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockCommunityUser indicates an expected call of LockCommunityUser.
+func (mr *MockQuerierMockRecorder) LockCommunityUser(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockCommunityUser", reflect.TypeOf((*MockQuerier)(nil).LockCommunityUser), ctx, id)
+}
+
+// LockExpiredMedia mocks base method.
+func (m *MockQuerier) LockExpiredMedia(ctx context.Context, limit int32) ([]db.LockExpiredMediaRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockExpiredMedia", ctx, limit)
+	ret0, _ := ret[0].([]db.LockExpiredMediaRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockExpiredMedia indicates an expected call of LockExpiredMedia.
+func (mr *MockQuerierMockRecorder) LockExpiredMedia(ctx, limit interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockExpiredMedia", reflect.TypeOf((*MockQuerier)(nil).LockExpiredMedia), ctx, limit)
+}
+
+// LockMediaAssets mocks base method.
+func (m *MockQuerier) LockMediaAssets(ctx context.Context, ids []int64) ([]db.MediaAsset, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockMediaAssets", ctx, ids)
+	ret0, _ := ret[0].([]db.MediaAsset)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockMediaAssets indicates an expected call of LockMediaAssets.
+func (mr *MockQuerierMockRecorder) LockMediaAssets(ctx, ids interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockMediaAssets", reflect.TypeOf((*MockQuerier)(nil).LockMediaAssets), ctx, ids)
+}
+
 // LockOrderIdempotency mocks base method.
 func (m *MockQuerier) LockOrderIdempotency(ctx context.Context, arg db.LockOrderIdempotencyParams) error {
 	m.ctrl.T.Helper()
@@ -1341,6 +1386,95 @@ func (m *MockQuerier) LockOrderIdempotency(ctx context.Context, arg db.LockOrder
 func (mr *MockQuerierMockRecorder) LockOrderIdempotency(ctx, arg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockOrderIdempotency", reflect.TypeOf((*MockQuerier)(nil).LockOrderIdempotency), ctx, arg)
+}
+
+// LockPost mocks base method.
+func (m *MockQuerier) LockPost(ctx context.Context, id int64) (db.Post, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockPost", ctx, id)
+	ret0, _ := ret[0].(db.Post)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockPost indicates an expected call of LockPost.
+func (mr *MockQuerierMockRecorder) LockPost(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockPost", reflect.TypeOf((*MockQuerier)(nil).LockPost), ctx, id)
+}
+
+// LockPostImageAssets mocks base method.
+func (m *MockQuerier) LockPostImageAssets(ctx context.Context, postID int64) ([]db.MediaAsset, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockPostImageAssets", ctx, postID)
+	ret0, _ := ret[0].([]db.MediaAsset)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockPostImageAssets indicates an expected call of LockPostImageAssets.
+func (mr *MockQuerierMockRecorder) LockPostImageAssets(ctx, postID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockPostImageAssets", reflect.TypeOf((*MockQuerier)(nil).LockPostImageAssets), ctx, postID)
+}
+
+// LockUserCommunityPosts mocks base method.
+func (m *MockQuerier) LockUserCommunityPosts(ctx context.Context, authorID pgtype.Int8) ([]db.Post, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockUserCommunityPosts", ctx, authorID)
+	ret0, _ := ret[0].([]db.Post)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockUserCommunityPosts indicates an expected call of LockUserCommunityPosts.
+func (mr *MockQuerierMockRecorder) LockUserCommunityPosts(ctx, authorID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockUserCommunityPosts", reflect.TypeOf((*MockQuerier)(nil).LockUserCommunityPosts), ctx, authorID)
+}
+
+// LockUserMedia mocks base method.
+func (m *MockQuerier) LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]db.MediaAsset, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockUserMedia", ctx, ownerID)
+	ret0, _ := ret[0].([]db.MediaAsset)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockUserMedia indicates an expected call of LockUserMedia.
+func (mr *MockQuerierMockRecorder) LockUserMedia(ctx, ownerID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockUserMedia", reflect.TypeOf((*MockQuerier)(nil).LockUserMedia), ctx, ownerID)
+}
+
+// MarkMediaDeleted mocks base method.
+func (m *MockQuerier) MarkMediaDeleted(ctx context.Context, id int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkMediaDeleted", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkMediaDeleted indicates an expected call of MarkMediaDeleted.
+func (mr *MockQuerierMockRecorder) MarkMediaDeleted(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkMediaDeleted", reflect.TypeOf((*MockQuerier)(nil).MarkMediaDeleted), ctx, id)
+}
+
+// MarkMediaDeleting mocks base method.
+func (m *MockQuerier) MarkMediaDeleting(ctx context.Context, id int64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkMediaDeleting", ctx, id)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MarkMediaDeleting indicates an expected call of MarkMediaDeleting.
+func (mr *MockQuerierMockRecorder) MarkMediaDeleting(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkMediaDeleting", reflect.TypeOf((*MockQuerier)(nil).MarkMediaDeleting), ctx, id)
 }
 
 // MarkOrderCancelled mocks base method.
