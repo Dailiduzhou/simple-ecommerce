@@ -187,3 +187,11 @@ func TestUserService_DeleteUser_Error(t *testing.T) {
 	assert.Nil(t, got)
 	assert.Equal(t, int32(500), kratoserrors.FromError(err).Code)
 }
+
+func (r *fakeUserRepo) GetAuthUser(ctx context.Context, id int64) (*biz.User, error) {
+	return r.GetUserByID(ctx, id)
+}
+
+func (r *fakeAuthRepo) ConsumeRefresh(ctx context.Context, id string, ttl time.Duration) (bool, error) {
+	return true, nil
+}
