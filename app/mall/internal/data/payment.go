@@ -665,7 +665,7 @@ func (r *PaymentRepo) CreatePayment(ctx context.Context, args biz.CreatePaymentA
 		return nil, err
 	}
 	payment := toBizPayment(row)
-	r.cachePayment(ctx, payment)
+	r.invalidatePaymentMutation(ctx)
 	return payment, nil
 }
 
@@ -693,7 +693,6 @@ func (r *PaymentRepo) ClaimPaymentPrepay(ctx context.Context, id int64, token st
 	}
 	payment := toBizPayment(row)
 	r.invalidatePayment(ctx, row)
-	r.cachePayment(ctx, payment)
 	return payment, nil
 }
 
@@ -719,7 +718,6 @@ func (r *PaymentRepo) FinalizePaymentPrepay(ctx context.Context, id int64, token
 	}
 	payment := toBizPayment(row)
 	r.invalidatePayment(ctx, row)
-	r.cachePayment(ctx, payment)
 	return payment, nil
 }
 
@@ -1104,6 +1102,20 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 				return biz.ErrPaymentStateConflict
 			}
 		case biz.TradeStateClosed, biz.TradeStateRevoked:
+			if payment.Status == biz.PaymentStatusRefunded {
+				if result.TransactionID == "" || result.TransactionID != payment.ThirdPartyTxID.String {
+					return biz.ErrPaymentStateConflict
+				}
+				refund, err := q.GetOrderRefundByPaymentID(ctx, pgtype.Int8{Int64: payment.ID, Valid: true})
+				if err != nil {
+					return err
+				}
+				if refund.Status != biz.PaymentRefundStatusSuccess || refund.OrderID != payment.OrderID || refund.UserID != payment.UserID || refund.TotalAmountMinor != payment.AmountMinor || refund.RefundAmountMinor != payment.AmountMinor || refund.Currency != payment.Currency {
+					return biz.ErrPaymentStateConflict
+				}
+				return markNotificationProcessed(ctx, q, args.NotificationID)
+			}
+
 			provider, fromStatus, event = method.Provider, payment.Status, "provider_closed"
 			if payment.Status == biz.PaymentStatusClosed {
 				return markNotificationProcessed(ctx, q, args.NotificationID)
@@ -1482,18 +1494,18 @@ func paymentCacheKeysFor(payment db.Payment, gen int64) []string {
 	}
 	return keys
 }
-func (r *PaymentRepo) cachePayment(ctx context.Context, payment *biz.PaymentDO) {
-	gen := r.paymentGeneration(ctx)
-	if gen < 0 {
-		return
-	}
-	for _, key := range paymentCacheKeysFor(db.Payment{ID: payment.ID, OrderID: payment.OrderID, PayChannel: payment.Method, OutTradeNo: payment.OutTradeNo}, gen) {
-		r.setCache(ctx, key, payment)
-	}
+func (r *PaymentRepo) invalidatePaymentMutation(ctx context.Context) {
+	// Mutation snapshots must never be published under a generation read later.
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("payment", "gen"))
 }
 func (r *PaymentRepo) invalidatePayment(ctx context.Context, payment db.Payment) {
-	keys := paymentCacheKeysFor(payment, r.paymentGeneration(ctx))
 	afterCommit(ctx, func() {
+		if r.data.rdb == nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		keys := paymentCacheKeysFor(payment, r.paymentGeneration(ctx))
 		if err := r.data.rdb.Unlink(ctx, keys...).Err(); err != nil {
 			r.log.WithContext(ctx).Errorw("msg", "delete payment cache failed", "error", err)
 		}
