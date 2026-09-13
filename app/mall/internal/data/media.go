@@ -160,6 +160,23 @@ func (r *MediaRepo) markDeleting(ctx context.Context, m db.MediaAsset) error {
 
 func (r *MediaRepo) Sweep(ctx context.Context) (n int, e error) {
 	e = r.tx.InTx(ctx, func(ctx context.Context) error {
+		staging, e := r.data.DB(ctx).LockStagingCleanupMedia(ctx, r.policy.CleanupBatch)
+		if e != nil {
+			return e
+		}
+		for _, m := range staging {
+			if r.jobs == nil || r.jobs.client == nil || r.data.GetPgTx(ctx) == nil {
+				return fmt.Errorf("staging cleanup requires transactional River client")
+			}
+			_, e = r.jobs.client.InsertTx(ctx, r.data.GetPgTx(ctx), biz.MediaDeleteArgs{MediaID: m.ID, StagingOnly: true}, &river.InsertOpts{Queue: "media", MaxAttempts: 10, UniqueOpts: river.UniqueOpts{ByArgs: true}})
+			if e != nil {
+				return e
+			}
+			if e = r.data.DB(ctx).TouchMediaStagingCleanup(ctx, m.ID); e != nil {
+				return e
+			}
+			n++
+		}
 		rows, e := r.data.DB(ctx).LockExpiredMedia(ctx, r.policy.CleanupBatch)
 		if e != nil {
 			return e
@@ -214,4 +231,33 @@ func (r *MediaRepo) Remove(ctx context.Context, id int64, remove func(context.Co
 		}
 		return q.MarkMediaDeleted(ctx, id)
 	})
+}
+
+// Share completion's I/O lock. Only ready rows qualify: pending uploads can
+// still complete, and deleting rows are handled by full-resource cleanup.
+func (r *MediaRepo) RemoveStaging(ctx context.Context, id int64, remove func(context.Context, biz.MediaAsset) error) error {
+	return r.withIOLock(ctx, id, func(ctx context.Context, q db.Querier) error {
+		return removeMediaStaging(ctx, q, id, remove)
+	})
+}
+
+// Caller holds the media I/O lock until deletion and acknowledgement finish.
+func removeMediaStaging(ctx context.Context, q db.Querier, id int64, remove func(context.Context, biz.MediaAsset) error) error {
+	m, e := q.GetMediaAsset(ctx, id)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return nil
+	}
+	if e != nil {
+		return e
+	}
+	if m.StagingCleaned || m.Status != "ready" {
+		return nil
+	}
+	if time.Now().Before(m.UploadExpiresAt.Time.Add(time.Minute)) {
+		return biz.ErrMediaCleanupNotDue
+	}
+	if e := remove(ctx, *toMedia(m)); e != nil {
+		return e
+	}
+	return q.MarkMediaStagingCleaned(ctx, id)
 }

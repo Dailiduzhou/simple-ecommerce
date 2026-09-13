@@ -1448,6 +1448,21 @@ func (mr *MockQuerierMockRecorder) LockPostImageAssets(ctx, postID interface{}) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockPostImageAssets", reflect.TypeOf((*MockQuerier)(nil).LockPostImageAssets), ctx, postID)
 }
 
+// LockStagingCleanupMedia mocks base method.
+func (m *MockQuerier) LockStagingCleanupMedia(ctx context.Context, limit int32) ([]db.LockStagingCleanupMediaRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockStagingCleanupMedia", ctx, limit)
+	ret0, _ := ret[0].([]db.LockStagingCleanupMediaRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockStagingCleanupMedia indicates an expected call of LockStagingCleanupMedia.
+func (mr *MockQuerierMockRecorder) LockStagingCleanupMedia(ctx, limit interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockStagingCleanupMedia", reflect.TypeOf((*MockQuerier)(nil).LockStagingCleanupMedia), ctx, limit)
+}
+
 // LockUserCommunityPosts mocks base method.
 func (m *MockQuerier) LockUserCommunityPosts(ctx context.Context, authorID pgtype.Int8) ([]db.Post, error) {
 	m.ctrl.T.Helper()
@@ -1505,6 +1520,20 @@ func (m *MockQuerier) MarkMediaDeleting(ctx context.Context, id int64) (int64, e
 func (mr *MockQuerierMockRecorder) MarkMediaDeleting(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkMediaDeleting", reflect.TypeOf((*MockQuerier)(nil).MarkMediaDeleting), ctx, id)
+}
+
+// MarkMediaStagingCleaned mocks base method.
+func (m *MockQuerier) MarkMediaStagingCleaned(ctx context.Context, id int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkMediaStagingCleaned", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkMediaStagingCleaned indicates an expected call of MarkMediaStagingCleaned.
+func (mr *MockQuerierMockRecorder) MarkMediaStagingCleaned(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkMediaStagingCleaned", reflect.TypeOf((*MockQuerier)(nil).MarkMediaStagingCleaned), ctx, id)
 }
 
 // MarkOrderCancelled mocks base method.
@@ -1889,6 +1918,20 @@ func (m *MockQuerier) TouchDeletingMedia(ctx context.Context, id int64) error {
 func (mr *MockQuerierMockRecorder) TouchDeletingMedia(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TouchDeletingMedia", reflect.TypeOf((*MockQuerier)(nil).TouchDeletingMedia), ctx, id)
+}
+
+// TouchMediaStagingCleanup mocks base method.
+func (m *MockQuerier) TouchMediaStagingCleanup(ctx context.Context, id int64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TouchMediaStagingCleanup", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TouchMediaStagingCleanup indicates an expected call of TouchMediaStagingCleanup.
+func (mr *MockQuerierMockRecorder) TouchMediaStagingCleanup(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TouchMediaStagingCleanup", reflect.TypeOf((*MockQuerier)(nil).TouchMediaStagingCleanup), ctx, id)
 }
 
 // UnbindPostImages mocks base method.

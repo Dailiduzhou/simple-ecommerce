@@ -34,6 +34,7 @@ type VerifiedImage struct {
 	Width, Height int32
 }
 type MediaRepo interface {
+	RemoveStaging(context.Context, int64, func(context.Context, MediaAsset) error) error
 	Create(context.Context, int64, MediaAsset) (*MediaAsset, error)
 	Complete(context.Context, int64, int64, func(context.Context, MediaAsset) (VerifiedImage, error)) (*MediaAsset, error)
 	Read(context.Context, int64, int64) (*MediaAsset, error)
@@ -157,6 +158,13 @@ func (u *MediaUsecase) Remove(ctx context.Context, id int64) error {
 		if e := u.storage.DeleteObject(ctx, m.Object); e != nil {
 			return e
 		}
+		m.Object.Key = m.StagingKey
+		return u.storage.DeleteObject(ctx, m.Object)
+	})
+}
+
+func (u *MediaUsecase) RemoveStaging(ctx context.Context, id int64) error {
+	return u.repo.RemoveStaging(ctx, id, func(ctx context.Context, m MediaAsset) error {
 		m.Object.Key = m.StagingKey
 		return u.storage.DeleteObject(ctx, m.Object)
 	})
