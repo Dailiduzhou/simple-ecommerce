@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-kratos/kratos/v2/log"
 )
@@ -11,12 +12,20 @@ import (
 // that changed product stock through the order (creation deducts stock,
 // cancellation restores it), outside the transaction.
 func invalidateProductCachesForOrder(ctx context.Context, data *Data, logger *log.Helper, orderID int64) {
+	// The stock transaction has committed. Client cancellation must not prevent
+	// loading the invalidation targets or deleting their cached snapshots.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if data.rdb == nil {
+		return
+	}
 	rows, err := data.q.ListOrderItems(ctx, orderID)
 	if err != nil {
 		logger.WithContext(ctx).Errorw("msg", "load order items for product cache invalidation failed", "order_id", orderID, "error", err)
 		return
 	}
 	for _, row := range rows {
+		bumpCacheGeneration(ctx, data.rdb, logger, redisKey("product", row.ProductID, "gen"))
 		if err := data.rdb.Unlink(ctx, redisKey("product", row.ProductID)).Err(); err != nil {
 			logger.WithContext(ctx).Errorw("msg", "delete product cache failed", "product_id", row.ProductID, "error", err)
 		}

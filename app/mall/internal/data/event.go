@@ -77,15 +77,15 @@ func (r *EventRepo) GetEvent(ctx context.Context, id int64) (*biz.Event, error) 
 	})
 }
 
-func (r *EventRepo) ListEvents(ctx context.Context, status int32, limit int32, offset int32) ([]biz.Event, error) {
+func (r *EventRepo) ListEvents(ctx context.Context, status *int32, limit int32, offset int32) ([]biz.Event, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, "event:list:gen")
-	key := generationCacheKey(generation, eventListCacheKey(generation, status, limit, offset))
+	key := generationCacheKey(generation, eventListPresenceCacheKey(generation, status, limit, offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Event, error) {
 		var rows []db.Event
 		var err error
 		q := r.data.DB(ctx)
-		if status > 0 {
-			rows, err = q.ListEventsByStatus(ctx, db.ListEventsByStatusParams{Status: int16(status), Limit: limit, Offset: offset})
+		if status != nil {
+			rows, err = q.ListEventsByStatus(ctx, db.ListEventsByStatusParams{Status: int16(*status), Limit: limit, Offset: offset})
 		} else {
 			rows, err = q.ListEvents(ctx, db.ListEventsParams{Limit: limit, Offset: offset})
 		}
@@ -213,4 +213,11 @@ func toBizEvents(es []db.Event) []biz.Event {
 		result[i] = toBizEvent(e)
 	}
 	return result
+}
+
+func eventListPresenceCacheKey(generation int64, status *int32, limit, offset int32) string {
+	if status == nil {
+		return redisKey("event", "list", generation, "all", limit, offset)
+	}
+	return redisKey("event", "list", generation, "status", *status, limit, offset)
 }

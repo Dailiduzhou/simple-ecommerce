@@ -2,12 +2,23 @@ package biz
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/shopspring/decimal"
 )
+
+// ProductPriceMinor validates before converting: decimal.IntPart truncates
+// overflowing big integers instead of reporting an error.
+func ProductPriceMinor(price decimal.Decimal) (int64, error) {
+	minor := price.Shift(2)
+	if minor.IsNegative() || !minor.Equal(minor.Truncate(0)) || minor.GreaterThan(decimal.NewFromInt(math.MaxInt64)) {
+		return 0, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must be non-negative, use at most two decimal places and fit int64 minor units")
+	}
+	return minor.IntPart(), nil
+}
 
 type Product struct {
 	ID          int64
@@ -34,6 +45,7 @@ type MediaInfo struct {
 }
 
 type ProductRepo interface {
+	CountProducts(ctx context.Context, categoryID int64) (int64, error)
 	CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	DecrProductStock(ctx context.Context, ID int64, amount int32) (int32, error)
 	GetProduct(ctx context.Context, id int64) (*Product, error)
@@ -68,8 +80,8 @@ func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, n
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
 		return nil, err
 	}
-	if price.IsNegative() || !price.Shift(2).Equal(price.Shift(2).Truncate(0)) {
-		return nil, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must use at most two decimal places")
+	if _, err := ProductPriceMinor(price); err != nil {
+		return nil, err
 	}
 	discount, err := decimal.NewFromString(discountStr)
 	if err != nil {
@@ -86,12 +98,16 @@ func (uc *productUsecase) GetProduct(ctx context.Context, id int64) (*Product, e
 
 func (uc *productUsecase) ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error) {
 	offset := (page - 1) * pageSize
+	total, err := uc.repo.CountProducts(ctx, categoryID)
+	if err != nil {
+		return nil, 0, err
+	}
 	if categoryID > 0 {
 		ps, err := uc.repo.ListProductsByCategory(ctx, categoryID, pageSize, offset)
-		return ps, pageSize, err
+		return ps, int32(total), err
 	}
 	ps, err := uc.repo.ListProducts(ctx, pageSize, offset)
-	return ps, pageSize, err
+	return ps, int32(total), err
 }
 
 func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, stock int32, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
@@ -100,8 +116,8 @@ func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryI
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
 		return nil, err
 	}
-	if price.IsNegative() || !price.Shift(2).Equal(price.Shift(2).Truncate(0)) {
-		return nil, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must use at most two decimal places")
+	if _, err := ProductPriceMinor(price); err != nil {
+		return nil, err
 	}
 	discount, err := decimal.NewFromString(discountStr)
 	if err != nil {
@@ -203,7 +219,7 @@ type EventRepo interface {
 	CreateEvent(ctx context.Context, name string, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
 	DeleteEvent(ctx context.Context, id int64) error
 	GetEvent(ctx context.Context, id int64) (*Event, error)
-	ListEvents(ctx context.Context, status int32, limit int32, offset int32) ([]Event, error)
+	ListEvents(ctx context.Context, status *int32, limit int32, offset int32) ([]Event, error)
 	UpdateEvent(ctx context.Context, id int64, name string, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
 	UpdateEventStatus(ctx context.Context, id int64, status int32) error
 }
@@ -211,7 +227,7 @@ type EventRepo interface {
 type EventUsecase interface {
 	CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
 	GetEvent(ctx context.Context, id int64) (*Event, error)
-	ListEvents(ctx context.Context, status int32, pageSize int32, page int32) ([]Event, error)
+	ListEvents(ctx context.Context, status *int32, pageSize int32, page int32) ([]Event, error)
 	UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
 	UpdateEventStatus(ctx context.Context, id int64, status int32) error
 	DeleteEvent(ctx context.Context, id int64) error
@@ -235,7 +251,7 @@ func (uc *eventUsecase) GetEvent(ctx context.Context, id int64) (*Event, error) 
 	return uc.repo.GetEvent(ctx, id)
 }
 
-func (uc *eventUsecase) ListEvents(ctx context.Context, status int32, pageSize int32, page int32) ([]Event, error) {
+func (uc *eventUsecase) ListEvents(ctx context.Context, status *int32, pageSize int32, page int32) ([]Event, error) {
 	offset := (page - 1) * pageSize
 	return uc.repo.ListEvents(ctx, status, pageSize, offset)
 }

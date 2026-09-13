@@ -138,12 +138,12 @@ func TestEventRepo_ListEvents_CacheHit(t *testing.T) {
 	d := newTestData(t, mockQ, mr)
 	repo := NewEventRepo(d, log.DefaultLogger)
 
-	es1, err := repo.ListEvents(context.Background(), 0, 10, 20)
+	es1, err := repo.ListEvents(context.Background(), nil, 10, 20)
 	require.NoError(t, err)
 	require.Len(t, es1, 1)
 	assert.Equal(t, int64(3), es1[0].ID)
 
-	es2, err := repo.ListEvents(context.Background(), 0, 10, 20)
+	es2, err := repo.ListEvents(context.Background(), nil, 10, 20)
 	require.NoError(t, err)
 	require.Len(t, es2, 1)
 	assert.Equal(t, int64(3), es2[0].ID)
@@ -162,12 +162,12 @@ func TestEventRepo_ListEventsByStatus_CacheHit(t *testing.T) {
 	d := newTestData(t, mockQ, mr)
 	repo := NewEventRepo(d, log.DefaultLogger)
 
-	es1, err := repo.ListEvents(context.Background(), 1, 10, 0)
+	es1, err := repo.ListEvents(context.Background(), ptrStatus(1), 10, 0)
 	require.NoError(t, err)
 	require.Len(t, es1, 1)
 	assert.Equal(t, int64(4), es1[0].ID)
 
-	es2, err := repo.ListEvents(context.Background(), 1, 10, 0)
+	es2, err := repo.ListEvents(context.Background(), ptrStatus(1), 10, 0)
 	require.NoError(t, err)
 	require.Len(t, es2, 1)
 	assert.Equal(t, int64(4), es2[0].ID)
@@ -345,3 +345,5 @@ func TestEventRepo_DeleteEvent_ClearsCaches(t *testing.T) {
 	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
 	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
 }
+
+func ptrStatus(v int32) *int32 { return &v }

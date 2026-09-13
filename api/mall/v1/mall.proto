@@ -236,7 +236,7 @@ message GetEventRequest {
 }
 
 message ListEventsRequest {
-  int32 status    = 1; // 0-未开始 1-进行中，不传则全部
+  optional int32 status    = 1; // 0-未开始 1-进行中，不传则全部
   int32 page_size = 2;
   int32 page      = 3;
 }

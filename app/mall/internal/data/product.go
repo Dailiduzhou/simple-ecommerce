@@ -26,6 +26,10 @@ func NewProductRepo(data *Data, logger log.Logger) *ProductRepo {
 }
 
 func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+	minor, err := biz.ProductPriceMinor(price)
+	if err != nil {
+		return nil, err
+	}
 	coverImageJSON, err := json.Marshal(coverImage)
 	if err != nil {
 		return nil, err
@@ -37,7 +41,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 	p, err := querierFromContext(ctx, r.data.q).CreateProduct(ctx, db.CreateProductParams{
 		CategoryID:  categoryID,
 		Name:        name,
-		PriceMinor:  decimalToMinor(price),
+		PriceMinor:  minor,
 		Discount:    discount,
 		Stock:       stock,
 		Status:      status,
@@ -49,7 +53,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 		return nil, err
 	}
 	bizProduct := toBizProduct(p)
-	r.setCache(ctx, redisKey("product", bizProduct.ID), &bizProduct)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", bizProduct.ID, "gen"))
 	r.invalidateProductLists(ctx, 0, categoryID)
 	return &bizProduct, nil
 }
@@ -68,12 +72,15 @@ func (r *ProductRepo) DecrProductStock(ctx context.Context, ID int64, amount int
 		return 0, err
 	}
 	r.deleteCache(ctx, redisKey("product", ID))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", ID, "gen"))
 	r.invalidateProductLists(ctx, product.CategoryID)
 	return stock, nil
 }
 
 func (r *ProductRepo) GetProduct(ctx context.Context, id int64) (*biz.Product, error) {
-	return cacheAside(ctx, r.data, r.log, redisKey("product", id), r.getCache, r.setCache, func() (*biz.Product, error) {
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
+	key := generationCacheKey(generation, redisKey("product", id, "g", generation))
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.Product, error) {
 		row, err := r.data.DB(ctx).GetProduct(ctx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -121,11 +128,16 @@ func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
 		return err
 	}
 	r.deleteCache(ctx, redisKey("product", id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
 	r.invalidateProductLists(ctx, existing.CategoryID)
 	return nil
 }
 
 func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+	minor, err := biz.ProductPriceMinor(price)
+	if err != nil {
+		return nil, err
+	}
 	coverImageJSON, err := json.Marshal(coverImage)
 	if err != nil {
 		return nil, err
@@ -143,7 +155,7 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		ID:          id,
 		CategoryID:  categoryID,
 		Name:        name,
-		PriceMinor:  decimalToMinor(price),
+		PriceMinor:  minor,
 		Discount:    discount,
 		Stock:       stock,
 		CoverImage:  coverImageJSON,
@@ -155,7 +167,7 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 	}
 	bizProduct := toBizProduct(p)
 	r.deleteCache(ctx, redisKey("product", id))
-	r.setCache(ctx, redisKey("product", id), &bizProduct)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
 	r.invalidateProductLists(ctx, existing.CategoryID, categoryID)
 	return &bizProduct, nil
 }
@@ -174,6 +186,7 @@ func (r *ProductRepo) UpdateProductStatus(ctx context.Context, ID int64, status 
 		return err
 	}
 	r.deleteCache(ctx, redisKey("product", ID))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", ID, "gen"))
 	r.invalidateProductLists(ctx, existing.CategoryID)
 	return nil
 }
@@ -231,10 +244,6 @@ func toBizProduct(p db.Product) biz.Product {
 	}
 }
 
-func decimalToMinor(value decimal.Decimal) int64 {
-	return value.Shift(2).IntPart()
-}
-
 func toBizProducts(ps []db.Product) []biz.Product {
 	result := make([]biz.Product, len(ps))
 	for i, p := range ps {
@@ -259,4 +268,11 @@ func parseMediaInfoJSON(data []byte) []biz.MediaInfo {
 		return nil
 	}
 	return result
+}
+
+func (r *ProductRepo) CountProducts(ctx context.Context, categoryID int64) (int64, error) {
+	if categoryID > 0 {
+		return r.data.DB(ctx).CountProductsByCategory(ctx, categoryID)
+	}
+	return r.data.DB(ctx).CountProducts(ctx)
 }

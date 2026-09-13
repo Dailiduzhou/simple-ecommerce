@@ -35,6 +35,7 @@ func TestDetailNegativeCachesExpire(t *testing.T) {
 					require.Nil(t, value)
 				}
 			case "product":
+				key = redisKey("product", 42, "g", 0)
 				q.EXPECT().GetProduct(gomock.Any(), int64(42)).Return(db.Product{}, pgx.ErrNoRows).Times(2)
 				r := NewProductRepo(d, log.DefaultLogger)
 				read = func() {
@@ -90,9 +91,9 @@ func TestCacheFallbackAndDatabaseErrors(t *testing.T) {
 			ctx := context.Background()
 			switch failure {
 			case "invalid_json":
-				require.NoError(t, mr.Set("product:42", "{broken"))
+				require.NoError(t, mr.Set("product:42:g:0", "{broken"))
 			case "wrong_type":
-				_, err := mr.Lpush("product:42", "wrong")
+				_, err := mr.Lpush("product:42:g:0", "wrong")
 				require.NoError(t, err)
 			case "unavailable":
 				require.NoError(t, d.rdb.Close())
@@ -111,7 +112,7 @@ func TestCacheFallbackAndDatabaseErrors(t *testing.T) {
 				if failure == "database_error" {
 					require.ErrorIs(t, err, pgx.ErrTxClosed)
 					require.Nil(t, value)
-					require.False(t, mr.Exists("product:42"))
+					require.False(t, mr.Exists("product:42:g:0"))
 				} else {
 					require.NoError(t, err)
 					require.Equal(t, "database", value.Name)
@@ -155,7 +156,7 @@ func TestGenerationFailureNeverReadsOrWritesGenerationZero(t *testing.T) {
 				q.EXPECT().ListEvents(gomock.Any(), db.ListEventsParams{Limit: 10}).Return([]db.Event{}, nil).Times(2)
 				r := NewEventRepo(d, log.DefaultLogger)
 				read = func() {
-					rows, err := r.ListEvents(ctx, 0, 10, 0)
+					rows, err := r.ListEvents(ctx, nil, 10, 0)
 					require.NoError(t, err)
 					require.Empty(t, rows)
 				}
