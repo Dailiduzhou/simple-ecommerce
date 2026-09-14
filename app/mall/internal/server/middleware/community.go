@@ -34,10 +34,15 @@ func CommunityWriteLimit(l biz.WriteLimiter) middleware.Middleware {
 					return nil, errors.BadRequest("REQUEST_TOO_LARGE", "request exceeds 64 KiB")
 				}
 			}
-			c, ok := biz.ClaimsFromContext(ctx)
-			if !ok || c == nil {
-				return next(ctx, req)
-			} // public login/register keep their existing path
+			// Login/register/refresh live in the JWT whitelist: they reach this
+			// middleware without claims and must still be throttled, so a missing
+			// identity no longer bypasses the limiter. Auth categories stay
+			// fail-closed like the blacklist chain: without Redis the endpoint
+			// is unavailable rather than unthrottled.
+			var actorID int64
+			if c, ok := biz.ClaimsFromContext(ctx); ok && c != nil {
+				actorID = c.UserID
+			}
 			// Reads never touch the limiter: a missing or failing Redis must not take
 			// down history, feed or detail endpoints.
 			if biz.RateLimitCategory(op) != "" {
@@ -55,7 +60,7 @@ func CommunityWriteLimit(l biz.WriteLimiter) middleware.Middleware {
 				}
 				// Forwarded headers are untrusted. A proxy must enforce its own IP quota or
 				// supply a separately configured trusted-proxy policy, not arbitrary XFF.
-				if e := l.Allow(ctx, c.UserID, address, op); e != nil {
+				if e := l.Allow(ctx, actorID, address, op); e != nil {
 					return nil, e
 				}
 			}

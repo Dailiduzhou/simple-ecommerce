@@ -22,6 +22,11 @@ auth:
   refresh_token_secret: "${AUTH_REFRESH_TOKEN_SECRET}"
   refresh_token_timeout: 86400s
   phone_secret: "${AUTH_PHONE_SECRET}"
+  # Per-minute budget for anonymous login/register/refresh requests (IP dimension).
+  auth_requests_per_minute: 10
+  # Failed-login attempts before a temporary per-account lockout.
+  login_max_attempts: 5
+  login_lockout_duration: 900s
 
 snowflake:
   node_id: "${SNOWFLAKE_NODE_ID}"

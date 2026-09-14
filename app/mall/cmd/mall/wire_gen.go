@@ -64,7 +64,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	eventUsecase := biz.NewEventUsecase(eventRepo, logger)
 	wellnessUsecase := biz.NewWellnessUsecase()
 	mallService := service.NewMallService(productUsecase, categoryUsecase, eventUsecase, wellnessUsecase, logger)
-	userUsecase := biz.NewUserUsecase(communityUserRepo, auth, logger)
+	userUsecase := biz.NewUserUsecase(communityUserRepo, authRepo, auth, logger)
 	shippingAddressRepo := data.NewShippingAddressRepo(dataData, txManager, logger)
 	shippingAddressUsecase := biz.NewShippingAddressUsecase(shippingAddressRepo, auth, logger)
 	browsingHistoryRepo := data.NewBrowsingHistoryRepo(dataData, txManager, communityPolicy)
@@ -113,7 +113,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	communityService := service.NewCommunityService(postUsecase, commentUsecase)
 	mediaUsecase := biz.NewMediaUsecase(mediaRepo, objectStorage, mediaPolicy)
 	mediaService := service.NewMediaService(mediaUsecase)
-	writeLimiter, err := data.NewWriteLimiter(client, community)
+	writeLimiter, err := data.NewWriteLimiter(client, community, auth)
 	if err != nil {
 		cleanup2()
 		cleanup()

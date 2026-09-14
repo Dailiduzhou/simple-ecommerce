@@ -43,6 +43,14 @@ func (r *reviewAuthStore) IsBlacklisted(_ context.Context, id string) (bool, err
 	defer r.mu.Unlock()
 	return r.used[id], nil
 }
+
+func (r *reviewAuthStore) LoginFailures(_ context.Context, _ string) (int64, error) { return 0, nil }
+
+func (r *reviewAuthStore) RecordLoginFailure(_ context.Context, _ string, _ time.Duration) error {
+	return nil
+}
+
+func (r *reviewAuthStore) ClearLoginFailures(_ context.Context, _ string) error { return nil }
 func TestReviewRefreshAndAccountRevocation(t *testing.T) {
 	ctx := context.Background()
 	user := &biz.User{ID: 1, Role: "admin"}
@@ -50,7 +58,7 @@ func TestReviewRefreshAndAccountRevocation(t *testing.T) {
 	store := &reviewAuthStore{used: map[string]bool{}}
 	ac := testAuthConf()
 	auth := biz.NewAuthUsecase(repo, store, ac)
-	s := NewUserService(auth, biz.NewUserUsecase(repo, ac, log.DefaultLogger), nil, nil, log.DefaultLogger)
+	s := NewUserService(auth, biz.NewUserUsecase(repo, store, ac, log.DefaultLogger), nil, nil, log.DefaultLogger)
 	access, e := auth.GenerateAccessToken(1, "admin")
 	require.NoError(t, e)
 	refresh, e := auth.GenerateRefreshToken(1, "admin")

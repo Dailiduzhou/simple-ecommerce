@@ -28,6 +28,7 @@ const OperationUserGetUser = "/api.user.v1.User/GetUser"
 const OperationUserListBrowsingHistory = "/api.user.v1.User/ListBrowsingHistory"
 const OperationUserListShippingAddresses = "/api.user.v1.User/ListShippingAddresses"
 const OperationUserLogin = "/api.user.v1.User/Login"
+const OperationUserLogout = "/api.user.v1.User/Logout"
 const OperationUserRecordProductView = "/api.user.v1.User/RecordProductView"
 const OperationUserRefreshToken = "/api.user.v1.User/RefreshToken"
 const OperationUserRegister = "/api.user.v1.User/Register"
@@ -46,6 +47,7 @@ type UserHTTPServer interface {
 	ListBrowsingHistory(context.Context, *ListBrowsingHistoryRequest) (*ListBrowsingHistoryReply, error)
 	ListShippingAddresses(context.Context, *ListShippingAddressesRequest) (*ListShippingAddressesReply, error)
 	Login(context.Context, *LoginRequest) (*LoginReply, error)
+	Logout(context.Context, *LogoutRequest) (*LogoutReply, error)
 	RecordProductView(context.Context, *RecordProductViewRequest) (*RecordProductViewReply, error)
 	RefreshToken(context.Context, *RefreshRequest) (*RefreshReply, error)
 	Register(context.Context, *RegisterRequest) (*RegisterReply, error)
@@ -71,6 +73,7 @@ func RegisterUserHTTPServer(s *http.Server, srv UserHTTPServer) {
 	r.POST("/v1/users/{user_id}/addresses/{id}/default", _User_SetDefaultShippingAddress0_HTTP_Handler(srv))
 	r.DELETE("/v1/users/{user_id}/addresses/{id}", _User_DeleteShippingAddress0_HTTP_Handler(srv))
 	r.POST("/v1/users/refresh", _User_RefreshToken0_HTTP_Handler(srv))
+	r.POST("/v1/users/logout", _User_Logout0_HTTP_Handler(srv))
 }
 
 func _User_RecordProductView0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context) error {
@@ -409,6 +412,28 @@ func _User_RefreshToken0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context)
 	}
 }
 
+func _User_Logout0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in LogoutRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationUserLogout)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.Logout(ctx, req.(*LogoutRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*LogoutReply)
+		return ctx.Result(200, reply)
+	}
+}
+
 type UserHTTPClient interface {
 	ClearBrowsingHistory(ctx context.Context, req *ClearBrowsingHistoryRequest, opts ...http.CallOption) (rsp *ClearBrowsingHistoryReply, err error)
 	// CreateShippingAddress Shipping Addresses
@@ -420,6 +445,7 @@ type UserHTTPClient interface {
 	ListBrowsingHistory(ctx context.Context, req *ListBrowsingHistoryRequest, opts ...http.CallOption) (rsp *ListBrowsingHistoryReply, err error)
 	ListShippingAddresses(ctx context.Context, req *ListShippingAddressesRequest, opts ...http.CallOption) (rsp *ListShippingAddressesReply, err error)
 	Login(ctx context.Context, req *LoginRequest, opts ...http.CallOption) (rsp *LoginReply, err error)
+	Logout(ctx context.Context, req *LogoutRequest, opts ...http.CallOption) (rsp *LogoutReply, err error)
 	RecordProductView(ctx context.Context, req *RecordProductViewRequest, opts ...http.CallOption) (rsp *RecordProductViewReply, err error)
 	RefreshToken(ctx context.Context, req *RefreshRequest, opts ...http.CallOption) (rsp *RefreshReply, err error)
 	Register(ctx context.Context, req *RegisterRequest, opts ...http.CallOption) (rsp *RegisterReply, err error)
@@ -546,6 +572,19 @@ func (c *UserHTTPClientImpl) Login(ctx context.Context, in *LoginRequest, opts .
 	pattern := "/v1/users/login"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationUserLogin))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *UserHTTPClientImpl) Logout(ctx context.Context, in *LogoutRequest, opts ...http.CallOption) (*LogoutReply, error) {
+	var out LogoutReply
+	pattern := "/v1/users/logout"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationUserLogout))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
