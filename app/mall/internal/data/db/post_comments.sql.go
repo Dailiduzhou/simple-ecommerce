@@ -12,7 +12,9 @@ import (
 )
 
 const createComment = `-- name: CreateComment :one
-INSERT INTO post_comments(post_id,author_id,root_comment_id,reply_to_comment_id,content) VALUES($1,$2,$3,$4,$5) RETURNING id, post_id, author_id, root_comment_id, reply_to_comment_id, content, created_at, deleted_at
+INSERT INTO post_comments (post_id, author_id, root_comment_id, reply_to_comment_id, content)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, post_id, author_id, root_comment_id, reply_to_comment_id, content, created_at, deleted_at
 `
 
 type CreateCommentParams struct {
@@ -46,8 +48,13 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (P
 }
 
 const deleteComment = `-- name: DeleteComment :execrows
-UPDATE post_comments SET content='',deleted_at=clock_timestamp()
-WHERE post_id=$1 AND id=$2 AND deleted_at IS NULL AND (author_id=$3 OR $4::boolean)
+UPDATE post_comments
+SET content = '',
+    deleted_at = clock_timestamp()
+WHERE post_id = $1
+  AND id = $2
+  AND deleted_at IS NULL
+  AND (author_id = $3 OR $4::boolean)
 `
 
 type DeleteCommentParams struct {
@@ -71,7 +78,11 @@ func (q *Queries) DeleteComment(ctx context.Context, arg DeleteCommentParams) (i
 }
 
 const deleteUserComments = `-- name: DeleteUserComments :exec
-UPDATE post_comments SET content='',deleted_at=clock_timestamp() WHERE author_id=$1 AND deleted_at IS NULL
+UPDATE post_comments
+SET content = '',
+    deleted_at = clock_timestamp()
+WHERE author_id = $1
+  AND deleted_at IS NULL
 `
 
 func (q *Queries) DeleteUserComments(ctx context.Context, authorID pgtype.Int8) error {
@@ -80,7 +91,10 @@ func (q *Queries) DeleteUserComments(ctx context.Context, authorID pgtype.Int8) 
 }
 
 const getComment = `-- name: GetComment :one
-SELECT id, post_id, author_id, root_comment_id, reply_to_comment_id, content, created_at, deleted_at FROM post_comments WHERE post_id=$1 AND id=$2
+SELECT id, post_id, author_id, root_comment_id, reply_to_comment_id, content, created_at, deleted_at
+FROM post_comments
+WHERE post_id = $1
+  AND id = $2
 `
 
 type GetCommentParams struct {
@@ -105,14 +119,35 @@ func (q *Queries) GetComment(ctx context.Context, arg GetCommentParams) (PostCom
 }
 
 const listCommentReplies = `-- name: ListCommentReplies :many
-SELECT c.id, c.post_id, c.author_id, c.root_comment_id, c.reply_to_comment_id, c.content, c.created_at, c.deleted_at, COALESCE(u.nickname,'已注销')::text AS nickname, (target.deleted_at IS NOT NULL)::boolean AS target_deleted,
- CASE WHEN target.deleted_at IS NULL THEN COALESCE(target.author_id,0) ELSE 0 END::bigint AS target_author_id,
- CASE WHEN target.deleted_at IS NULL THEN COALESCE(tu.nickname,'已注销') ELSE '' END::text AS target_nickname
-FROM post_comments c JOIN posts p ON p.id=c.post_id LEFT JOIN users u ON u.id=c.author_id
-JOIN post_comments target ON target.post_id=c.post_id AND target.id=c.reply_to_comment_id LEFT JOIN users tu ON tu.id=target.author_id
-WHERE c.post_id=$1 AND p.deleted_at IS NULL AND c.root_comment_id=$2 AND c.deleted_at IS NULL
-AND (NOT $3::boolean OR (c.created_at,c.id)>($4::timestamptz,$5::bigint))
-ORDER BY c.created_at,c.id LIMIT $6
+SELECT
+  c.id, c.post_id, c.author_id, c.root_comment_id, c.reply_to_comment_id, c.content, c.created_at, c.deleted_at,
+  COALESCE(u.nickname, '已注销')::text AS nickname,
+  (target.deleted_at IS NOT NULL)::boolean AS target_deleted,
+  CASE
+    WHEN target.deleted_at IS NULL THEN COALESCE(target.author_id, 0)
+    ELSE 0
+  END::bigint AS target_author_id,
+  CASE
+    WHEN target.deleted_at IS NULL THEN COALESCE(tu.nickname, '已注销')
+    ELSE ''
+  END::text AS target_nickname
+FROM post_comments c
+JOIN posts p ON p.id = c.post_id
+LEFT JOIN users u ON u.id = c.author_id
+JOIN post_comments target
+  ON target.post_id = c.post_id
+ AND target.id = c.reply_to_comment_id
+LEFT JOIN users tu ON tu.id = target.author_id
+WHERE c.post_id = $1
+  AND p.deleted_at IS NULL
+  AND c.root_comment_id = $2
+  AND c.deleted_at IS NULL
+  AND (
+    NOT $3::boolean
+    OR (c.created_at, c.id) > ($4::timestamptz, $5::bigint)
+  )
+ORDER BY c.created_at, c.id
+LIMIT $6
 `
 
 type ListCommentRepliesParams struct {
@@ -180,13 +215,38 @@ func (q *Queries) ListCommentReplies(ctx context.Context, arg ListCommentReplies
 }
 
 const listRootComments = `-- name: ListRootComments :many
-SELECT c.id, c.post_id, c.author_id, c.root_comment_id, c.reply_to_comment_id, c.content, c.created_at, c.deleted_at, CASE WHEN c.deleted_at IS NULL THEN COALESCE(u.nickname,'已注销') ELSE '' END::text AS nickname,
- (SELECT count(*) FROM post_comments r WHERE r.post_id=c.post_id AND r.root_comment_id=c.id AND r.deleted_at IS NULL)::bigint AS reply_count
-FROM post_comments c LEFT JOIN users u ON u.id=c.author_id JOIN posts p ON p.id=c.post_id
-WHERE c.post_id=$1 AND p.deleted_at IS NULL AND c.root_comment_id IS NULL
-AND (c.deleted_at IS NULL OR EXISTS(SELECT 1 FROM post_comments r WHERE r.post_id=c.post_id AND r.root_comment_id=c.id AND r.deleted_at IS NULL))
-AND (NOT $2::boolean OR (c.created_at,c.id)<($3::timestamptz,$4::bigint))
-ORDER BY c.created_at DESC,c.id DESC LIMIT $5
+SELECT
+  c.id, c.post_id, c.author_id, c.root_comment_id, c.reply_to_comment_id, c.content, c.created_at, c.deleted_at,
+  CASE WHEN c.deleted_at IS NULL THEN COALESCE(u.nickname, '已注销') ELSE '' END::text AS nickname,
+  (
+    SELECT count(*)
+    FROM post_comments r
+    WHERE r.post_id = c.post_id
+      AND r.root_comment_id = c.id
+      AND r.deleted_at IS NULL
+  )::bigint AS reply_count
+FROM post_comments c
+LEFT JOIN users u ON u.id = c.author_id
+JOIN posts p ON p.id = c.post_id
+WHERE c.post_id = $1
+  AND p.deleted_at IS NULL
+  AND c.root_comment_id IS NULL
+  AND (
+    c.deleted_at IS NULL
+    OR EXISTS (
+      SELECT 1
+      FROM post_comments r
+      WHERE r.post_id = c.post_id
+        AND r.root_comment_id = c.id
+        AND r.deleted_at IS NULL
+    )
+  )
+  AND (
+    NOT $2::boolean
+    OR (c.created_at, c.id) < ($3::timestamptz, $4::bigint)
+  )
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $5
 `
 
 type ListRootCommentsParams struct {

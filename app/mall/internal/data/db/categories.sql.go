@@ -38,7 +38,8 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 }
 
 const deleteCategory = `-- name: DeleteCategory :exec
-DELETE FROM categories WHERE id = $1
+DELETE FROM categories
+WHERE id = $1
 `
 
 func (q *Queries) DeleteCategory(ctx context.Context, id int64) error {
@@ -47,7 +48,9 @@ func (q *Queries) DeleteCategory(ctx context.Context, id int64) error {
 }
 
 const getCategory = `-- name: GetCategory :one
-SELECT id, parent_id, name, sort_order, created_at, updated_at FROM categories WHERE id = $1
+SELECT id, parent_id, name, sort_order, created_at, updated_at
+FROM categories
+WHERE id = $1
 `
 
 func (q *Queries) GetCategory(ctx context.Context, id int64) (Category, error) {
@@ -65,7 +68,10 @@ func (q *Queries) GetCategory(ctx context.Context, id int64) (Category, error) {
 }
 
 const listSubCategories = `-- name: ListSubCategories :many
-SELECT id, parent_id, name, sort_order, created_at, updated_at FROM categories WHERE parent_id = $1 ORDER BY sort_order, id
+SELECT id, parent_id, name, sort_order, created_at, updated_at
+FROM categories
+WHERE parent_id = $1
+ORDER BY sort_order, id
 `
 
 func (q *Queries) ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error) {
@@ -96,7 +102,10 @@ func (q *Queries) ListSubCategories(ctx context.Context, parentID pgtype.Int8) (
 }
 
 const listTopCategories = `-- name: ListTopCategories :many
-SELECT id, parent_id, name, sort_order, created_at, updated_at FROM categories WHERE parent_id IS NULL ORDER BY sort_order, id
+SELECT id, parent_id, name, sort_order, created_at, updated_at
+FROM categories
+WHERE parent_id IS NULL
+ORDER BY sort_order, id
 `
 
 func (q *Queries) ListTopCategories(ctx context.Context) ([]Category, error) {
@@ -128,7 +137,9 @@ func (q *Queries) ListTopCategories(ctx context.Context) ([]Category, error) {
 
 const updateCategory = `-- name: UpdateCategory :one
 UPDATE categories
-SET name = $2, sort_order = $3, updated_at = CURRENT_TIMESTAMP
+SET name = $2,
+    sort_order = $3,
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, parent_id, name, sort_order, created_at, updated_at
 `

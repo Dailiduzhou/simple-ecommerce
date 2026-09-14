@@ -12,7 +12,9 @@ import (
 )
 
 const countOrdersByUser = `-- name: CountOrdersByUser :one
-SELECT COUNT(*) FROM orders WHERE user_id = $1
+SELECT count(*)
+FROM orders
+WHERE user_id = $1
 `
 
 func (q *Queries) CountOrdersByUser(ctx context.Context, userID int64) (int64, error) {
@@ -24,8 +26,15 @@ func (q *Queries) CountOrdersByUser(ctx context.Context, userID int64) (int64, e
 
 const createOrder = `-- name: CreateOrder :one
 INSERT INTO orders (
-  user_id, address_id, total_amount_minor, currency, status, out_trade_no,
-  idempotency_key, request_hash, expires_at
+  user_id,
+  address_id,
+  total_amount_minor,
+  currency,
+  status,
+  out_trade_no,
+  idempotency_key,
+  request_hash,
+  expires_at
 )
 VALUES ($1, $2, $3, $4, 'pending_payment', $5, $6, $7, $8)
 RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
@@ -73,7 +82,9 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 }
 
 const getOrder = `-- name: GetOrder :one
-SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE id = $1
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE id = $1
 `
 
 func (q *Queries) GetOrder(ctx context.Context, id int64) (Order, error) {
@@ -98,7 +109,9 @@ func (q *Queries) GetOrder(ctx context.Context, id int64) (Order, error) {
 }
 
 const getOrderByOrderNo = `-- name: GetOrderByOrderNo :one
-SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE out_trade_no = $1
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE out_trade_no = $1
 `
 
 // 通过商户订单号(orders.out_trade_no)查询订单。
@@ -125,7 +138,10 @@ func (q *Queries) GetOrderByOrderNo(ctx context.Context, outTradeNo string) (Ord
 }
 
 const getOrderByUser = `-- name: GetOrderByUser :one
-SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE id = $1 AND user_id = $2
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE id = $1
+  AND user_id = $2
 `
 
 type GetOrderByUserParams struct {
@@ -155,7 +171,11 @@ func (q *Queries) GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) 
 }
 
 const getOrderByUserForUpdate = `-- name: GetOrderByUserForUpdate :one
-SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE id = $1
+  AND user_id = $2
+FOR UPDATE
 `
 
 type GetOrderByUserForUpdateParams struct {
@@ -185,7 +205,10 @@ func (q *Queries) GetOrderByUserForUpdate(ctx context.Context, arg GetOrderByUse
 }
 
 const getOrderByUserIdempotency = `-- name: GetOrderByUserIdempotency :one
-SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE user_id = $1 AND idempotency_key = $2
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE user_id = $1
+  AND idempotency_key = $2
 `
 
 type GetOrderByUserIdempotencyParams struct {
@@ -215,7 +238,10 @@ func (q *Queries) GetOrderByUserIdempotency(ctx context.Context, arg GetOrderByU
 }
 
 const getOrderForUpdate = `-- name: GetOrderForUpdate :one
-SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE id = $1 FOR UPDATE
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE id = $1
+FOR UPDATE
 `
 
 func (q *Queries) GetOrderForUpdate(ctx context.Context, id int64) (Order, error) {
@@ -240,7 +266,12 @@ func (q *Queries) GetOrderForUpdate(ctx context.Context, id int64) (Order, error
 }
 
 const hasOngoingOrders = `-- name: HasOngoingOrders :one
-SELECT EXISTS (SELECT 1 FROM orders WHERE user_id = $1 AND is_completed = FALSE) AS has_ongoing
+SELECT EXISTS (
+  SELECT 1
+  FROM orders
+  WHERE user_id = $1
+    AND is_completed = FALSE
+) AS has_ongoing
 `
 
 func (q *Queries) HasOngoingOrders(ctx context.Context, userID int64) (bool, error) {
@@ -251,7 +282,11 @@ func (q *Queries) HasOngoingOrders(ctx context.Context, userID int64) (bool, err
 }
 
 const listOngoingOrdersByUser = `-- name: ListOngoingOrdersByUser :many
-SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE user_id = $1 AND is_completed = FALSE ORDER BY id DESC
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE user_id = $1
+  AND is_completed = FALSE
+ORDER BY id DESC
 `
 
 func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error) {
@@ -289,7 +324,11 @@ func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]
 }
 
 const listOrdersByUser = `-- name: ListOrdersByUser :many
-SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at FROM orders WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3
+SELECT id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE user_id = $1
+ORDER BY id DESC
+LIMIT $2 OFFSET $3
 `
 
 type ListOrdersByUserParams struct {
@@ -333,8 +372,10 @@ func (q *Queries) ListOrdersByUser(ctx context.Context, arg ListOrdersByUserPara
 }
 
 const listOverduePendingOrders = `-- name: ListOverduePendingOrders :many
-SELECT id FROM orders
-WHERE id > $1::bigint AND status = 'pending_payment'
+SELECT id
+FROM orders
+WHERE id > $1::bigint
+  AND status = 'pending_payment'
   AND expires_at <= now() - make_interval(secs => $2::double precision)
 ORDER BY id
 LIMIT $3
@@ -385,8 +426,12 @@ func (q *Queries) LockOrderIdempotency(ctx context.Context, arg LockOrderIdempot
 }
 
 const markOrderCancelled = `-- name: MarkOrderCancelled :one
-UPDATE orders SET is_completed = TRUE, status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status = 'cancelling'
+UPDATE orders
+SET is_completed = TRUE,
+    status = 'cancelled',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'cancelling'
 RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
@@ -412,8 +457,11 @@ func (q *Queries) MarkOrderCancelled(ctx context.Context, id int64) (Order, erro
 }
 
 const markOrderCancelling = `-- name: MarkOrderCancelling :one
-UPDATE orders SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status = 'pending_payment'
+UPDATE orders
+SET status = 'cancelling',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'pending_payment'
 RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
@@ -439,8 +487,11 @@ func (q *Queries) MarkOrderCancelling(ctx context.Context, id int64) (Order, err
 }
 
 const markOrderPaid = `-- name: MarkOrderPaid :one
-UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status = 'pending_payment'
+UPDATE orders
+SET status = 'paid',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'pending_payment'
 RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
@@ -466,7 +517,9 @@ func (q *Queries) MarkOrderPaid(ctx context.Context, id int64) (Order, error) {
 }
 
 const orderIsExpired = `-- name: OrderIsExpired :one
-SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired FROM orders WHERE id = $1
+SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired
+FROM orders
+WHERE id = $1
 `
 
 // Expiry decisions must use the database clock, not the application server's,

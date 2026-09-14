@@ -12,7 +12,9 @@ import (
 )
 
 const createPost = `-- name: CreatePost :one
-INSERT INTO posts(author_id,title,content) VALUES($1,$2,$3) RETURNING id, author_id, title, content, version, created_at, updated_at, deleted_at
+INSERT INTO posts (author_id, title, content)
+VALUES ($1, $2, $3)
+RETURNING id, author_id, title, content, version, created_at, updated_at, deleted_at
 `
 
 type CreatePostParams struct {
@@ -38,7 +40,13 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 }
 
 const getVisiblePost = `-- name: GetVisiblePost :one
-SELECT p.id, p.author_id, p.title, p.content, p.version, p.created_at, p.updated_at, p.deleted_at, COALESCE(u.nickname,'已注销')::text AS nickname FROM posts p LEFT JOIN users u ON u.id=p.author_id WHERE p.id=$1 AND p.deleted_at IS NULL
+SELECT
+  p.id, p.author_id, p.title, p.content, p.version, p.created_at, p.updated_at, p.deleted_at,
+  COALESCE(u.nickname, '已注销')::text AS nickname
+FROM posts p
+LEFT JOIN users u ON u.id = p.author_id
+WHERE p.id = $1
+  AND p.deleted_at IS NULL
 `
 
 type GetVisiblePostRow struct {
@@ -71,7 +79,12 @@ func (q *Queries) GetVisiblePost(ctx context.Context, id int64) (GetVisiblePostR
 }
 
 const hideUserPosts = `-- name: HideUserPosts :exec
-UPDATE posts SET deleted_at=clock_timestamp(),updated_at=clock_timestamp(),version=version+1 WHERE author_id=$1 AND deleted_at IS NULL
+UPDATE posts
+SET deleted_at = clock_timestamp(),
+    updated_at = clock_timestamp(),
+    version = version + 1
+WHERE author_id = $1
+  AND deleted_at IS NULL
 `
 
 func (q *Queries) HideUserPosts(ctx context.Context, authorID pgtype.Int8) error {
@@ -80,10 +93,19 @@ func (q *Queries) HideUserPosts(ctx context.Context, authorID pgtype.Int8) error
 }
 
 const listPosts = `-- name: ListPosts :many
-SELECT p.id, p.author_id, p.title, p.content, p.version, p.created_at, p.updated_at, p.deleted_at, COALESCE(u.nickname,'已注销')::text AS nickname FROM posts p LEFT JOIN users u ON u.id=p.author_id
-WHERE p.deleted_at IS NULL AND ($1::bigint = 0 OR p.author_id=$1)
-AND (NOT $2::boolean OR (p.created_at,p.id)<($3::timestamptz,$4::bigint))
-ORDER BY p.created_at DESC,p.id DESC LIMIT $5
+SELECT
+  p.id, p.author_id, p.title, p.content, p.version, p.created_at, p.updated_at, p.deleted_at,
+  COALESCE(u.nickname, '已注销')::text AS nickname
+FROM posts p
+LEFT JOIN users u ON u.id = p.author_id
+WHERE p.deleted_at IS NULL
+  AND ($1::bigint = 0 OR p.author_id = $1)
+  AND (
+    NOT $2::boolean
+    OR (p.created_at, p.id) < ($3::timestamptz, $4::bigint)
+  )
+ORDER BY p.created_at DESC, p.id DESC
+LIMIT $5
 `
 
 type ListPostsParams struct {
@@ -143,7 +165,10 @@ func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPos
 }
 
 const lockPost = `-- name: LockPost :one
-SELECT id, author_id, title, content, version, created_at, updated_at, deleted_at FROM posts WHERE id=$1 FOR UPDATE
+SELECT id, author_id, title, content, version, created_at, updated_at, deleted_at
+FROM posts
+WHERE id = $1
+FOR UPDATE
 `
 
 func (q *Queries) LockPost(ctx context.Context, id int64) (Post, error) {
@@ -163,8 +188,17 @@ func (q *Queries) LockPost(ctx context.Context, id int64) (Post, error) {
 }
 
 const lockUserCommunityPosts = `-- name: LockUserCommunityPosts :many
-SELECT p.id, p.author_id, p.title, p.content, p.version, p.created_at, p.updated_at, p.deleted_at FROM posts p WHERE p.author_id=$1 OR EXISTS(SELECT 1 FROM post_comments c WHERE c.post_id=p.id AND c.author_id=$1)
-ORDER BY p.id FOR UPDATE
+SELECT p.id, p.author_id, p.title, p.content, p.version, p.created_at, p.updated_at, p.deleted_at
+FROM posts p
+WHERE p.author_id = $1
+  OR EXISTS (
+    SELECT 1
+    FROM post_comments c
+    WHERE c.post_id = p.id
+      AND c.author_id = $1
+  )
+ORDER BY p.id
+FOR UPDATE
 `
 
 func (q *Queries) LockUserCommunityPosts(ctx context.Context, authorID pgtype.Int8) ([]Post, error) {
@@ -197,8 +231,13 @@ func (q *Queries) LockUserCommunityPosts(ctx context.Context, authorID pgtype.In
 }
 
 const softDeletePost = `-- name: SoftDeletePost :execrows
-UPDATE posts SET deleted_at=clock_timestamp(),updated_at=clock_timestamp(),version=version+1
-WHERE id=$1 AND deleted_at IS NULL AND (author_id=$2 OR $3::boolean)
+UPDATE posts
+SET deleted_at = clock_timestamp(),
+    updated_at = clock_timestamp(),
+    version = version + 1
+WHERE id = $1
+  AND deleted_at IS NULL
+  AND (author_id = $2 OR $3::boolean)
 `
 
 type SoftDeletePostParams struct {
@@ -216,8 +255,16 @@ func (q *Queries) SoftDeletePost(ctx context.Context, arg SoftDeletePostParams) 
 }
 
 const updatePost = `-- name: UpdatePost :one
-UPDATE posts SET title=$1,content=$2,version=version+1,updated_at=clock_timestamp()
-WHERE id=$3 AND author_id=$4 AND deleted_at IS NULL AND version=$5 RETURNING id, author_id, title, content, version, created_at, updated_at, deleted_at
+UPDATE posts
+SET title = $1,
+    content = $2,
+    version = version + 1,
+    updated_at = clock_timestamp()
+WHERE id = $3
+  AND author_id = $4
+  AND deleted_at IS NULL
+  AND version = $5
+RETURNING id, author_id, title, content, version, created_at, updated_at, deleted_at
 `
 
 type UpdatePostParams struct {

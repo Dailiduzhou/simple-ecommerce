@@ -12,7 +12,8 @@ import (
 )
 
 const bindPostImage = `-- name: BindPostImage :exec
-INSERT INTO post_images(post_id,media_id,sort_order) VALUES($1,$2,$3)
+INSERT INTO post_images (post_id, media_id, sort_order)
+VALUES ($1, $2, $3)
 `
 
 type BindPostImageParams struct {
@@ -27,7 +28,9 @@ func (q *Queries) BindPostImage(ctx context.Context, arg BindPostImageParams) er
 }
 
 const getMediaBinding = `-- name: GetMediaBinding :one
-SELECT post_id FROM post_images WHERE media_id=$1
+SELECT post_id
+FROM post_images
+WHERE media_id = $1
 `
 
 func (q *Queries) GetMediaBinding(ctx context.Context, mediaID int64) (int64, error) {
@@ -38,8 +41,17 @@ func (q *Queries) GetMediaBinding(ctx context.Context, mediaID int64) (int64, er
 }
 
 const getPostImages = `-- name: GetPostImages :many
-SELECT i.post_id,i.sort_order,m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM post_images i JOIN media_assets m ON m.id=i.media_id
-JOIN posts p ON p.id=i.post_id WHERE i.post_id=ANY($1::bigint[]) AND p.deleted_at IS NULL AND m.status='ready' ORDER BY i.post_id,i.sort_order
+SELECT
+  i.post_id,
+  i.sort_order,
+  m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at
+FROM post_images i
+JOIN media_assets m ON m.id = i.media_id
+JOIN posts p ON p.id = i.post_id
+WHERE i.post_id = ANY($1::bigint[])
+  AND p.deleted_at IS NULL
+  AND m.status = 'ready'
+ORDER BY i.post_id, i.sort_order
 `
 
 type GetPostImagesRow struct {
@@ -105,7 +117,12 @@ func (q *Queries) GetPostImages(ctx context.Context, postIds []int64) ([]GetPost
 }
 
 const lockPostImageAssets = `-- name: LockPostImageAssets :many
-SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM media_assets m JOIN post_images i ON i.media_id=m.id WHERE i.post_id=$1 ORDER BY m.id FOR UPDATE OF m
+SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at
+FROM media_assets m
+JOIN post_images i ON i.media_id = m.id
+WHERE i.post_id = $1
+ORDER BY m.id
+FOR UPDATE OF m
 `
 
 func (q *Queries) LockPostImageAssets(ctx context.Context, postID int64) ([]MediaAsset, error) {
@@ -147,7 +164,8 @@ func (q *Queries) LockPostImageAssets(ctx context.Context, postID int64) ([]Medi
 }
 
 const unbindPostImages = `-- name: UnbindPostImages :exec
-DELETE FROM post_images WHERE post_id=$1
+DELETE FROM post_images
+WHERE post_id = $1
 `
 
 func (q *Queries) UnbindPostImages(ctx context.Context, postID int64) error {
@@ -156,7 +174,12 @@ func (q *Queries) UnbindPostImages(ctx context.Context, postID int64) error {
 }
 
 const unbindUserImages = `-- name: UnbindUserImages :exec
-DELETE FROM post_images WHERE media_id IN (SELECT id FROM media_assets WHERE owner_id=$1)
+DELETE FROM post_images
+WHERE media_id IN (
+  SELECT id
+  FROM media_assets
+  WHERE owner_id = $1
+)
 `
 
 func (q *Queries) UnbindUserImages(ctx context.Context, ownerID pgtype.Int8) error {

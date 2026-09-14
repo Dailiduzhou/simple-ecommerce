@@ -13,11 +13,18 @@ import (
 
 const cleanupBrowsingHistory = `-- name: CleanupBrowsingHistory :execrows
 WITH expired AS (
- SELECT user_id,product_id FROM product_browsing_history WHERE last_viewed_at <= $1::timestamptz
- ORDER BY last_viewed_at,user_id,product_id LIMIT $2 FOR UPDATE SKIP LOCKED
+  SELECT user_id, product_id
+  FROM product_browsing_history
+  WHERE last_viewed_at <= $1::timestamptz
+  ORDER BY last_viewed_at, user_id, product_id
+  LIMIT $2
+  FOR UPDATE SKIP LOCKED
 )
-DELETE FROM product_browsing_history h USING expired e
-WHERE h.user_id=e.user_id AND h.product_id=e.product_id AND h.last_viewed_at <= $1::timestamptz
+DELETE FROM product_browsing_history h
+USING expired e
+WHERE h.user_id = e.user_id
+  AND h.product_id = e.product_id
+  AND h.last_viewed_at <= $1::timestamptz
 `
 
 type CleanupBrowsingHistoryParams struct {
@@ -34,7 +41,8 @@ func (q *Queries) CleanupBrowsingHistory(ctx context.Context, arg CleanupBrowsin
 }
 
 const clearBrowsingHistory = `-- name: ClearBrowsingHistory :exec
-DELETE FROM product_browsing_history WHERE user_id = $1
+DELETE FROM product_browsing_history
+WHERE user_id = $1
 `
 
 func (q *Queries) ClearBrowsingHistory(ctx context.Context, userID int64) error {
@@ -43,7 +51,9 @@ func (q *Queries) ClearBrowsingHistory(ctx context.Context, userID int64) error 
 }
 
 const deleteBrowsingHistoryItem = `-- name: DeleteBrowsingHistoryItem :exec
-DELETE FROM product_browsing_history WHERE user_id = $1 AND product_id = $2
+DELETE FROM product_browsing_history
+WHERE user_id = $1
+  AND product_id = $2
 `
 
 type DeleteBrowsingHistoryItemParams struct {
@@ -57,13 +67,25 @@ func (q *Queries) DeleteBrowsingHistoryItem(ctx context.Context, arg DeleteBrows
 }
 
 const listBrowsingHistory = `-- name: ListBrowsingHistory :many
-SELECT h.user_id, h.product_id, h.first_viewed_at, h.last_viewed_at, p.name, p.price_minor, p.cover_image, (p.status = 1 AND p.deleted_at IS NULL)::boolean AS available
-FROM product_browsing_history h JOIN products p ON p.id = h.product_id
-WHERE h.user_id = $1 AND h.last_viewed_at > $2::timestamptz
-AND (NOT $3::boolean OR h.last_viewed_at >= $4::timestamptz)
-AND (NOT $5::boolean OR h.last_viewed_at < $6::timestamptz)
-AND (NOT $7::boolean OR (h.last_viewed_at,h.product_id) < ($8::timestamptz,$9::bigint))
-ORDER BY h.last_viewed_at DESC, h.product_id DESC LIMIT $10
+SELECT
+  h.user_id, h.product_id, h.first_viewed_at, h.last_viewed_at,
+  p.name,
+  p.price_minor,
+  p.cover_image,
+  (p.status = 1 AND p.deleted_at IS NULL)::boolean AS available
+FROM product_browsing_history h
+JOIN products p ON p.id = h.product_id
+WHERE h.user_id = $1
+  AND h.last_viewed_at > $2::timestamptz
+  AND (NOT $3::boolean OR h.last_viewed_at >= $4::timestamptz)
+  AND (NOT $5::boolean OR h.last_viewed_at < $6::timestamptz)
+  AND (
+    NOT $7::boolean
+    OR (h.last_viewed_at, h.product_id)
+      < ($8::timestamptz, $9::bigint)
+  )
+ORDER BY h.last_viewed_at DESC, h.product_id DESC
+LIMIT $10
 `
 
 type ListBrowsingHistoryParams struct {
@@ -131,7 +153,10 @@ func (q *Queries) ListBrowsingHistory(ctx context.Context, arg ListBrowsingHisto
 }
 
 const lockCommunityUser = `-- name: LockCommunityUser :one
-SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, role, created_at, updated_at FROM users WHERE id = $1 FOR UPDATE
+SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, role, created_at, updated_at
+FROM users
+WHERE id = $1
+FOR UPDATE
 `
 
 func (q *Queries) LockCommunityUser(ctx context.Context, id int64) (User, error) {
@@ -152,10 +177,18 @@ func (q *Queries) LockCommunityUser(ctx context.Context, id int64) (User, error)
 }
 
 const recordProductView = `-- name: RecordProductView :one
-INSERT INTO product_browsing_history(user_id,product_id,first_viewed_at,last_viewed_at)
-SELECT $1, p.id, statement_timestamp(), statement_timestamp() FROM products p
-WHERE p.id = $2 AND p.status = 1 AND p.deleted_at IS NULL
-ON CONFLICT (user_id,product_id) DO UPDATE SET last_viewed_at = GREATEST(product_browsing_history.last_viewed_at, clock_timestamp())
+INSERT INTO product_browsing_history (user_id, product_id, first_viewed_at, last_viewed_at)
+SELECT
+  $1,
+  p.id,
+  statement_timestamp(),
+  statement_timestamp()
+FROM products p
+WHERE p.id = $2
+  AND p.status = 1
+  AND p.deleted_at IS NULL
+ON CONFLICT (user_id, product_id) DO UPDATE
+SET last_viewed_at = GREATEST(product_browsing_history.last_viewed_at, clock_timestamp())
 RETURNING user_id, product_id, first_viewed_at, last_viewed_at
 `
 

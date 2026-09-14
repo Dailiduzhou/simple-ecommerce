@@ -9,9 +9,8 @@ INSERT INTO order_refunds (
   currency,
   reason,
   status
-) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, 'pending'
 )
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
 RETURNING *;
 
 -- name: GetOrderRefundByPaymentID :one
@@ -58,6 +57,9 @@ LIMIT sqlc.arg(limit_rows);
 
 -- name: RetryOrderRefund :one
 UPDATE order_refunds
-SET status = 'pending', last_error = '', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status = 'failed'
+SET status = 'pending',
+    last_error = '',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'failed'
 RETURNING *;
