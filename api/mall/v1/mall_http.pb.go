@@ -27,6 +27,7 @@ const OperationMallDeleteEvent = "/api.mall.v1.Mall/DeleteEvent"
 const OperationMallDeleteProduct = "/api.mall.v1.Mall/DeleteProduct"
 const OperationMallGetEvent = "/api.mall.v1.Mall/GetEvent"
 const OperationMallGetProduct = "/api.mall.v1.Mall/GetProduct"
+const OperationMallGetTodayWellness = "/api.mall.v1.Mall/GetTodayWellness"
 const OperationMallListCategories = "/api.mall.v1.Mall/ListCategories"
 const OperationMallListEvents = "/api.mall.v1.Mall/ListEvents"
 const OperationMallListProducts = "/api.mall.v1.Mall/ListProducts"
@@ -48,6 +49,8 @@ type MallHTTPServer interface {
 	DeleteProduct(context.Context, *DeleteProductRequest) (*DeleteProductReply, error)
 	GetEvent(context.Context, *GetEventRequest) (*Event, error)
 	GetProduct(context.Context, *GetProductRequest) (*Product, error)
+	// GetTodayWellness 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
+	GetTodayWellness(context.Context, *GetTodayWellnessRequest) (*TodayWellnessReply, error)
 	ListCategories(context.Context, *ListCategoriesRequest) (*ListCategoriesReply, error)
 	ListEvents(context.Context, *ListEventsRequest) (*ListEventsReply, error)
 	ListProducts(context.Context, *ListProductsRequest) (*ListProductsReply, error)
@@ -60,6 +63,7 @@ type MallHTTPServer interface {
 
 func RegisterMallHTTPServer(s *http.Server, srv MallHTTPServer) {
 	r := s.Route("/")
+	r.GET("/v1/wellness/today", _Mall_GetTodayWellness0_HTTP_Handler(srv))
 	r.POST("/v1/categories", _Mall_CreateCategory0_HTTP_Handler(srv))
 	r.GET("/v1/categories", _Mall_ListCategories0_HTTP_Handler(srv))
 	r.PUT("/v1/categories/{id}", _Mall_UpdateCategory0_HTTP_Handler(srv))
@@ -76,6 +80,25 @@ func RegisterMallHTTPServer(s *http.Server, srv MallHTTPServer) {
 	r.PUT("/v1/events/{id}", _Mall_UpdateEvent0_HTTP_Handler(srv))
 	r.PATCH("/v1/events/{id}/status", _Mall_UpdateEventStatus0_HTTP_Handler(srv))
 	r.DELETE("/v1/events/{id}", _Mall_DeleteEvent0_HTTP_Handler(srv))
+}
+
+func _Mall_GetTodayWellness0_HTTP_Handler(srv MallHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetTodayWellnessRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationMallGetTodayWellness)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetTodayWellness(ctx, req.(*GetTodayWellnessRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*TodayWellnessReply)
+		return ctx.Result(200, reply)
+	}
 }
 
 func _Mall_CreateCategory0_HTTP_Handler(srv MallHTTPServer) func(ctx http.Context) error {
@@ -448,6 +471,8 @@ type MallHTTPClient interface {
 	DeleteProduct(ctx context.Context, req *DeleteProductRequest, opts ...http.CallOption) (rsp *DeleteProductReply, err error)
 	GetEvent(ctx context.Context, req *GetEventRequest, opts ...http.CallOption) (rsp *Event, err error)
 	GetProduct(ctx context.Context, req *GetProductRequest, opts ...http.CallOption) (rsp *Product, err error)
+	// GetTodayWellness 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
+	GetTodayWellness(ctx context.Context, req *GetTodayWellnessRequest, opts ...http.CallOption) (rsp *TodayWellnessReply, err error)
 	ListCategories(ctx context.Context, req *ListCategoriesRequest, opts ...http.CallOption) (rsp *ListCategoriesReply, err error)
 	ListEvents(ctx context.Context, req *ListEventsRequest, opts ...http.CallOption) (rsp *ListEventsReply, err error)
 	ListProducts(ctx context.Context, req *ListProductsRequest, opts ...http.CallOption) (rsp *ListProductsReply, err error)
@@ -565,6 +590,20 @@ func (c *MallHTTPClientImpl) GetProduct(ctx context.Context, in *GetProductReque
 	pattern := "/v1/products/{id}"
 	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationMallGetProduct))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetTodayWellness 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
+func (c *MallHTTPClientImpl) GetTodayWellness(ctx context.Context, in *GetTodayWellnessRequest, opts ...http.CallOption) (*TodayWellnessReply, error) {
+	var out TodayWellnessReply
+	pattern := "/v1/wellness/today"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationMallGetTodayWellness))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {

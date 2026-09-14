@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	Mall_GetTodayWellness_FullMethodName    = "/api.mall.v1.Mall/GetTodayWellness"
 	Mall_CreateCategory_FullMethodName      = "/api.mall.v1.Mall/CreateCategory"
 	Mall_ListCategories_FullMethodName      = "/api.mall.v1.Mall/ListCategories"
 	Mall_UpdateCategory_FullMethodName      = "/api.mall.v1.Mall/UpdateCategory"
@@ -41,6 +42,8 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MallClient interface {
+	// 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
+	GetTodayWellness(ctx context.Context, in *GetTodayWellnessRequest, opts ...grpc.CallOption) (*TodayWellnessReply, error)
 	// Categories
 	CreateCategory(ctx context.Context, in *CreateCategoryRequest, opts ...grpc.CallOption) (*Category, error)
 	ListCategories(ctx context.Context, in *ListCategoriesRequest, opts ...grpc.CallOption) (*ListCategoriesReply, error)
@@ -68,6 +71,16 @@ type mallClient struct {
 
 func NewMallClient(cc grpc.ClientConnInterface) MallClient {
 	return &mallClient{cc}
+}
+
+func (c *mallClient) GetTodayWellness(ctx context.Context, in *GetTodayWellnessRequest, opts ...grpc.CallOption) (*TodayWellnessReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TodayWellnessReply)
+	err := c.cc.Invoke(ctx, Mall_GetTodayWellness_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *mallClient) CreateCategory(ctx context.Context, in *CreateCategoryRequest, opts ...grpc.CallOption) (*Category, error) {
@@ -234,6 +247,8 @@ func (c *mallClient) DeleteEvent(ctx context.Context, in *DeleteEventRequest, op
 // All implementations must embed UnimplementedMallServer
 // for forward compatibility.
 type MallServer interface {
+	// 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
+	GetTodayWellness(context.Context, *GetTodayWellnessRequest) (*TodayWellnessReply, error)
 	// Categories
 	CreateCategory(context.Context, *CreateCategoryRequest) (*Category, error)
 	ListCategories(context.Context, *ListCategoriesRequest) (*ListCategoriesReply, error)
@@ -263,6 +278,9 @@ type MallServer interface {
 // pointer dereference when methods are called.
 type UnimplementedMallServer struct{}
 
+func (UnimplementedMallServer) GetTodayWellness(context.Context, *GetTodayWellnessRequest) (*TodayWellnessReply, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTodayWellness not implemented")
+}
 func (UnimplementedMallServer) CreateCategory(context.Context, *CreateCategoryRequest) (*Category, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateCategory not implemented")
 }
@@ -330,6 +348,24 @@ func RegisterMallServer(s grpc.ServiceRegistrar, srv MallServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&Mall_ServiceDesc, srv)
+}
+
+func _Mall_GetTodayWellness_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTodayWellnessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MallServer).GetTodayWellness(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Mall_GetTodayWellness_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MallServer).GetTodayWellness(ctx, req.(*GetTodayWellnessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Mall_CreateCategory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -627,6 +663,10 @@ var Mall_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "api.mall.v1.Mall",
 	HandlerType: (*MallServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetTodayWellness",
+			Handler:    _Mall_GetTodayWellness_Handler,
+		},
 		{
 			MethodName: "CreateCategory",
 			Handler:    _Mall_CreateCategory_Handler,

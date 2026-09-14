@@ -81,11 +81,11 @@ func (r *fakeEventRepo) UpdateEventStatus(ctx context.Context, id int64, status 
 }
 
 func newTestMallService(repo biz.CategoryRepo) *MallService {
-	return NewMallService(nil, biz.NewCategoryUsecase(repo, log.DefaultLogger), nil, log.DefaultLogger)
+	return NewMallService(nil, biz.NewCategoryUsecase(repo, log.DefaultLogger), nil, nil, log.DefaultLogger)
 }
 
 func newTestMallServiceWithEvent(repo biz.EventRepo) *MallService {
-	return NewMallService(nil, nil, biz.NewEventUsecase(repo, log.DefaultLogger), log.DefaultLogger)
+	return NewMallService(nil, nil, biz.NewEventUsecase(repo, log.DefaultLogger), nil, log.DefaultLogger)
 }
 
 func TestMallService_CreateCategory(t *testing.T) {
