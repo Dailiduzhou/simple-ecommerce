@@ -14,12 +14,14 @@ type UserService struct {
 	authUc         biz.AuthUsecase
 	uc             biz.UserUsecase
 	shippingAddrUc biz.ShippingAddressUsecase
+	history        *biz.BrowsingHistoryUsecase
 	log            *log.Helper
 }
 
-func NewUserService(authUc biz.AuthUsecase, userUc biz.UserUsecase, shippingAddrUc biz.ShippingAddressUsecase, logger log.Logger) *UserService {
+func NewUserService(authUc biz.AuthUsecase, userUc biz.UserUsecase, shippingAddrUc biz.ShippingAddressUsecase, history *biz.BrowsingHistoryUsecase, logger log.Logger) *UserService {
 	return &UserService{
 		authUc:         authUc,
+		history:        history,
 		uc:             userUc,
 		shippingAddrUc: shippingAddrUc,
 		log:            log.NewHelper(logger),
@@ -214,17 +216,8 @@ func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) 
 		return nil, pb.ErrorTokenExpired("refresh token invalid or expired")
 	}
 
-	blacklisted, err := s.authUc.IsTokenBlacklisted(ctx, claims.ID)
-	if err != nil {
-		s.log.WithContext(ctx).Errorf("check blacklist failed: %v", err)
-		return nil, pb.ErrorUnauthorized("check blacklist failed")
-	}
-	if blacklisted {
-		return nil, pb.ErrorTokenExpired("refresh token has been revoked")
-	}
-
-	if err := s.authUc.BlacklistToken(ctx, claims.ID, claims.ExpiresAt.Time); err != nil {
-		s.log.Errorf("blacklist old refresh token failed: %v", err)
+	if err := s.authUc.ConsumeRefresh(ctx, claims); err != nil {
+		return nil, err
 	}
 
 	accessToken, err := s.authUc.GenerateAccessToken(claims.UserID, claims.Role)

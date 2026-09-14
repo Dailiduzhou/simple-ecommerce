@@ -49,7 +49,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const deleteUser = `-- name: DeleteUser :exec
-DELETE FROM users WHERE id = $1
+DELETE FROM users
+WHERE id = $1
 `
 
 func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
@@ -58,7 +59,9 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, role, created_at, updated_at FROM users WHERE id = $1
+SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, role, created_at, updated_at
+FROM users
+WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -79,7 +82,9 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 }
 
 const getUserByPhoneHash = `-- name: GetUserByPhoneHash :one
-SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, role, created_at, updated_at FROM users WHERE phone_hash = $1
+SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, role, created_at, updated_at
+FROM users
+WHERE phone_hash = $1
 `
 
 func (q *Queries) GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error) {
@@ -101,7 +106,9 @@ func (q *Queries) GetUserByPhoneHash(ctx context.Context, phoneHash string) (Use
 
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
-SET nickname = $2, real_name = $3, updated_at = CURRENT_TIMESTAMP
+SET nickname = $2,
+    real_name = $3,
+    updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING id, nickname, real_name, phone_hash, phone_encrypt, password_hash, role, created_at, updated_at
 `
@@ -130,7 +137,10 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 }
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec
-UPDATE users SET password_hash = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1
+UPDATE users
+SET password_hash = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
 `
 
 type UpdateUserPasswordParams struct {
@@ -144,7 +154,10 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 }
 
 const updateUserRole = `-- name: UpdateUserRole :exec
-UPDATE users SET role = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1
+UPDATE users
+SET role = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
 `
 
 type UpdateUserRoleParams struct {

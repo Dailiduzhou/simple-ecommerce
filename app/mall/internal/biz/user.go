@@ -23,6 +23,7 @@ var ErrShippingAddressNotFound = mallv1.ErrorShippingAddressNotFound("shipping a
 type UserRepo interface {
 	CreateUser(ctx context.Context, nickname, phoneHash, phoneEncrypt, passwordHash string) (*User, error)
 	GetUserByID(ctx context.Context, id int64) (*User, error)
+	GetAuthUser(ctx context.Context, id int64) (*User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (*User, error)
 	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
@@ -112,6 +113,7 @@ func NewUserUsecase(userRepo UserRepo, ac *conf.Auth, logger log.Logger) UserUse
 }
 
 type AuthRepo interface {
+	ConsumeRefresh(ctx context.Context, tokenID string, expiration time.Duration) (bool, error)
 	SetBlacklist(ctx context.Context, tokenID string, expiration time.Duration) error
 	IsBlacklisted(ctx context.Context, tokenID string) (bool, error)
 }
@@ -123,6 +125,8 @@ type EcommerceClaims struct {
 }
 
 type AuthUsecase interface {
+	ValidateAccount(ctx context.Context, claims *EcommerceClaims) error
+	ConsumeRefresh(ctx context.Context, claims *EcommerceClaims) error
 	GenerateAccessToken(userID int64, role string) (string, error)
 	GenerateRefreshToken(userID int64, role string) (string, error)
 	ParseAccessToken(tokenStr string) (*EcommerceClaims, error)
@@ -149,6 +153,38 @@ func NewAuthUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth) AuthUse
 		refreshSecret:  ac.RefreshTokenSecret,
 		refreshTimeout: ac.RefreshTokenTimeout.AsDuration(),
 	}
+}
+
+// ValidateAccount always uses the authoritative account, so deleting an account
+// revokes every session and role changes apply to already-issued tokens.
+func (uc *authUsecase) ValidateAccount(ctx context.Context, claims *EcommerceClaims) error {
+	u, err := uc.userRepo.GetAuthUser(ctx, claims.UserID)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return userv1.ErrorUnauthorized("account no longer exists")
+	}
+	claims.Role = u.Role
+	return nil
+}
+
+func (uc *authUsecase) ConsumeRefresh(ctx context.Context, claims *EcommerceClaims) error {
+	if claims.ID == "" || claims.ExpiresAt == nil {
+		return userv1.ErrorUnauthorized("invalid refresh claims")
+	}
+	ttl := time.Until(claims.ExpiresAt.Time)
+	if ttl <= 0 {
+		return userv1.ErrorTokenExpired("refresh expired")
+	}
+	ok, err := uc.authRepo.ConsumeRefresh(ctx, claims.ID, ttl)
+	if err != nil {
+		return userv1.ErrorUnauthorized("refresh store unavailable")
+	}
+	if !ok {
+		return userv1.ErrorTokenExpired("refresh already consumed")
+	}
+	return uc.ValidateAccount(ctx, claims)
 }
 
 func (uc *authUsecase) GenerateAccessToken(userID int64, role string) (string, error) {
@@ -236,6 +272,9 @@ func generateDefaultNickname(seed string) string {
 }
 
 func (uc *userUsecase) Register(ctx context.Context, phone string, password string) (*User, error) {
+	if len(password) < 8 || len(password) > 72 {
+		return nil, userv1.ErrorInvalidPassword("password must be 8 to 72 bytes")
+	}
 	if !IsValidCNMobile(phone) {
 		return nil, userv1.ErrorInvalidPhone("invalid phone number: %s", phone)
 	}
@@ -275,6 +314,9 @@ func (uc *userUsecase) Register(ctx context.Context, phone string, password stri
 }
 
 func (uc *userUsecase) Login(ctx context.Context, phone string, password string) (*User, error) {
+	if len(password) < 8 || len(password) > 72 {
+		return nil, userv1.ErrorInvalidPassword("password must be 8 to 72 bytes")
+	}
 	if !IsValidCNMobile(phone) {
 		return nil, userv1.ErrorInvalidPhone("invalid phone number: %s", phone)
 	}

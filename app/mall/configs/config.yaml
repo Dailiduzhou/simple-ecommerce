@@ -17,11 +17,11 @@ data:
     write_timeout: 0.2s
 
 auth:
-  access_token_secret: ""
+  access_token_secret: "${AUTH_ACCESS_TOKEN_SECRET}"
   access_token_timeout: 3600s
-  refresh_token_secret: ""
+  refresh_token_secret: "${AUTH_REFRESH_TOKEN_SECRET}"
   refresh_token_timeout: 86400s
-  phone_secret: ""
+  phone_secret: "${AUTH_PHONE_SECRET}"
 
 snowflake:
   node_id: "${SNOWFLAKE_NODE_ID}"
@@ -30,7 +30,7 @@ trace:
   endpoint: http://otel-collector:4317
 
 payment:
-  order_payment_timeout: 30m
+  order_payment_timeout: 1800s
   prepay_lease_duration: 30s
   alipay:
     enabled: "${PAYMENT_ALIPAY_ENABLED}"
@@ -50,3 +50,27 @@ payment:
     initial_delay: 5s
     max_polls: 30
     poll_interval: 10s
+
+community:
+  history_retention_days: 90
+  cleanup_batch_size: 100
+  maintenance_workers: 2
+  media_workers: 2
+  posts_per_minute: 10
+  comments_per_minute: 30
+  uploads_per_minute: 20
+  interactions_per_minute: 120
+  rate_limit_fail_open: false
+storage:
+  provider: "${STORAGE_PROVIDER}"
+  endpoint: "${STORAGE_ENDPOINT}"
+  public_endpoint: "${STORAGE_PUBLIC_ENDPOINT}"
+  bucket: "${STORAGE_BUCKET}"
+  region: us-east-1
+  access_key_env: STORAGE_ACCESS_KEY
+  secret_key_env: STORAGE_SECRET_KEY
+  use_tls: "${STORAGE_USE_TLS}"
+  public_use_tls: "${STORAGE_PUBLIC_USE_TLS}"
+  upload_ttl_seconds: 600
+  read_ttl_seconds: 300
+  unused_retention_hours: 24

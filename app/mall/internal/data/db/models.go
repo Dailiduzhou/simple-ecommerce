@@ -32,6 +32,26 @@ type Event struct {
 	DeletedAt   pgtype.Timestamptz
 }
 
+type MediaAsset struct {
+	ID               int64
+	OwnerID          pgtype.Int8
+	Provider         string
+	BucketName       string
+	ObjectKey        string
+	StagingKey       string
+	StagingCleaned   bool
+	StagingCleanupAt pgtype.Timestamptz
+	ContentType      string
+	SizeBytes        int64
+	Width            int32
+	Height           int32
+	Status           string
+	ExpiresAt        pgtype.Timestamptz
+	UploadExpiresAt  pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
 type Order struct {
 	ID               int64
 	UserID           int64
@@ -127,6 +147,40 @@ type PaymentReconciliationFailure struct {
 	ResolvedAt pgtype.Timestamptz
 }
 
+type Post struct {
+	ID        int64
+	AuthorID  pgtype.Int8
+	Title     string
+	Content   string
+	Version   int64
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DeletedAt pgtype.Timestamptz
+}
+
+type PostComment struct {
+	ID               int64
+	PostID           int64
+	AuthorID         pgtype.Int8
+	RootCommentID    pgtype.Int8
+	ReplyToCommentID pgtype.Int8
+	Content          string
+	CreatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+}
+
+type PostImage struct {
+	PostID    int64
+	MediaID   int64
+	SortOrder int32
+}
+
+type PostLike struct {
+	PostID    int64
+	UserID    int64
+	CreatedAt pgtype.Timestamptz
+}
+
 type Product struct {
 	ID         int64
 	CategoryID int64
@@ -142,6 +196,13 @@ type Product struct {
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
 	DeletedAt   pgtype.Timestamptz
+}
+
+type ProductBrowsingHistory struct {
+	UserID        int64
+	ProductID     int64
+	FirstViewedAt pgtype.Timestamptz
+	LastViewedAt  pgtype.Timestamptz
 }
 
 type ShippingAddress struct {

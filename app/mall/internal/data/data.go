@@ -30,9 +30,14 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewPgxPool, NewRiverClient, NewRiverInsertClient, NewPaymentRiverErrorHandler, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepoWithJobs, NewOrderPolicy, NewPaymentPolicy, NewPaymentAdapters, NewPaymentRepoWithJobs, NewPaymentMQRepoForWire, NewPaymentNotificationRepo, NewOrderExpiryRepo, NewTransaction, NewSnowflakeIDGenerator,
+	NewCommunityUserRepo, NewCommunityPolicy, NewMediaPolicy, NewObjectStorage, NewWriteLimiter, NewBrowsingHistoryRepo, NewPostRepo, NewCommentRepo, NewMediaRepo,
+	NewPgxPool, NewConfiguredRiverClient, NewRiverInsertClient, NewPaymentRiverErrorHandler, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepoWithJobs, NewOrderPolicy, NewPaymentPolicy, NewPaymentAdapters, NewPaymentRepoWithJobs, NewPaymentMQRepoForWire, NewPaymentNotificationRepo, NewOrderExpiryRepo, NewTransaction, NewSnowflakeIDGenerator,
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
-	wire.Bind(new(biz.UserRepo), new(*UserRepo)),
+	wire.Bind(new(biz.UserRepo), new(*CommunityUserRepo)),
+	wire.Bind(new(biz.BrowsingHistoryRepo), new(*BrowsingHistoryRepo)),
+	wire.Bind(new(biz.PostRepo), new(*PostRepo)),
+	wire.Bind(new(biz.CommentRepo), new(*CommentRepo)),
+	wire.Bind(new(biz.MediaRepo), new(*MediaRepo)),
 	wire.Bind(new(biz.ShippingAddressRepo), new(*ShippingAddressRepo)),
 	wire.Bind(new(biz.ProductRepo), new(*ProductRepo)),
 	wire.Bind(new(biz.CategoryRepo), new(*CategoryRepo)),
@@ -162,6 +167,20 @@ func NewPgxPool(c *conf.Data) (*pgxpool.Pool, func(), error) {
 }
 
 func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers, periodicJobs []*river.PeriodicJob, errorHandler *PaymentRiverErrorHandler) (*river.Client[pgx.Tx], error) {
+	return NewConfiguredRiverClient(pool, workers, periodicJobs, errorHandler, nil)
+}
+
+func NewConfiguredRiverClient(pool *pgxpool.Pool, workers *river.Workers, periodicJobs []*river.PeriodicJob, errorHandler *PaymentRiverErrorHandler, c *conf.Community) (*river.Client[pgx.Tx], error) {
+	if err := conf.ValidateCommunity(c); err != nil {
+		return nil, err
+	}
+	maintenance, media := 2, 2
+	if c.GetMaintenanceWorkers() > 0 {
+		maintenance = int(c.MaintenanceWorkers)
+	}
+	if c.GetMediaWorkers() > 0 {
+		media = int(c.MediaWorkers)
+	}
 	driver := riverpgxv5.New(pool)
 	migrator, err := rivermigrate.New(driver, nil)
 	if err != nil {
@@ -173,8 +192,10 @@ func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers, periodicJobs []*
 
 	client, err := river.NewClient(driver, &river.Config{
 		Queues: map[string]river.QueueConfig{
-			"payments": {MaxWorkers: 10},
-			"orders":   {MaxWorkers: 10},
+			"payments":    {MaxWorkers: 10},
+			"orders":      {MaxWorkers: 10},
+			"maintenance": {MaxWorkers: maintenance},
+			"media":       {MaxWorkers: media},
 		},
 		Workers:      workers,
 		PeriodicJobs: periodicJobs,

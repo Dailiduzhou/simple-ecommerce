@@ -1,74 +1,121 @@
 -- name: CreateOrder :one
 INSERT INTO orders (
-  user_id, address_id, total_amount_minor, currency, status, out_trade_no,
-  idempotency_key, request_hash, expires_at
+  user_id,
+  address_id,
+  total_amount_minor,
+  currency,
+  status,
+  out_trade_no,
+  idempotency_key,
+  request_hash,
+  expires_at
 )
 VALUES ($1, $2, $3, $4, 'pending_payment', $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetOrder :one
-SELECT * FROM orders WHERE id = $1;
+SELECT *
+FROM orders
+WHERE id = $1;
 
 -- name: GetOrderForUpdate :one
-SELECT * FROM orders WHERE id = $1 FOR UPDATE;
+SELECT *
+FROM orders
+WHERE id = $1
+FOR UPDATE;
 
 -- name: GetOrderByOrderNo :one
 -- 通过商户订单号(orders.out_trade_no)查询订单。
 -- 统一支付 API 的入口:order_no -> order。
-SELECT * FROM orders WHERE out_trade_no = $1;
+SELECT *
+FROM orders
+WHERE out_trade_no = $1;
 
 -- name: GetOrderByUser :one
-SELECT * FROM orders WHERE id = $1 AND user_id = $2;
+SELECT *
+FROM orders
+WHERE id = $1
+  AND user_id = $2;
 
 -- name: GetOrderByUserIdempotency :one
-SELECT * FROM orders WHERE user_id = $1 AND idempotency_key = $2;
+SELECT *
+FROM orders
+WHERE user_id = $1
+  AND idempotency_key = $2;
 
 -- name: GetOrderByUserForUpdate :one
-SELECT * FROM orders WHERE id = $1 AND user_id = $2 FOR UPDATE;
+SELECT *
+FROM orders
+WHERE id = $1
+  AND user_id = $2
+FOR UPDATE;
 
 -- name: ListOrdersByUser :many
-SELECT * FROM orders WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3;
+SELECT *
+FROM orders
+WHERE user_id = $1
+ORDER BY id DESC
+LIMIT $2 OFFSET $3;
 
 -- name: ListOngoingOrdersByUser :many
-SELECT * FROM orders WHERE user_id = $1 AND is_completed = FALSE ORDER BY id DESC;
+SELECT *
+FROM orders
+WHERE user_id = $1
+  AND is_completed = FALSE
+ORDER BY id DESC;
 
 -- name: MarkOrderPaid :one
-UPDATE orders SET status = 'paid', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status = 'pending_payment'
+UPDATE orders
+SET status = 'paid',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'pending_payment'
 RETURNING *;
 
-UPDATE orders SET is_completed = TRUE, status = 'completed', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('paid', 'shipped');
-
-UPDATE orders SET is_completed = TRUE, status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('pending_payment', 'cancelling');
-
 -- name: MarkOrderCancelling :one
-UPDATE orders SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status = 'pending_payment'
+UPDATE orders
+SET status = 'cancelling',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'pending_payment'
 RETURNING *;
 
 -- name: MarkOrderCancelled :one
-UPDATE orders SET is_completed = TRUE, status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status = 'cancelling'
+UPDATE orders
+SET is_completed = TRUE,
+    status = 'cancelled',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'cancelling'
 RETURNING *;
 
 -- name: HasOngoingOrders :one
-SELECT EXISTS (SELECT 1 FROM orders WHERE user_id = $1 AND is_completed = FALSE) AS has_ongoing;
+SELECT EXISTS (
+  SELECT 1
+  FROM orders
+  WHERE user_id = $1
+    AND is_completed = FALSE
+) AS has_ongoing;
 
 -- name: CountOrdersByUser :one
-SELECT COUNT(*) FROM orders WHERE user_id = $1;
+SELECT count(*)
+FROM orders
+WHERE user_id = $1;
 
 -- name: OrderIsExpired :one
 -- Expiry decisions must use the database clock, not the application server's,
 -- so instances with skewed clocks cannot extend or shrink the payment window.
-SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired FROM orders WHERE id = $1;
+SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired
+FROM orders
+WHERE id = $1;
 
 -- name: ListOverduePendingOrders :many
 -- Backstop for expire_order jobs that were discarded after exhausting retries;
 -- the partial index idx_orders_pending_expiry keeps this scan cheap.
-SELECT id FROM orders
-WHERE id > sqlc.arg(after_id)::bigint AND status = 'pending_payment'
+SELECT id
+FROM orders
+WHERE id > sqlc.arg(after_id)::bigint
+  AND status = 'pending_payment'
   AND expires_at <= now() - make_interval(secs => sqlc.arg(grace_seconds)::double precision)
 ORDER BY id
 LIMIT sqlc.arg(limit_rows);

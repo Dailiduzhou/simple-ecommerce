@@ -10,7 +10,14 @@ import (
 )
 
 const createOrderItem = `-- name: CreateOrderItem :one
-INSERT INTO order_items (order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot)
+INSERT INTO order_items (
+  order_id,
+  product_id,
+  quantity,
+  unit_price_minor,
+  product_name_snapshot,
+  cover_image_snapshot
+)
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at
 `
@@ -48,7 +55,9 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 }
 
 const listOrderItems = `-- name: ListOrderItems :many
-SELECT id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at FROM order_items WHERE order_id = $1
+SELECT id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at
+FROM order_items
+WHERE order_id = $1
 `
 
 func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error) {
@@ -82,9 +91,11 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderIte
 
 const restoreOrderItemStock = `-- name: RestoreOrderItemStock :exec
 UPDATE products p
-SET stock = p.stock + oi.quantity, updated_at = CURRENT_TIMESTAMP
+SET stock = p.stock + oi.quantity,
+    updated_at = CURRENT_TIMESTAMP
 FROM order_items oi
-WHERE oi.order_id = $1 AND oi.product_id = p.id
+WHERE oi.order_id = $1
+  AND oi.product_id = p.id
 `
 
 func (q *Queries) RestoreOrderItemStock(ctx context.Context, orderID int64) error {

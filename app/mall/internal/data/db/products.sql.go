@@ -12,8 +12,46 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const countProducts = `-- name: CountProducts :one
+SELECT count(*)
+FROM products
+WHERE deleted_at IS NULL
+`
+
+func (q *Queries) CountProducts(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countProducts)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countProductsByCategory = `-- name: CountProductsByCategory :one
+SELECT count(*)
+FROM products
+WHERE category_id = $1
+  AND status = 1
+  AND deleted_at IS NULL
+`
+
+func (q *Queries) CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countProductsByCategory, categoryID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createProduct = `-- name: CreateProduct :one
-INSERT INTO products (category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description)
+INSERT INTO products (
+  category_id,
+  name,
+  price_minor,
+  discount,
+  stock,
+  status,
+  cover_image,
+  media_assets,
+  description
+)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
 `
@@ -62,8 +100,12 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 }
 
 const decrProductStock = `-- name: DecrProductStock :one
-UPDATE products SET stock = stock - $2, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND stock >= $2 AND deleted_at IS NULL
+UPDATE products
+SET stock = stock - $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND stock >= $2
+  AND deleted_at IS NULL
 RETURNING stock
 `
 
@@ -80,7 +122,10 @@ func (q *Queries) DecrProductStock(ctx context.Context, arg DecrProductStockPara
 }
 
 const getProduct = `-- name: GetProduct :one
-SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM products WHERE id = $1 AND deleted_at IS NULL
+SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
+FROM products
+WHERE id = $1
+  AND deleted_at IS NULL
 `
 
 func (q *Queries) GetProduct(ctx context.Context, id int64) (Product, error) {
@@ -105,7 +150,11 @@ func (q *Queries) GetProduct(ctx context.Context, id int64) (Product, error) {
 }
 
 const getProductForOrder = `-- name: GetProductForOrder :one
-SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM products WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
+FROM products
+WHERE id = $1
+  AND deleted_at IS NULL
+FOR UPDATE
 `
 
 func (q *Queries) GetProductForOrder(ctx context.Context, id int64) (Product, error) {
@@ -130,8 +179,11 @@ func (q *Queries) GetProductForOrder(ctx context.Context, id int64) (Product, er
 }
 
 const incrementProductStock = `-- name: IncrementProductStock :exec
-UPDATE products SET stock = stock + $2, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND deleted_at IS NULL
+UPDATE products
+SET stock = stock + $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND deleted_at IS NULL
 `
 
 type IncrementProductStockParams struct {
@@ -145,7 +197,8 @@ func (q *Queries) IncrementProductStock(ctx context.Context, arg IncrementProduc
 }
 
 const listProducts = `-- name: ListProducts :many
-SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM products
+SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
+FROM products
 WHERE deleted_at IS NULL
 ORDER BY id DESC
 LIMIT $1 OFFSET $2
@@ -191,8 +244,11 @@ func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]P
 }
 
 const listProductsByCategory = `-- name: ListProductsByCategory :many
-SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM products
-WHERE category_id = $1 AND status = 1 AND deleted_at IS NULL
+SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
+FROM products
+WHERE category_id = $1
+  AND status = 1
+  AND deleted_at IS NULL
 ORDER BY id DESC
 LIMIT $2 OFFSET $3
 `
@@ -239,7 +295,9 @@ func (q *Queries) ListProductsByCategory(ctx context.Context, arg ListProductsBy
 }
 
 const softDeleteProduct = `-- name: SoftDeleteProduct :exec
-UPDATE products SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1
+UPDATE products
+SET deleted_at = CURRENT_TIMESTAMP
+WHERE id = $1
 `
 
 func (q *Queries) SoftDeleteProduct(ctx context.Context, id int64) error {
@@ -249,9 +307,17 @@ func (q *Queries) SoftDeleteProduct(ctx context.Context, id int64) error {
 
 const updateProduct = `-- name: UpdateProduct :one
 UPDATE products
-SET category_id = $2, name = $3, price_minor = $4, discount = $5, stock = $6,
-    cover_image = $7, media_assets = $8, description = $9, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND deleted_at IS NULL
+SET category_id = $2,
+    name = $3,
+    price_minor = $4,
+    discount = $5,
+    stock = $6,
+    cover_image = $7,
+    media_assets = $8,
+    description = $9,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND deleted_at IS NULL
 RETURNING id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
 `
 
@@ -299,7 +365,11 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (P
 }
 
 const updateProductStatus = `-- name: UpdateProductStatus :exec
-UPDATE products SET status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL
+UPDATE products
+SET status = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND deleted_at IS NULL
 `
 
 type UpdateProductStatusParams struct {

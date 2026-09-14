@@ -134,14 +134,18 @@ func (f *correctnessFixture) cleanup(t *testing.T) {
 		sql  string
 		args []any
 	}{
-		{`DELETE FROM river_job
+		{
+			`DELETE FROM river_job
 			WHERE kind = $1
 			  AND (args->>'order_id')::bigint IN (SELECT id FROM orders WHERE user_id = $2)`,
-			[]any{biz.ExpireOrderJobKind, f.userID}},
-		{`DELETE FROM river_job
+			[]any{biz.ExpireOrderJobKind, f.userID},
+		},
+		{
+			`DELETE FROM river_job
 			WHERE kind IN ($1, $2)
 			  AND (args->>'payment_id')::bigint IN (SELECT id FROM payments WHERE user_id = $3)`,
-			[]any{biz.CheckPayJobKind, biz.ClosePayJobKind, f.userID}},
+			[]any{biz.CheckPayJobKind, biz.ClosePayJobKind, f.userID},
+		},
 		{`DELETE FROM river_job WHERE kind = $1 AND args->>'provider' = $2`, []any{biz.CheckPayJobKind, f.provider}},
 		{`DELETE FROM payment_notifications WHERE provider = $1`, []any{f.provider}},
 		{`DELETE FROM payment_reconciliation_failures WHERE payment_id IN (SELECT id FROM payments WHERE user_id = $1)`, []any{f.userID}},
@@ -187,21 +191,27 @@ type failingPaymentMQRepo struct{ err error }
 func (r failingPaymentMQRepo) EnqueueCheckPay(context.Context, biz.CheckPayArgs, time.Time) (*biz.MQJob, error) {
 	return nil, r.err
 }
+
 func (r failingPaymentMQRepo) EnqueueCheckPayTx(context.Context, biz.CheckPayArgs, time.Time) (*biz.MQJob, error) {
 	return nil, r.err
 }
+
 func (r failingPaymentMQRepo) EnqueueClosePay(context.Context, biz.ClosePayArgs, time.Time) (*biz.MQJob, error) {
 	return nil, r.err
 }
+
 func (r failingPaymentMQRepo) EnqueueClosePayTx(context.Context, biz.ClosePayArgs, time.Time) (*biz.MQJob, error) {
 	return nil, r.err
 }
+
 func (r failingPaymentMQRepo) EnqueueExpireOrder(context.Context, biz.ExpireOrderArgs, time.Time) (*biz.MQJob, error) {
 	return nil, r.err
 }
+
 func (r failingPaymentMQRepo) EnqueueExpireOrderTx(context.Context, biz.ExpireOrderArgs, time.Time) (*biz.MQJob, error) {
 	return nil, r.err
 }
+
 func (r failingPaymentMQRepo) GetMQJob(context.Context, int64) (*biz.MQJob, error) {
 	return nil, r.err
 }
@@ -326,8 +336,11 @@ func TestCorrectnessIntegration(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				// The usecase generates a fresh order number for each request. Only
+				// the idempotency key is shared; sharing both unique keys instead
+				// races PostgreSQL's choice of which constraint reports the conflict.
 				order, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{
-					UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_concurrent_order",
+					UserID: f.userID, AddressID: f.addressID, OutTradeNo: fmt.Sprintf("%s_concurrent_order_%d", f.prefix, i),
 					Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}},
 					IdempotencyKey: idempotencyKey, RequestHash: f.prefix + "_concurrent_hash",
 					ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
@@ -409,6 +422,9 @@ func TestCorrectnessIntegration(t *testing.T) {
 	})
 
 	t.Run("order creation uses database price and advances every related cache generation", func(t *testing.T) {
+		// Earlier subtests also reserve this shared fixture's product.
+		var initialStock int32
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id = $1`, f.productID).Scan(&initialStock))
 		keys := []string{
 			"product:list:gen",
 			redisKey("product", "category", f.categoryID, "gen"),
@@ -436,7 +452,7 @@ func TestCorrectnessIntegration(t *testing.T) {
 		}
 		var stock int32
 		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id = $1`, f.productID).Scan(&stock))
-		require.Equal(t, int32(98), stock)
+		require.Equal(t, initialStock-2, stock)
 		var snapshotName string
 		require.NoError(t, f.pool.QueryRow(f.ctx,
 			`SELECT product_name_snapshot FROM order_items WHERE order_id = $1`, order.ID).Scan(&snapshotName))
@@ -486,13 +502,9 @@ func TestCorrectnessIntegration(t *testing.T) {
 		require.NoError(t, err)
 		_, err = q.BeginPaymentNotificationProcessing(f.ctx, notification.ID)
 		require.NoError(t, err)
-		cacheKeys := []string{
-			redisKey("payment", paymentID),
-			redisKey("payment", "order", orderID),
-			redisKey("payment", "order", orderID, "active", "wechat", "native"),
-			redisKey("payment", "out_trade_no", outTradeNo),
-			redisKey("order", orderID),
-		}
+		payment, err := q.GetPayment(f.ctx, paymentID)
+		require.NoError(t, err)
+		cacheKeys := append(paymentCacheKeysFor(payment, paymentCacheGeneration(f.ctx, f.rdb, log.NewHelper(log.DefaultLogger))), redisKey("order", orderID))
 		for _, key := range cacheKeys {
 			require.NoError(t, f.rdb.Set(f.ctx, key, `{"Status":"pending"}`, time.Hour).Err())
 		}

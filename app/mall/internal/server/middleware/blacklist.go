@@ -34,6 +34,9 @@ func CheckBlacklist(authUc biz.AuthUsecase) middleware.Middleware {
 				return nil, userv1.ErrorTokenExpired("token has been revoked")
 			}
 
+			if err := authUc.ValidateAccount(ctx, ec); err != nil {
+				return nil, userv1.ErrorUnauthorized("account validation failed")
+			}
 			return handler(ctx, req)
 		}
 	}
