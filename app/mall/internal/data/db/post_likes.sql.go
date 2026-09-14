@@ -10,11 +10,28 @@ import (
 )
 
 const getPostStats = `-- name: GetPostStats :many
-SELECT p.id,
- (SELECT count(*) FROM post_likes l WHERE l.post_id=p.id)::bigint AS like_count,
- (SELECT count(*) FROM post_comments c WHERE c.post_id=p.id AND c.deleted_at IS NULL)::bigint AS comment_count,
- EXISTS(SELECT 1 FROM post_likes l WHERE l.post_id=p.id AND l.user_id=$1)::boolean AS liked_by_me
-FROM posts p WHERE p.id = ANY($2::bigint[]) AND p.deleted_at IS NULL
+SELECT
+  p.id,
+  (
+    SELECT count(*)
+    FROM post_likes l
+    WHERE l.post_id = p.id
+  )::bigint AS like_count,
+  (
+    SELECT count(*)
+    FROM post_comments c
+    WHERE c.post_id = p.id
+      AND c.deleted_at IS NULL
+  )::bigint AS comment_count,
+  EXISTS (
+    SELECT 1
+    FROM post_likes l
+    WHERE l.post_id = p.id
+      AND l.user_id = $1
+  )::boolean AS liked_by_me
+FROM posts p
+WHERE p.id = ANY($2::bigint[])
+  AND p.deleted_at IS NULL
 `
 
 type GetPostStatsParams struct {
@@ -55,7 +72,9 @@ func (q *Queries) GetPostStats(ctx context.Context, arg GetPostStatsParams) ([]G
 }
 
 const likePost = `-- name: LikePost :exec
-INSERT INTO post_likes(post_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING
+INSERT INTO post_likes (post_id, user_id)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
 `
 
 type LikePostParams struct {
@@ -69,7 +88,9 @@ func (q *Queries) LikePost(ctx context.Context, arg LikePostParams) error {
 }
 
 const unlikePost = `-- name: UnlikePost :exec
-DELETE FROM post_likes WHERE post_id=$1 AND user_id=$2
+DELETE FROM post_likes
+WHERE post_id = $1
+  AND user_id = $2
 `
 
 type UnlikePostParams struct {

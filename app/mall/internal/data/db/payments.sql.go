@@ -14,7 +14,8 @@ import (
 const claimPaymentPrepay = `-- name: ClaimPaymentPrepay :one
 UPDATE payments
 SET prepay_lease_token = $2,
-    prepay_lease_until = CURRENT_TIMESTAMP + make_interval(secs => $3::double precision),
+    prepay_lease_until = CURRENT_TIMESTAMP
+      + make_interval(secs => $3::double precision),
     prepay_attempts = prepay_attempts + 1,
     last_error = NULL,
     updated_at = CURRENT_TIMESTAMP
@@ -62,7 +63,14 @@ func (q *Queries) ClaimPaymentPrepay(ctx context.Context, arg ClaimPaymentPrepay
 
 const createPayment = `-- name: CreatePayment :one
 INSERT INTO payments (
-  order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, out_trade_no
+  order_id,
+  user_id,
+  merchant_id,
+  amount_minor,
+  currency,
+  status,
+  pay_channel,
+  out_trade_no
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
@@ -120,10 +128,16 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 
 const createPaymentWithOutTradeNo = `-- name: CreatePaymentWithOutTradeNo :one
 INSERT INTO payments (
-  order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, out_trade_no
-) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8
+  order_id,
+  user_id,
+  merchant_id,
+  amount_minor,
+  currency,
+  status,
+  pay_channel,
+  out_trade_no
 )
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
@@ -284,8 +298,10 @@ func (q *Queries) FinalizePaymentPrepay(ctx context.Context, arg FinalizePayment
 }
 
 const getActivePaymentByOrder = `-- name: GetActivePaymentByOrder :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments
-WHERE order_id = $1 AND status IN ('creating', 'pending', 'close_pending')
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+FROM payments
+WHERE order_id = $1
+  AND status IN ('creating', 'pending', 'close_pending')
 ORDER BY created_at DESC, id DESC
 LIMIT 1
 `
@@ -321,8 +337,11 @@ func (q *Queries) GetActivePaymentByOrder(ctx context.Context, orderID int64) (P
 }
 
 const getActivePaymentByOrderChannel = `-- name: GetActivePaymentByOrderChannel :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments
-WHERE order_id = $1 AND pay_channel = $2 AND status IN ('creating', 'pending', 'close_pending')
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+FROM payments
+WHERE order_id = $1
+  AND pay_channel = $2
+  AND status IN ('creating', 'pending', 'close_pending')
 ORDER BY created_at DESC, id DESC
 LIMIT 1
 `
@@ -363,7 +382,11 @@ func (q *Queries) GetActivePaymentByOrderChannel(ctx context.Context, arg GetAct
 }
 
 const getLatestPaymentByOrder = `-- name: GetLatestPaymentByOrder :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments WHERE order_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+FROM payments
+WHERE order_id = $1
+ORDER BY created_at DESC, id DESC
+LIMIT 1
 `
 
 func (q *Queries) GetLatestPaymentByOrder(ctx context.Context, orderID int64) (Payment, error) {
@@ -397,7 +420,9 @@ func (q *Queries) GetLatestPaymentByOrder(ctx context.Context, orderID int64) (P
 }
 
 const getPayment = `-- name: GetPayment :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments WHERE id = $1
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+FROM payments
+WHERE id = $1
 `
 
 func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
@@ -431,7 +456,9 @@ func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
 }
 
 const getPaymentByOutTradeNo = `-- name: GetPaymentByOutTradeNo :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments WHERE out_trade_no = $1
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+FROM payments
+WHERE out_trade_no = $1
 `
 
 func (q *Queries) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (Payment, error) {
@@ -465,7 +492,9 @@ func (q *Queries) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string)
 }
 
 const getPaymentByThirdPartyTxID = `-- name: GetPaymentByThirdPartyTxID :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments WHERE third_party_tx_id = $1
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+FROM payments
+WHERE third_party_tx_id = $1
 `
 
 func (q *Queries) GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID pgtype.Text) (Payment, error) {
@@ -499,7 +528,10 @@ func (q *Queries) GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID
 }
 
 const getPaymentForUpdate = `-- name: GetPaymentForUpdate :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments WHERE id = $1 FOR UPDATE
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+FROM payments
+WHERE id = $1
+FOR UPDATE
 `
 
 func (q *Queries) GetPaymentForUpdate(ctx context.Context, id int64) (Payment, error) {
@@ -533,7 +565,8 @@ func (q *Queries) GetPaymentForUpdate(ctx context.Context, id int64) (Payment, e
 }
 
 const listPaymentsByOrderForUpdate = `-- name: ListPaymentsByOrderForUpdate :many
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at FROM payments
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+FROM payments
 WHERE order_id = $1
 ORDER BY created_at DESC, id DESC
 FOR UPDATE
@@ -583,8 +616,11 @@ func (q *Queries) ListPaymentsByOrderForUpdate(ctx context.Context, orderID int6
 }
 
 const markPaymentClosePending = `-- name: MarkPaymentClosePending :one
-UPDATE payments SET status = 'close_pending', updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('creating', 'pending')
+UPDATE payments
+SET status = 'close_pending',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status IN ('creating', 'pending')
 RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
@@ -624,7 +660,8 @@ SET status = 'closed',
     prepay_lease_token = NULL,
     prepay_lease_until = NULL,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('creating', 'pending', 'close_pending')
+WHERE id = $1
+  AND status IN ('creating', 'pending', 'close_pending')
 RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
@@ -665,7 +702,8 @@ SET status = 'failed',
     prepay_lease_until = NULL,
     last_error = $2,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('creating', 'pending', 'close_pending')
+WHERE id = $1
+  AND status IN ('creating', 'pending', 'close_pending')
 RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
@@ -737,7 +775,8 @@ SET status = 'success',
     prepay_lease_token = NULL,
     prepay_lease_until = NULL,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status NOT IN ('success', 'refunded')
+WHERE id = $1
+  AND status NOT IN ('success', 'refunded')
 RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
@@ -782,7 +821,8 @@ SET reconciliation_status = 'required',
     reconciliation_reason = $2,
     reconciliation_detail = $3,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND reconciliation_status NOT IN ('processing', 'resolved')
+WHERE id = $1
+  AND reconciliation_status NOT IN ('processing', 'resolved')
 RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
@@ -823,7 +863,11 @@ func (q *Queries) RequirePaymentReconciliation(ctx context.Context, arg RequireP
 }
 
 const updatePaymentRefunded = `-- name: UpdatePaymentRefunded :execrows
-UPDATE payments SET status = 'refunded', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'success'
+UPDATE payments
+SET status = 'refunded',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'success'
 `
 
 func (q *Queries) UpdatePaymentRefunded(ctx context.Context, id int64) (int64, error) {

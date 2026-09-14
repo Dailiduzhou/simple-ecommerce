@@ -12,7 +12,15 @@ import (
 )
 
 const createEvent = `-- name: CreateEvent :one
-INSERT INTO events (name, status, start_at, end_at, cover_image, media_assets, description)
+INSERT INTO events (
+  name,
+  status,
+  start_at,
+  end_at,
+  cover_image,
+  media_assets,
+  description
+)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
 `
@@ -55,7 +63,10 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 }
 
 const getEvent = `-- name: GetEvent :one
-SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events WHERE id = $1 AND deleted_at IS NULL
+SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
+FROM events
+WHERE id = $1
+  AND deleted_at IS NULL
 `
 
 func (q *Queries) GetEvent(ctx context.Context, id int64) (Event, error) {
@@ -78,7 +89,8 @@ func (q *Queries) GetEvent(ctx context.Context, id int64) (Event, error) {
 }
 
 const listEvents = `-- name: ListEvents :many
-SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
+SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
+FROM events
 WHERE deleted_at IS NULL
 ORDER BY start_at ASC
 LIMIT $1 OFFSET $2
@@ -122,8 +134,10 @@ func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event
 }
 
 const listEventsByStatus = `-- name: ListEventsByStatus :many
-SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
-WHERE status = $1 AND deleted_at IS NULL
+SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
+FROM events
+WHERE status = $1
+  AND deleted_at IS NULL
 ORDER BY start_at ASC
 LIMIT $2 OFFSET $3
 `
@@ -167,8 +181,11 @@ func (q *Queries) ListEventsByStatus(ctx context.Context, arg ListEventsByStatus
 }
 
 const listUpcomingEvents = `-- name: ListUpcomingEvents :many
-SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at FROM events
-WHERE status = 0 AND start_at > CURRENT_TIMESTAMP AND deleted_at IS NULL
+SELECT id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
+FROM events
+WHERE status = 0
+  AND start_at > CURRENT_TIMESTAMP
+  AND deleted_at IS NULL
 ORDER BY start_at ASC
 LIMIT $1 OFFSET $2
 `
@@ -211,7 +228,9 @@ func (q *Queries) ListUpcomingEvents(ctx context.Context, arg ListUpcomingEvents
 }
 
 const softDeleteEvent = `-- name: SoftDeleteEvent :exec
-UPDATE events SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1
+UPDATE events
+SET deleted_at = CURRENT_TIMESTAMP
+WHERE id = $1
 `
 
 func (q *Queries) SoftDeleteEvent(ctx context.Context, id int64) error {
@@ -221,9 +240,15 @@ func (q *Queries) SoftDeleteEvent(ctx context.Context, id int64) error {
 
 const updateEvent = `-- name: UpdateEvent :one
 UPDATE events
-SET name = $2, start_at = $3, end_at = $4,
-    cover_image = $5, media_assets = $6, description = $7, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND deleted_at IS NULL
+SET name = $2,
+    start_at = $3,
+    end_at = $4,
+    cover_image = $5,
+    media_assets = $6,
+    description = $7,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND deleted_at IS NULL
 RETURNING id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
 `
 
@@ -265,7 +290,11 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 }
 
 const updateEventStatus = `-- name: UpdateEventStatus :exec
-UPDATE events SET status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL
+UPDATE events
+SET status = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND deleted_at IS NULL
 `
 
 type UpdateEventStatusParams struct {

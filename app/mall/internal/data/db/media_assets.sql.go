@@ -12,7 +12,7 @@ import (
 )
 
 const acquireMediaIOLock = `-- name: AcquireMediaIOLock :exec
-SELECT pg_advisory_lock(1279476052,hashint8($1::bigint))
+SELECT pg_advisory_lock(1279476052, hashint8($1::bigint))
 `
 
 // 1279476052 is this application's advisory-lock namespace for media object I/O.
@@ -26,9 +26,30 @@ func (q *Queries) AcquireMediaIOLock(ctx context.Context, dollar_1 int64) error 
 }
 
 const canReadMedia = `-- name: CanReadMedia :one
-SELECT EXISTS(SELECT 1 FROM media_assets m WHERE m.id=$1 AND m.status='ready' AND
- (EXISTS(SELECT 1 FROM post_images i JOIN posts p ON p.id=i.post_id WHERE i.media_id=m.id AND p.deleted_at IS NULL)
- OR (m.owner_id=$2 AND m.expires_at>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM post_images i WHERE i.media_id=m.id))))::boolean
+SELECT EXISTS (
+  SELECT 1
+  FROM media_assets m
+  WHERE m.id = $1
+    AND m.status = 'ready'
+    AND (
+      EXISTS (
+        SELECT 1
+        FROM post_images i
+        JOIN posts p ON p.id = i.post_id
+        WHERE i.media_id = m.id
+          AND p.deleted_at IS NULL
+      )
+      OR (
+        m.owner_id = $2
+        AND m.expires_at > clock_timestamp()
+        AND NOT EXISTS (
+          SELECT 1
+          FROM post_images i
+          WHERE i.media_id = m.id
+        )
+      )
+    )
+)::boolean
 `
 
 type CanReadMediaParams struct {
@@ -44,8 +65,19 @@ func (q *Queries) CanReadMedia(ctx context.Context, arg CanReadMediaParams) (boo
 }
 
 const createMediaAsset = `-- name: CreateMediaAsset :one
-INSERT INTO media_assets(owner_id,provider,bucket_name,object_key,staging_key,content_type,size_bytes,expires_at,upload_expires_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+INSERT INTO media_assets (
+  owner_id,
+  provider,
+  bucket_name,
+  object_key,
+  staging_key,
+  content_type,
+  size_bytes,
+  expires_at,
+  upload_expires_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
 `
 
 type CreateMediaAssetParams struct {
@@ -96,7 +128,9 @@ func (q *Queries) CreateMediaAsset(ctx context.Context, arg CreateMediaAssetPara
 }
 
 const getMediaAsset = `-- name: GetMediaAsset :one
-SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at FROM media_assets WHERE id=$1
+SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+FROM media_assets
+WHERE id = $1
 `
 
 func (q *Queries) GetMediaAsset(ctx context.Context, id int64) (MediaAsset, error) {
@@ -126,15 +160,38 @@ func (q *Queries) GetMediaAsset(ctx context.Context, id int64) (MediaAsset, erro
 
 const lockExpiredMedia = `-- name: LockExpiredMedia :many
 WITH fresh AS (
- SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM media_assets m WHERE m.status IN ('pending','ready') AND m.expires_at<=clock_timestamp()
- AND NOT EXISTS(SELECT 1 FROM post_images i WHERE i.media_id=m.id)
- ORDER BY m.expires_at,m.id LIMIT $1 FOR UPDATE SKIP LOCKED
-), stale AS (
- SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM media_assets m WHERE m.status='deleting' AND m.updated_at<=clock_timestamp()-interval '10 minutes'
- AND NOT EXISTS(SELECT 1 FROM post_images i WHERE i.media_id=m.id)
- ORDER BY m.updated_at,m.id LIMIT $1 FOR UPDATE SKIP LOCKED
+  SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at
+  FROM media_assets m
+  WHERE m.status IN ('pending', 'ready')
+    AND m.expires_at <= clock_timestamp()
+    AND NOT EXISTS (
+      SELECT 1
+      FROM post_images i
+      WHERE i.media_id = m.id
+    )
+  ORDER BY m.expires_at, m.id
+  LIMIT $1
+  FOR UPDATE SKIP LOCKED
+),
+stale AS (
+  SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at
+  FROM media_assets m
+  WHERE m.status = 'deleting'
+    AND m.updated_at <= clock_timestamp() - interval '10 minutes'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM post_images i
+      WHERE i.media_id = m.id
+    )
+  ORDER BY m.updated_at, m.id
+  LIMIT $1
+  FOR UPDATE SKIP LOCKED
 )
-SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at FROM fresh UNION ALL SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at FROM stale
+SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+FROM fresh
+UNION ALL
+SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+FROM stale
 `
 
 type LockExpiredMediaRow struct {
@@ -198,7 +255,11 @@ func (q *Queries) LockExpiredMedia(ctx context.Context, limit int32) ([]LockExpi
 }
 
 const lockMediaAssets = `-- name: LockMediaAssets :many
-SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at FROM media_assets WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE
+SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+FROM media_assets
+WHERE id = ANY($1::bigint[])
+ORDER BY id
+FOR UPDATE
 `
 
 func (q *Queries) LockMediaAssets(ctx context.Context, ids []int64) ([]MediaAsset, error) {
@@ -241,19 +302,48 @@ func (q *Queries) LockMediaAssets(ctx context.Context, ids []int64) ([]MediaAsse
 
 const lockStagingCleanupMedia = `-- name: LockStagingCleanupMedia :many
 WITH fresh AS (
- SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM media_assets m WHERE m.status='ready' AND NOT m.staging_cleaned
- AND m.staging_cleanup_at IS NULL
- AND m.upload_expires_at <= clock_timestamp()-interval '1 minute'
- AND (m.expires_at>clock_timestamp() OR EXISTS(SELECT 1 FROM post_images i WHERE i.media_id=m.id))
- ORDER BY m.upload_expires_at,m.id LIMIT $1 FOR UPDATE SKIP LOCKED
-), stale AS (
- SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at FROM media_assets m WHERE m.status='ready' AND NOT m.staging_cleaned
- AND m.staging_cleanup_at <= clock_timestamp()-interval '10 minutes'
- AND m.upload_expires_at <= clock_timestamp()-interval '1 minute'
- AND (m.expires_at>clock_timestamp() OR EXISTS(SELECT 1 FROM post_images i WHERE i.media_id=m.id))
- ORDER BY m.staging_cleanup_at,m.id LIMIT $1 FOR UPDATE SKIP LOCKED
+  SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at
+  FROM media_assets m
+  WHERE m.status = 'ready'
+    AND NOT m.staging_cleaned
+    AND m.staging_cleanup_at IS NULL
+    AND m.upload_expires_at <= clock_timestamp() - interval '1 minute'
+    AND (
+      m.expires_at > clock_timestamp()
+      OR EXISTS (
+        SELECT 1
+        FROM post_images i
+        WHERE i.media_id = m.id
+      )
+    )
+  ORDER BY m.upload_expires_at, m.id
+  LIMIT $1
+  FOR UPDATE SKIP LOCKED
+),
+stale AS (
+  SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at
+  FROM media_assets m
+  WHERE m.status = 'ready'
+    AND NOT m.staging_cleaned
+    AND m.staging_cleanup_at <= clock_timestamp() - interval '10 minutes'
+    AND m.upload_expires_at <= clock_timestamp() - interval '1 minute'
+    AND (
+      m.expires_at > clock_timestamp()
+      OR EXISTS (
+        SELECT 1
+        FROM post_images i
+        WHERE i.media_id = m.id
+      )
+    )
+  ORDER BY m.staging_cleanup_at, m.id
+  LIMIT $1
+  FOR UPDATE SKIP LOCKED
 )
-SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at FROM fresh UNION ALL SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at FROM stale
+SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+FROM fresh
+UNION ALL
+SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+FROM stale
 `
 
 type LockStagingCleanupMediaRow struct {
@@ -318,7 +408,12 @@ func (q *Queries) LockStagingCleanupMedia(ctx context.Context, limit int32) ([]L
 }
 
 const lockUserMedia = `-- name: LockUserMedia :many
-SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at FROM media_assets WHERE owner_id=$1 AND status <> 'deleted' ORDER BY id FOR UPDATE
+SELECT id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+FROM media_assets
+WHERE owner_id = $1
+  AND status <> 'deleted'
+ORDER BY id
+FOR UPDATE
 `
 
 func (q *Queries) LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]MediaAsset, error) {
@@ -360,7 +455,11 @@ func (q *Queries) LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]Med
 }
 
 const markMediaDeleted = `-- name: MarkMediaDeleted :exec
-UPDATE media_assets SET status='deleted',updated_at=clock_timestamp() WHERE id=$1 AND status='deleting'
+UPDATE media_assets
+SET status = 'deleted',
+    updated_at = clock_timestamp()
+WHERE id = $1
+  AND status = 'deleting'
 `
 
 func (q *Queries) MarkMediaDeleted(ctx context.Context, id int64) error {
@@ -369,8 +468,16 @@ func (q *Queries) MarkMediaDeleted(ctx context.Context, id int64) error {
 }
 
 const markMediaDeleting = `-- name: MarkMediaDeleting :execrows
-UPDATE media_assets SET status='deleting',updated_at=clock_timestamp() WHERE id=$1 AND status IN ('pending','ready')
-AND NOT EXISTS(SELECT 1 FROM post_images WHERE media_id=$1)
+UPDATE media_assets
+SET status = 'deleting',
+    updated_at = clock_timestamp()
+WHERE id = $1
+  AND status IN ('pending', 'ready')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM post_images
+    WHERE media_id = $1
+  )
 `
 
 func (q *Queries) MarkMediaDeleting(ctx context.Context, id int64) (int64, error) {
@@ -382,7 +489,9 @@ func (q *Queries) MarkMediaDeleting(ctx context.Context, id int64) (int64, error
 }
 
 const markMediaStagingCleaned = `-- name: MarkMediaStagingCleaned :exec
-UPDATE media_assets SET staging_cleaned=true WHERE id=$1
+UPDATE media_assets
+SET staging_cleaned = TRUE
+WHERE id = $1
 `
 
 func (q *Queries) MarkMediaStagingCleaned(ctx context.Context, id int64) error {
@@ -391,8 +500,16 @@ func (q *Queries) MarkMediaStagingCleaned(ctx context.Context, id int64) error {
 }
 
 const readyMediaAsset = `-- name: ReadyMediaAsset :one
-UPDATE media_assets SET status='ready',content_type=$2,size_bytes=$3,width=$4,height=$5,updated_at=clock_timestamp()
-WHERE id=$1 AND status='pending' RETURNING id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
+UPDATE media_assets
+SET status = 'ready',
+    content_type = $2,
+    size_bytes = $3,
+    width = $4,
+    height = $5,
+    updated_at = clock_timestamp()
+WHERE id = $1
+  AND status = 'pending'
+RETURNING id, owner_id, provider, bucket_name, object_key, staging_key, staging_cleaned, staging_cleanup_at, content_type, size_bytes, width, height, status, expires_at, upload_expires_at, created_at, updated_at
 `
 
 type ReadyMediaAssetParams struct {
@@ -435,7 +552,7 @@ func (q *Queries) ReadyMediaAsset(ctx context.Context, arg ReadyMediaAssetParams
 }
 
 const releaseMediaIOLock = `-- name: ReleaseMediaIOLock :one
-SELECT pg_advisory_unlock(1279476052,hashint8($1::bigint))::boolean AS unlocked
+SELECT pg_advisory_unlock(1279476052, hashint8($1::bigint))::boolean AS unlocked
 `
 
 // Must run on the same session that acquired the lock; false means the session
@@ -449,7 +566,10 @@ func (q *Queries) ReleaseMediaIOLock(ctx context.Context, dollar_1 int64) (bool,
 }
 
 const touchDeletingMedia = `-- name: TouchDeletingMedia :exec
-UPDATE media_assets SET updated_at=clock_timestamp() WHERE id=$1 AND status='deleting'
+UPDATE media_assets
+SET updated_at = clock_timestamp()
+WHERE id = $1
+  AND status = 'deleting'
 `
 
 func (q *Queries) TouchDeletingMedia(ctx context.Context, id int64) error {
@@ -458,7 +578,9 @@ func (q *Queries) TouchDeletingMedia(ctx context.Context, id int64) error {
 }
 
 const touchMediaStagingCleanup = `-- name: TouchMediaStagingCleanup :exec
-UPDATE media_assets SET staging_cleanup_at=clock_timestamp() WHERE id=$1
+UPDATE media_assets
+SET staging_cleanup_at = clock_timestamp()
+WHERE id = $1
 `
 
 func (q *Queries) TouchMediaStagingCleanup(ctx context.Context, id int64) error {

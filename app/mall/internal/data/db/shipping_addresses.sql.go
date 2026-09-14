@@ -12,7 +12,10 @@ import (
 )
 
 const clearDefaultShippingAddress = `-- name: ClearDefaultShippingAddress :exec
-UPDATE shipping_addresses SET is_default = FALSE, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1
+UPDATE shipping_addresses
+SET is_default = FALSE,
+    updated_at = CURRENT_TIMESTAMP
+WHERE user_id = $1
 `
 
 func (q *Queries) ClearDefaultShippingAddress(ctx context.Context, userID int64) error {
@@ -21,7 +24,18 @@ func (q *Queries) ClearDefaultShippingAddress(ctx context.Context, userID int64)
 }
 
 const createShippingAddress = `-- name: CreateShippingAddress :one
-INSERT INTO shipping_addresses (user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default)
+INSERT INTO shipping_addresses (
+  user_id,
+  receiver_name,
+  receiver_phone_hash,
+  receiver_phone_encrypt,
+  province,
+  city,
+  district,
+  detail_address,
+  address_tag,
+  is_default
+)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at
 `
@@ -72,7 +86,9 @@ func (q *Queries) CreateShippingAddress(ctx context.Context, arg CreateShippingA
 }
 
 const deleteShippingAddress = `-- name: DeleteShippingAddress :exec
-DELETE FROM shipping_addresses WHERE id = $1 AND user_id = $2
+DELETE FROM shipping_addresses
+WHERE id = $1
+  AND user_id = $2
 `
 
 type DeleteShippingAddressParams struct {
@@ -86,7 +102,11 @@ func (q *Queries) DeleteShippingAddress(ctx context.Context, arg DeleteShippingA
 }
 
 const getDefaultShippingAddress = `-- name: GetDefaultShippingAddress :one
-SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at FROM shipping_addresses WHERE user_id = $1 AND is_default = TRUE LIMIT 1
+SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at
+FROM shipping_addresses
+WHERE user_id = $1
+  AND is_default = TRUE
+LIMIT 1
 `
 
 func (q *Queries) GetDefaultShippingAddress(ctx context.Context, userID int64) (ShippingAddress, error) {
@@ -111,7 +131,10 @@ func (q *Queries) GetDefaultShippingAddress(ctx context.Context, userID int64) (
 }
 
 const getShippingAddress = `-- name: GetShippingAddress :one
-SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at FROM shipping_addresses WHERE id = $1 AND user_id = $2
+SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at
+FROM shipping_addresses
+WHERE id = $1
+  AND user_id = $2
 `
 
 type GetShippingAddressParams struct {
@@ -141,7 +164,10 @@ func (q *Queries) GetShippingAddress(ctx context.Context, arg GetShippingAddress
 }
 
 const listShippingAddressesByUser = `-- name: ListShippingAddressesByUser :many
-SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at FROM shipping_addresses WHERE user_id = $1 ORDER BY is_default DESC, id DESC
+SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at
+FROM shipping_addresses
+WHERE user_id = $1
+ORDER BY is_default DESC, id DESC
 `
 
 func (q *Queries) ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error) {
@@ -179,7 +205,11 @@ func (q *Queries) ListShippingAddressesByUser(ctx context.Context, userID int64)
 }
 
 const setDefaultShippingAddress = `-- name: SetDefaultShippingAddress :exec
-UPDATE shipping_addresses SET is_default = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2
+UPDATE shipping_addresses
+SET is_default = TRUE,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND user_id = $2
 `
 
 type SetDefaultShippingAddressParams struct {
@@ -194,10 +224,17 @@ func (q *Queries) SetDefaultShippingAddress(ctx context.Context, arg SetDefaultS
 
 const updateShippingAddress = `-- name: UpdateShippingAddress :one
 UPDATE shipping_addresses
-SET receiver_name = $3, receiver_phone_hash = $4, receiver_phone_encrypt = $5,
-    province = $6, city = $7, district = $8, detail_address = $9, address_tag = $10,
+SET receiver_name = $3,
+    receiver_phone_hash = $4,
+    receiver_phone_encrypt = $5,
+    province = $6,
+    city = $7,
+    district = $8,
+    detail_address = $9,
+    address_tag = $10,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND user_id = $2
+WHERE id = $1
+  AND user_id = $2
 RETURNING id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at
 `
 
