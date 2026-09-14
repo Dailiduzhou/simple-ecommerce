@@ -47,7 +47,7 @@ func TestCommunityAndMediaPoliciesRejectDangerousConfiguration(t *testing.T) {
 	for _, c := range []*conf.Community{{HistoryRetentionDays: 2147483647}, {CleanupBatchSize: 1001}, {MediaWorkers: 33}, {UploadsPerMinute: -1}} {
 		_, e := NewCommunityPolicy(c)
 		require.Error(t, e)
-		_, e = NewWriteLimiter(nil, c)
+		_, e = NewWriteLimiter(nil, c, nil)
 		require.Error(t, e)
 	}
 	p, e := NewCommunityPolicy(nil)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
 	mediav1 "github.com/Dailiduzhou/simple-ecommerce/api/media/v1"
@@ -20,17 +21,36 @@ type RedisWriteLimiter struct {
 	failOpen bool
 }
 
-func NewWriteLimiter(rdb *redis.Client, c *conf.Community) (biz.WriteLimiter, error) {
+func NewWriteLimiter(rdb *redis.Client, c *conf.Community, a *conf.Auth) (biz.WriteLimiter, error) {
 	if e := conf.ValidateCommunity(c); e != nil {
 		return nil, e
 	}
-	limits := map[string]int32{"posts": 10, "comments": 30, "uploads": 20, "interactions": 120}
+	if e := validateAuthLimits(a); e != nil {
+		return nil, e
+	}
+	limits := map[string]int32{"posts": 10, "comments": 30, "uploads": 20, "interactions": 120, "auth": 10}
 	for k, v := range map[string]int32{"posts": c.GetPostsPerMinute(), "comments": c.GetCommentsPerMinute(), "uploads": c.GetUploadsPerMinute(), "interactions": c.GetInteractionsPerMinute()} {
 		if v > 0 {
 			limits[k] = v
 		}
 	}
+	if v := a.GetAuthRequestsPerMinute(); v > 0 {
+		limits["auth"] = v
+	}
 	return &RedisWriteLimiter{rdb: rdb, limits: limits, failOpen: c.GetRateLimitFailOpen()}, nil
+}
+
+// validateAuthLimits mirrors conf.ValidateCommunity: zero means the documented
+// default, while negative or absurd values must fail boot instead of silently
+// unthrottling login/register/refresh.
+func validateAuthLimits(a *conf.Auth) error {
+	if v := a.GetAuthRequestsPerMinute(); v < 0 || v > 10000 {
+		return fmt.Errorf("auth.auth_requests_per_minute must be between 0 (default) and 10000")
+	}
+	if v := a.GetLoginMaxAttempts(); v < 0 || v > 100 {
+		return fmt.Errorf("auth.login_max_attempts must be between 0 (default) and 100")
+	}
+	return nil
 }
 
 // Atomic fixed windows for both dimensions. TTL is set on the very first INCR;
@@ -41,28 +61,48 @@ local b=redis.call('INCR',KEYS[2]); if b==1 then redis.call('PEXPIRE',KEYS[2],60
 if a>tonumber(ARGV[1]) or b>tonumber(ARGV[2]) then return 0 end
 return 1`)
 
+// Single-dimension window for anonymous auth requests (login/register/refresh
+// arrive without claims), with the same fixed-window semantics.
+var anonLimitScript = redis.NewScript(`
+local a=redis.call('INCR',KEYS[1]); if a==1 then redis.call('PEXPIRE',KEYS[1],60000) end
+if a>tonumber(ARGV[1]) then return 0 end
+return 1`)
+
 func (r *RedisWriteLimiter) Allow(ctx context.Context, uid int64, ip, op string) error {
 	category := biz.RateLimitCategory(op)
 	if category == "" {
 		return nil
 	}
-	if uid <= 0 {
+	// Only the auth bucket is reachable without an identity: login, register
+	// and refresh are JWT-whitelisted and are throttled on the IP dimension
+	// alone. Every other bucket still requires claims.
+	if uid <= 0 && category != "auth" {
 		return errors.Unauthorized("UNAUTHORIZED", "authentication is required")
 	}
 	hash := sha256.Sum256([]byte(strings.TrimSpace(ip)))
-	keys := []string{redisKey("community", "limit", category, "user", uid), redisKey("community", "limit", category, "ip", hex.EncodeToString(hash[:16]))}
+	ipKey := redisKey("community", "limit", category, "ip", hex.EncodeToString(hash[:16]))
 	limit := r.limits[category]
-	n, e := writeLimitScript.Run(ctx, r.rdb, keys, limit, limit*5).Int()
+	var n int
+	var e error
+	if uid <= 0 {
+		n, e = anonLimitScript.Run(ctx, r.rdb, []string{ipKey}, limit).Int()
+	} else {
+		n, e = writeLimitScript.Run(ctx, r.rdb, []string{redisKey("community", "limit", category, "user", uid), ipKey}, limit, limit*5).Int()
+	}
 	if e != nil {
-		observability.CommunityEvent(ctx, "rate_limit", "unavailable")
-		if r.failOpen {
-			return nil
-		}
-		return errors.ServiceUnavailable("RATE_LIMIT_UNAVAILABLE", "write limiter is unavailable")
+		return r.unavailable(ctx)
 	}
 	if n == 0 {
 		observability.CommunityEvent(ctx, "rate_limit", "denied")
 		return mediav1.ErrorRateLimited("write quota exceeded; retry after one minute")
 	}
 	return nil
+}
+
+func (r *RedisWriteLimiter) unavailable(ctx context.Context) error {
+	observability.CommunityEvent(ctx, "rate_limit", "unavailable")
+	if r.failOpen {
+		return nil
+	}
+	return errors.ServiceUnavailable("RATE_LIMIT_UNAVAILABLE", "write limiter is unavailable")
 }

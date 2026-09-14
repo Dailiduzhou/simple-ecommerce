@@ -882,6 +882,24 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.LoginReply'
+    /v1/users/logout:
+        post:
+            tags:
+                - User
+            operationId: User_Logout
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.LogoutRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.LogoutReply'
     /v1/users/me/browsing-history:
         get:
             tags:
@@ -2004,6 +2022,17 @@ components:
                     type: string
                 password:
                     type: string
+        api.user.v1.LogoutReply:
+            type: object
+            properties: {}
+        api.user.v1.LogoutRequest:
+            type: object
+            properties:
+                refreshToken:
+                    type: string
+                    description: |-
+                        Optional: the client's current refresh token; when supplied it is burned
+                         together with the access token revocation.
         api.user.v1.RecordProductViewReply:
             type: object
             properties:

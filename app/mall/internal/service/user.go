@@ -234,3 +234,16 @@ func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) 
 
 	return &pb.RefreshReply{AccessToken: accessToken, RefreshToken: refreshToken}, nil
 }
+
+// Logout revokes the access token that authorizes this call (itself excluded
+// from the JWT whitelist) and optionally burns the client's refresh token.
+func (s *UserService) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.LogoutReply, error) {
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authUc.Logout(ctx, claims, req.RefreshToken); err != nil {
+		return nil, err
+	}
+	return &pb.LogoutReply{}, nil
+}

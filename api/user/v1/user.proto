@@ -79,6 +79,12 @@ service User {
       body: "*"
     };
   }
+  rpc Logout(LogoutRequest) returns (LogoutReply) {
+    option (google.api.http) = {
+      post: "/v1/users/logout"
+      body: "*"
+    };
+  }
 }
 
 message RegisterRequest {
@@ -187,6 +193,14 @@ message RefreshReply {
   string access_token = 1;
   string refresh_token = 2;
 }
+
+message LogoutRequest {
+  // Optional: the client's current refresh token; when supplied it is burned
+  // together with the access token revocation.
+  string refresh_token = 1;
+}
+
+message LogoutReply {}
 
 message RecordProductViewRequest {
   int64 product_id = 1 [(buf.validate.field).int64.gt = 0];

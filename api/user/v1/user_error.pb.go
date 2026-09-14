@@ -33,6 +33,8 @@ const (
 	ErrorReason_INVALID_PASSWORD      ErrorReason = 5
 	ErrorReason_PRODUCT_NOT_AVAILABLE ErrorReason = 6
 	ErrorReason_INVALID_TIME_RANGE    ErrorReason = 7
+	ErrorReason_INVALID_CREDENTIALS   ErrorReason = 8
+	ErrorReason_USER_LOGIN_LOCKED     ErrorReason = 9
 )
 
 // Enum value maps for ErrorReason.
@@ -46,6 +48,8 @@ var (
 		5: "INVALID_PASSWORD",
 		6: "PRODUCT_NOT_AVAILABLE",
 		7: "INVALID_TIME_RANGE",
+		8: "INVALID_CREDENTIALS",
+		9: "USER_LOGIN_LOCKED",
 	}
 	ErrorReason_value = map[string]int32{
 		"USER_NOT_FOUND":        0,
@@ -56,6 +60,8 @@ var (
 		"INVALID_PASSWORD":      5,
 		"PRODUCT_NOT_AVAILABLE": 6,
 		"INVALID_TIME_RANGE":    7,
+		"INVALID_CREDENTIALS":   8,
+		"USER_LOGIN_LOCKED":     9,
 	}
 )
 
@@ -90,7 +96,7 @@ var File_user_v1_user_error_proto protoreflect.FileDescriptor
 
 const file_user_v1_user_error_proto_rawDesc = "" +
 	"\n" +
-	"\x18user/v1/user_error.proto\x12\vapi.user.v1\x1a\x13errors/errors.proto*\xf1\x01\n" +
+	"\x18user/v1/user_error.proto\x12\vapi.user.v1\x1a\x13errors/errors.proto*\xad\x02\n" +
 	"\vErrorReason\x12\x18\n" +
 	"\x0eUSER_NOT_FOUND\x10\x00\x1a\x04\xa8E\x94\x03\x12\x16\n" +
 	"\fUNAUTHORIZED\x10\x01\x1a\x04\xa8E\x91\x03\x12\x17\n" +
@@ -99,7 +105,9 @@ const file_user_v1_user_error_proto_rawDesc = "" +
 	"\x13USER_ALREADY_EXISTS\x10\x04\x1a\x04\xa8E\x99\x03\x12\x1a\n" +
 	"\x10INVALID_PASSWORD\x10\x05\x1a\x04\xa8E\x90\x03\x12\x1f\n" +
 	"\x15PRODUCT_NOT_AVAILABLE\x10\x06\x1a\x04\xa8E\x94\x03\x12\x1c\n" +
-	"\x12INVALID_TIME_RANGE\x10\a\x1a\x04\xa8E\x90\x03\x1a\x04\xa0E\xf4\x03BG\n" +
+	"\x12INVALID_TIME_RANGE\x10\a\x1a\x04\xa8E\x90\x03\x12\x1d\n" +
+	"\x13INVALID_CREDENTIALS\x10\b\x1a\x04\xa8E\x91\x03\x12\x1b\n" +
+	"\x11USER_LOGIN_LOCKED\x10\t\x1a\x04\xa8E\xad\x03\x1a\x04\xa0E\xf4\x03BG\n" +
 	"\vapi.user.v1P\x01Z6github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1b\x06proto3"
 
 var (

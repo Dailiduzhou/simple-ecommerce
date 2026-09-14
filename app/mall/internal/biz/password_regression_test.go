@@ -27,7 +27,7 @@ func TestReviewPasswordBounds(t *testing.T) {
 				}
 			}
 			repo := &fakeUserRepo{}
-			uc := NewUserUsecase(repo, testUserAuth(), log.DefaultLogger)
+			uc := NewUserUsecase(repo, &fakeAuthRepo{}, testUserAuth(), log.DefaultLogger)
 			if !valid {
 				_, e := uc.Register(context.Background(), "13800138000", password)
 				require.Error(t, e)
