@@ -65,7 +65,7 @@ func TestAccountRevocationThroughTransports(t *testing.T) {
 			ac := &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32), RefreshTokenSecret: strings.Repeat("b", 32), AccessTokenTimeout: durationpb.New(time.Hour), RefreshTokenTimeout: durationpb.New(24 * time.Hour)}
 			auth := biz.NewAuthUsecase(repo, data.NewAuthRepo(rdb, log.DefaultLogger), ac)
 			user := service.NewUserService(auth, biz.NewUserUsecase(repo, ac, log.DefaultLogger), nil, nil, log.DefaultLogger)
-			mall := service.NewMallService(nil, biz.NewCategoryUsecase(&transportCategoryRepo{}, log.DefaultLogger), nil, log.DefaultLogger)
+			mall := service.NewMallService(nil, biz.NewCategoryUsecase(&transportCategoryRepo{}, log.DefaultLogger), nil, nil, log.DefaultLogger)
 			order := service.NewOrderService(nil)
 			payment := service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger)
 			community := service.NewCommunityService(nil, nil)

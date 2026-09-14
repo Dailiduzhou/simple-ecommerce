@@ -22,7 +22,7 @@ func TestProductPriceOverflowReturnsBadRequest(t *testing.T) {
 			return next(biz.WithClaims(ctx, &biz.EcommerceClaims{UserID: 1, Role: "admin"}), req)
 		}
 	}))
-	pb.RegisterMallHTTPServer(srv, NewMallService(uc, nil, nil, log.DefaultLogger))
+	pb.RegisterMallHTTPServer(srv, NewMallService(uc, nil, nil, nil, log.DefaultLogger))
 	for _, price := range []string{"92233720368547758.08", "184467440737095516.17", "-0.01", "0.001"} {
 		for _, route := range []struct{ method, path string }{{"POST", "/v1/products"}, {"PUT", "/v1/products/1"}} {
 			t.Run(route.method+"/"+price, func(t *testing.T) {

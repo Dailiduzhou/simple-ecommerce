@@ -1212,6 +1212,19 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.order.v1.ListOrdersReply'
+    /v1/wellness/today:
+        get:
+            tags:
+                - Mall
+            description: 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
+            operationId: Mall_GetTodayWellness
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.TodayWellnessReply'
 components:
     schemas:
         api.community.v1.Author:
@@ -1520,6 +1533,18 @@ components:
                 createdAt:
                     type: string
                     format: date-time
+        api.mall.v1.TodayWellnessReply:
+            type: object
+            properties:
+                date:
+                    type: string
+                    description: 北京时间（UTC+8）的公历日期，格式 YYYY-MM-DD。
+                solarTerm:
+                    type: string
+                    description: 当前所处节气的中文名称，在交节日北京时间 00:00 切换。
+                advice:
+                    type: string
+                    description: 内置的通用生活建议，同一节气内所有用户一致；非医疗建议。
         api.mall.v1.UpdateCategoryRequest:
             type: object
             properties:

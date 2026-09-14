@@ -106,7 +106,7 @@ func communityServices() (*service.UserService, *service.CommunityService, *serv
 func TestCommunityHTTPAuthenticationRoutesAndOwnership(t *testing.T) {
 	user, community, media, history := communityServices()
 	limiter := &communityLimiter{}
-	srv := NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{}}, &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)}, &communityAuth{}, service.NewMallService(nil, nil, nil, log.DefaultLogger), user, service.NewOrderService(nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger), community, media, limiter, log.DefaultLogger)
+	srv := NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{}}, &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)}, &communityAuth{}, service.NewMallService(nil, nil, nil, nil, log.DefaultLogger), user, service.NewOrderService(nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger), community, media, limiter, log.DefaultLogger)
 	invoke := func(method, path, body, token string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
@@ -161,7 +161,7 @@ func TestCommunityHTTPAuthenticationRoutesAndOwnership(t *testing.T) {
 // writes fail closed.
 func TestReadsIgnoreMissingWriteLimiter(t *testing.T) {
 	user, community, media, _ := communityServices()
-	srv := NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{}}, &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)}, &communityAuth{}, service.NewMallService(nil, nil, nil, log.DefaultLogger), user, service.NewOrderService(nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger), community, media, nil, log.DefaultLogger)
+	srv := NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{}}, &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)}, &communityAuth{}, service.NewMallService(nil, nil, nil, nil, log.DefaultLogger), user, service.NewOrderService(nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger), community, media, nil, log.DefaultLogger)
 	invoke := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
@@ -177,7 +177,7 @@ func TestReadsIgnoreMissingWriteLimiter(t *testing.T) {
 
 func TestCommunityGRPCAuthenticationAndErrorMappings(t *testing.T) {
 	user, community, media, history := communityServices()
-	srv := NewGRPCServer(&conf.Server{Grpc: &conf.Server_GRPC{Addr: "127.0.0.1:0"}}, &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)}, &communityAuth{}, service.NewMallService(nil, nil, nil, log.DefaultLogger), user, service.NewOrderService(nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger), community, media, &communityLimiter{}, log.DefaultLogger)
+	srv := NewGRPCServer(&conf.Server{Grpc: &conf.Server_GRPC{Addr: "127.0.0.1:0"}}, &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)}, &communityAuth{}, service.NewMallService(nil, nil, nil, nil, log.DefaultLogger), user, service.NewOrderService(nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger), community, media, &communityLimiter{}, log.DefaultLogger)
 	endpoint, e := srv.Endpoint()
 	require.NoError(t, e)
 	done := make(chan error, 1)

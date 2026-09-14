@@ -1711,6 +1711,106 @@ func (*DeleteEventReply) Descriptor() ([]byte, []int) {
 	return file_mall_v1_mall_proto_rawDescGZIP(), []int{27}
 }
 
+// 不接受用户 ID 或指定日期，不提供个性化及历史查询。
+type GetTodayWellnessRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTodayWellnessRequest) Reset() {
+	*x = GetTodayWellnessRequest{}
+	mi := &file_mall_v1_mall_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTodayWellnessRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTodayWellnessRequest) ProtoMessage() {}
+
+func (x *GetTodayWellnessRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mall_v1_mall_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTodayWellnessRequest.ProtoReflect.Descriptor instead.
+func (*GetTodayWellnessRequest) Descriptor() ([]byte, []int) {
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{28}
+}
+
+type TodayWellnessReply struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 北京时间（UTC+8）的公历日期，格式 YYYY-MM-DD。
+	Date string `protobuf:"bytes,1,opt,name=date,proto3" json:"date,omitempty"`
+	// 当前所处节气的中文名称，在交节日北京时间 00:00 切换。
+	SolarTerm string `protobuf:"bytes,2,opt,name=solar_term,json=solarTerm,proto3" json:"solar_term,omitempty"`
+	// 内置的通用生活建议，同一节气内所有用户一致；非医疗建议。
+	Advice        string `protobuf:"bytes,3,opt,name=advice,proto3" json:"advice,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TodayWellnessReply) Reset() {
+	*x = TodayWellnessReply{}
+	mi := &file_mall_v1_mall_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TodayWellnessReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TodayWellnessReply) ProtoMessage() {}
+
+func (x *TodayWellnessReply) ProtoReflect() protoreflect.Message {
+	mi := &file_mall_v1_mall_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TodayWellnessReply.ProtoReflect.Descriptor instead.
+func (*TodayWellnessReply) Descriptor() ([]byte, []int) {
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *TodayWellnessReply) GetDate() string {
+	if x != nil {
+		return x.Date
+	}
+	return ""
+}
+
+func (x *TodayWellnessReply) GetSolarTerm() string {
+	if x != nil {
+		return x.SolarTerm
+	}
+	return ""
+}
+
+func (x *TodayWellnessReply) GetAdvice() string {
+	if x != nil {
+		return x.Advice
+	}
+	return ""
+}
+
 var File_mall_v1_mall_proto protoreflect.FileDescriptor
 
 const file_mall_v1_mall_proto_rawDesc = "" +
@@ -1850,8 +1950,15 @@ const file_mall_v1_mall_proto_rawDesc = "" +
 	"\x16UpdateEventStatusReply\"$\n" +
 	"\x12DeleteEventRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"\x12\n" +
-	"\x10DeleteEventReply2\xae\r\n" +
-	"\x04Mall\x12f\n" +
+	"\x10DeleteEventReply\"\x19\n" +
+	"\x17GetTodayWellnessRequest\"_\n" +
+	"\x12TodayWellnessReply\x12\x12\n" +
+	"\x04date\x18\x01 \x01(\tR\x04date\x12\x1d\n" +
+	"\n" +
+	"solar_term\x18\x02 \x01(\tR\tsolarTerm\x12\x16\n" +
+	"\x06advice\x18\x03 \x01(\tR\x06advice2\xa5\x0e\n" +
+	"\x04Mall\x12u\n" +
+	"\x10GetTodayWellness\x12$.api.mall.v1.GetTodayWellnessRequest\x1a\x1f.api.mall.v1.TodayWellnessReply\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/wellness/today\x12f\n" +
 	"\x0eCreateCategory\x12\".api.mall.v1.CreateCategoryRequest\x1a\x15.api.mall.v1.Category\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/categories\x12n\n" +
 	"\x0eListCategories\x12\".api.mall.v1.ListCategoriesRequest\x1a .api.mall.v1.ListCategoriesReply\"\x16\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/categories\x12k\n" +
 	"\x0eUpdateCategory\x12\".api.mall.v1.UpdateCategoryRequest\x1a\x15.api.mall.v1.Category\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\x1a\x13/v1/categories/{id}\x12s\n" +
@@ -1886,7 +1993,7 @@ func file_mall_v1_mall_proto_rawDescGZIP() []byte {
 	return file_mall_v1_mall_proto_rawDescData
 }
 
-var file_mall_v1_mall_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_mall_v1_mall_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_mall_v1_mall_proto_goTypes = []any{
 	(*Category)(nil),                   // 0: api.mall.v1.Category
 	(*CreateCategoryRequest)(nil),      // 1: api.mall.v1.CreateCategoryRequest
@@ -1916,60 +2023,64 @@ var file_mall_v1_mall_proto_goTypes = []any{
 	(*UpdateEventStatusReply)(nil),     // 25: api.mall.v1.UpdateEventStatusReply
 	(*DeleteEventRequest)(nil),         // 26: api.mall.v1.DeleteEventRequest
 	(*DeleteEventReply)(nil),           // 27: api.mall.v1.DeleteEventReply
-	(*timestamppb.Timestamp)(nil),      // 28: google.protobuf.Timestamp
+	(*GetTodayWellnessRequest)(nil),    // 28: api.mall.v1.GetTodayWellnessRequest
+	(*TodayWellnessReply)(nil),         // 29: api.mall.v1.TodayWellnessReply
+	(*timestamppb.Timestamp)(nil),      // 30: google.protobuf.Timestamp
 }
 var file_mall_v1_mall_proto_depIdxs = []int32{
 	0,  // 0: api.mall.v1.ListCategoriesReply.categories:type_name -> api.mall.v1.Category
 	7,  // 1: api.mall.v1.Product.media_assets:type_name -> api.mall.v1.MediaInfo
-	28, // 2: api.mall.v1.Product.created_at:type_name -> google.protobuf.Timestamp
+	30, // 2: api.mall.v1.Product.created_at:type_name -> google.protobuf.Timestamp
 	7,  // 3: api.mall.v1.CreateProductRequest.media_assets:type_name -> api.mall.v1.MediaInfo
 	8,  // 4: api.mall.v1.ListProductsReply.products:type_name -> api.mall.v1.Product
 	7,  // 5: api.mall.v1.UpdateProductRequest.media_assets:type_name -> api.mall.v1.MediaInfo
 	7,  // 6: api.mall.v1.Event.media_assets:type_name -> api.mall.v1.MediaInfo
-	28, // 7: api.mall.v1.Event.start_at:type_name -> google.protobuf.Timestamp
-	28, // 8: api.mall.v1.Event.end_at:type_name -> google.protobuf.Timestamp
-	28, // 9: api.mall.v1.Event.created_at:type_name -> google.protobuf.Timestamp
+	30, // 7: api.mall.v1.Event.start_at:type_name -> google.protobuf.Timestamp
+	30, // 8: api.mall.v1.Event.end_at:type_name -> google.protobuf.Timestamp
+	30, // 9: api.mall.v1.Event.created_at:type_name -> google.protobuf.Timestamp
 	7,  // 10: api.mall.v1.CreateEventRequest.media_assets:type_name -> api.mall.v1.MediaInfo
-	28, // 11: api.mall.v1.CreateEventRequest.start_at:type_name -> google.protobuf.Timestamp
-	28, // 12: api.mall.v1.CreateEventRequest.end_at:type_name -> google.protobuf.Timestamp
+	30, // 11: api.mall.v1.CreateEventRequest.start_at:type_name -> google.protobuf.Timestamp
+	30, // 12: api.mall.v1.CreateEventRequest.end_at:type_name -> google.protobuf.Timestamp
 	18, // 13: api.mall.v1.ListEventsReply.events:type_name -> api.mall.v1.Event
 	7,  // 14: api.mall.v1.UpdateEventRequest.media_assets:type_name -> api.mall.v1.MediaInfo
-	28, // 15: api.mall.v1.UpdateEventRequest.start_at:type_name -> google.protobuf.Timestamp
-	28, // 16: api.mall.v1.UpdateEventRequest.end_at:type_name -> google.protobuf.Timestamp
-	1,  // 17: api.mall.v1.Mall.CreateCategory:input_type -> api.mall.v1.CreateCategoryRequest
-	2,  // 18: api.mall.v1.Mall.ListCategories:input_type -> api.mall.v1.ListCategoriesRequest
-	4,  // 19: api.mall.v1.Mall.UpdateCategory:input_type -> api.mall.v1.UpdateCategoryRequest
-	5,  // 20: api.mall.v1.Mall.DeleteCategory:input_type -> api.mall.v1.DeleteCategoryRequest
-	9,  // 21: api.mall.v1.Mall.CreateProduct:input_type -> api.mall.v1.CreateProductRequest
-	10, // 22: api.mall.v1.Mall.GetProduct:input_type -> api.mall.v1.GetProductRequest
-	11, // 23: api.mall.v1.Mall.ListProducts:input_type -> api.mall.v1.ListProductsRequest
-	13, // 24: api.mall.v1.Mall.UpdateProduct:input_type -> api.mall.v1.UpdateProductRequest
-	14, // 25: api.mall.v1.Mall.UpdateProductStatus:input_type -> api.mall.v1.UpdateProductStatusRequest
-	16, // 26: api.mall.v1.Mall.DeleteProduct:input_type -> api.mall.v1.DeleteProductRequest
-	19, // 27: api.mall.v1.Mall.CreateEvent:input_type -> api.mall.v1.CreateEventRequest
-	20, // 28: api.mall.v1.Mall.GetEvent:input_type -> api.mall.v1.GetEventRequest
-	21, // 29: api.mall.v1.Mall.ListEvents:input_type -> api.mall.v1.ListEventsRequest
-	23, // 30: api.mall.v1.Mall.UpdateEvent:input_type -> api.mall.v1.UpdateEventRequest
-	24, // 31: api.mall.v1.Mall.UpdateEventStatus:input_type -> api.mall.v1.UpdateEventStatusRequest
-	26, // 32: api.mall.v1.Mall.DeleteEvent:input_type -> api.mall.v1.DeleteEventRequest
-	0,  // 33: api.mall.v1.Mall.CreateCategory:output_type -> api.mall.v1.Category
-	3,  // 34: api.mall.v1.Mall.ListCategories:output_type -> api.mall.v1.ListCategoriesReply
-	0,  // 35: api.mall.v1.Mall.UpdateCategory:output_type -> api.mall.v1.Category
-	6,  // 36: api.mall.v1.Mall.DeleteCategory:output_type -> api.mall.v1.DeleteCategoryReply
-	8,  // 37: api.mall.v1.Mall.CreateProduct:output_type -> api.mall.v1.Product
-	8,  // 38: api.mall.v1.Mall.GetProduct:output_type -> api.mall.v1.Product
-	12, // 39: api.mall.v1.Mall.ListProducts:output_type -> api.mall.v1.ListProductsReply
-	8,  // 40: api.mall.v1.Mall.UpdateProduct:output_type -> api.mall.v1.Product
-	15, // 41: api.mall.v1.Mall.UpdateProductStatus:output_type -> api.mall.v1.UpdateProductStatusReply
-	17, // 42: api.mall.v1.Mall.DeleteProduct:output_type -> api.mall.v1.DeleteProductReply
-	18, // 43: api.mall.v1.Mall.CreateEvent:output_type -> api.mall.v1.Event
-	18, // 44: api.mall.v1.Mall.GetEvent:output_type -> api.mall.v1.Event
-	22, // 45: api.mall.v1.Mall.ListEvents:output_type -> api.mall.v1.ListEventsReply
-	18, // 46: api.mall.v1.Mall.UpdateEvent:output_type -> api.mall.v1.Event
-	25, // 47: api.mall.v1.Mall.UpdateEventStatus:output_type -> api.mall.v1.UpdateEventStatusReply
-	27, // 48: api.mall.v1.Mall.DeleteEvent:output_type -> api.mall.v1.DeleteEventReply
-	33, // [33:49] is the sub-list for method output_type
-	17, // [17:33] is the sub-list for method input_type
+	30, // 15: api.mall.v1.UpdateEventRequest.start_at:type_name -> google.protobuf.Timestamp
+	30, // 16: api.mall.v1.UpdateEventRequest.end_at:type_name -> google.protobuf.Timestamp
+	28, // 17: api.mall.v1.Mall.GetTodayWellness:input_type -> api.mall.v1.GetTodayWellnessRequest
+	1,  // 18: api.mall.v1.Mall.CreateCategory:input_type -> api.mall.v1.CreateCategoryRequest
+	2,  // 19: api.mall.v1.Mall.ListCategories:input_type -> api.mall.v1.ListCategoriesRequest
+	4,  // 20: api.mall.v1.Mall.UpdateCategory:input_type -> api.mall.v1.UpdateCategoryRequest
+	5,  // 21: api.mall.v1.Mall.DeleteCategory:input_type -> api.mall.v1.DeleteCategoryRequest
+	9,  // 22: api.mall.v1.Mall.CreateProduct:input_type -> api.mall.v1.CreateProductRequest
+	10, // 23: api.mall.v1.Mall.GetProduct:input_type -> api.mall.v1.GetProductRequest
+	11, // 24: api.mall.v1.Mall.ListProducts:input_type -> api.mall.v1.ListProductsRequest
+	13, // 25: api.mall.v1.Mall.UpdateProduct:input_type -> api.mall.v1.UpdateProductRequest
+	14, // 26: api.mall.v1.Mall.UpdateProductStatus:input_type -> api.mall.v1.UpdateProductStatusRequest
+	16, // 27: api.mall.v1.Mall.DeleteProduct:input_type -> api.mall.v1.DeleteProductRequest
+	19, // 28: api.mall.v1.Mall.CreateEvent:input_type -> api.mall.v1.CreateEventRequest
+	20, // 29: api.mall.v1.Mall.GetEvent:input_type -> api.mall.v1.GetEventRequest
+	21, // 30: api.mall.v1.Mall.ListEvents:input_type -> api.mall.v1.ListEventsRequest
+	23, // 31: api.mall.v1.Mall.UpdateEvent:input_type -> api.mall.v1.UpdateEventRequest
+	24, // 32: api.mall.v1.Mall.UpdateEventStatus:input_type -> api.mall.v1.UpdateEventStatusRequest
+	26, // 33: api.mall.v1.Mall.DeleteEvent:input_type -> api.mall.v1.DeleteEventRequest
+	29, // 34: api.mall.v1.Mall.GetTodayWellness:output_type -> api.mall.v1.TodayWellnessReply
+	0,  // 35: api.mall.v1.Mall.CreateCategory:output_type -> api.mall.v1.Category
+	3,  // 36: api.mall.v1.Mall.ListCategories:output_type -> api.mall.v1.ListCategoriesReply
+	0,  // 37: api.mall.v1.Mall.UpdateCategory:output_type -> api.mall.v1.Category
+	6,  // 38: api.mall.v1.Mall.DeleteCategory:output_type -> api.mall.v1.DeleteCategoryReply
+	8,  // 39: api.mall.v1.Mall.CreateProduct:output_type -> api.mall.v1.Product
+	8,  // 40: api.mall.v1.Mall.GetProduct:output_type -> api.mall.v1.Product
+	12, // 41: api.mall.v1.Mall.ListProducts:output_type -> api.mall.v1.ListProductsReply
+	8,  // 42: api.mall.v1.Mall.UpdateProduct:output_type -> api.mall.v1.Product
+	15, // 43: api.mall.v1.Mall.UpdateProductStatus:output_type -> api.mall.v1.UpdateProductStatusReply
+	17, // 44: api.mall.v1.Mall.DeleteProduct:output_type -> api.mall.v1.DeleteProductReply
+	18, // 45: api.mall.v1.Mall.CreateEvent:output_type -> api.mall.v1.Event
+	18, // 46: api.mall.v1.Mall.GetEvent:output_type -> api.mall.v1.Event
+	22, // 47: api.mall.v1.Mall.ListEvents:output_type -> api.mall.v1.ListEventsReply
+	18, // 48: api.mall.v1.Mall.UpdateEvent:output_type -> api.mall.v1.Event
+	25, // 49: api.mall.v1.Mall.UpdateEventStatus:output_type -> api.mall.v1.UpdateEventStatusReply
+	27, // 50: api.mall.v1.Mall.DeleteEvent:output_type -> api.mall.v1.DeleteEventReply
+	34, // [34:51] is the sub-list for method output_type
+	17, // [17:34] is the sub-list for method input_type
 	17, // [17:17] is the sub-list for extension type_name
 	17, // [17:17] is the sub-list for extension extendee
 	0,  // [0:17] is the sub-list for field type_name
@@ -1987,7 +2098,7 @@ func file_mall_v1_mall_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mall_v1_mall_proto_rawDesc), len(file_mall_v1_mall_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
