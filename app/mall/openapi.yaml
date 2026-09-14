@@ -210,6 +210,66 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.UpdateEventStatusReply'
+    /v1/media/images/uploads:
+        post:
+            tags:
+                - Media
+            operationId: Media_CreateImageUpload
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.media.v1.CreateImageUploadRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.media.v1.CreateImageUploadReply'
+    /v1/media/images/{id}:
+        get:
+            tags:
+                - Media
+            operationId: Media_GetImage
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.media.v1.ImageAsset'
+    /v1/media/images/{id}/complete:
+        post:
+            tags:
+                - Media
+            operationId: Media_CompleteImageUpload
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.media.v1.ImageRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.media.v1.ImageAsset'
     /v1/orders:
         post:
             tags:
@@ -436,6 +496,247 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.MQJobInfo'
+    /v1/posts:
+        get:
+            tags:
+                - Community
+            operationId: Community_ListPosts
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: authorId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.ListPostsReply'
+        post:
+            tags:
+                - Community
+            operationId: Community_CreatePost
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.community.v1.CreatePostRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.Post'
+    /v1/posts/{id}:
+        get:
+            tags:
+                - Community
+            operationId: Community_GetPost
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.Post'
+        put:
+            tags:
+                - Community
+            operationId: Community_UpdatePost
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.community.v1.UpdatePostRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.Post'
+        delete:
+            tags:
+                - Community
+            operationId: Community_DeletePost
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.EmptyReply'
+    /v1/posts/{id}/like:
+        put:
+            tags:
+                - Community
+            operationId: Community_LikePost
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.EmptyReply'
+        delete:
+            tags:
+                - Community
+            operationId: Community_UnlikePost
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.EmptyReply'
+    /v1/posts/{postId}/comments:
+        get:
+            tags:
+                - Community
+            operationId: Community_ListComments
+            parameters:
+                - name: postId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.ListCommentsReply'
+        post:
+            tags:
+                - Community
+            operationId: Community_CreateComment
+            parameters:
+                - name: postId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.community.v1.CreateCommentRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.Comment'
+    /v1/posts/{postId}/comments/{id}:
+        delete:
+            tags:
+                - Community
+            operationId: Community_DeleteComment
+            parameters:
+                - name: postId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.EmptyReply'
+    /v1/posts/{postId}/comments/{rootCommentId}/replies:
+        get:
+            tags:
+                - Community
+            operationId: Community_ListCommentReplies
+            parameters:
+                - name: postId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: rootCommentId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.community.v1.ListCommentsReply'
     /v1/products:
         get:
             tags:
@@ -581,6 +882,88 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.LoginReply'
+    /v1/users/me/browsing-history:
+        get:
+            tags:
+                - User
+            operationId: User_ListBrowsingHistory
+            parameters:
+                - name: cursor
+                  in: query
+                  schema:
+                    type: string
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: startTime
+                  in: query
+                  description: |-
+                    Optional inclusive lower bound and exclusive upper bound on last_viewed_at.
+                     Both are instants on the server timeline; clients derive local day boundaries
+                     and send RFC 3339 values with an explicit offset.
+                  schema:
+                    type: string
+                    format: date-time
+                - name: endTime
+                  in: query
+                  schema:
+                    type: string
+                    format: date-time
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.ListBrowsingHistoryReply'
+        post:
+            tags:
+                - User
+            operationId: User_RecordProductView
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.RecordProductViewRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.RecordProductViewReply'
+        delete:
+            tags:
+                - User
+            operationId: User_ClearBrowsingHistory
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.ClearBrowsingHistoryReply'
+    /v1/users/me/browsing-history/{productId}:
+        delete:
+            tags:
+                - User
+            operationId: User_DeleteBrowsingHistoryItem
+            parameters:
+                - name: productId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.DeleteBrowsingHistoryItemReply'
     /v1/users/refresh:
         post:
             tags:
@@ -831,6 +1214,146 @@ paths:
                                 $ref: '#/components/schemas/api.order.v1.ListOrdersReply'
 components:
     schemas:
+        api.community.v1.Author:
+            type: object
+            properties:
+                id:
+                    type: string
+                nickname:
+                    type: string
+        api.community.v1.Comment:
+            type: object
+            properties:
+                id:
+                    type: string
+                postId:
+                    type: string
+                author:
+                    $ref: '#/components/schemas/api.community.v1.Author'
+                content:
+                    type: string
+                rootCommentId:
+                    type: string
+                replyToCommentId:
+                    type: string
+                deleted:
+                    type: boolean
+                createdAt:
+                    type: string
+                    format: date-time
+                replyCount:
+                    type: string
+                replyToDeleted:
+                    type: boolean
+                replyToAuthor:
+                    $ref: '#/components/schemas/api.community.v1.Author'
+        api.community.v1.CreateCommentRequest:
+            type: object
+            properties:
+                postId:
+                    type: string
+                content:
+                    type: string
+                replyToCommentId:
+                    type: string
+        api.community.v1.CreatePostRequest:
+            type: object
+            properties:
+                title:
+                    type: string
+                content:
+                    type: string
+                imageIds:
+                    type: array
+                    items:
+                        type: string
+                    description: Optional ordered image IDs (0-9). Omitted or empty means a text-only post.
+            description: |-
+                Text is trimmed before domain limits (title 100, body 5000 Unicode
+                 characters). Images are optional; a post can contain 0-9 images.
+        api.community.v1.EmptyReply:
+            type: object
+            properties: {}
+        api.community.v1.Image:
+            type: object
+            properties:
+                id:
+                    type: string
+                url:
+                    type: string
+                contentType:
+                    type: string
+                sizeBytes:
+                    type: string
+                width:
+                    type: integer
+                    format: int32
+                height:
+                    type: integer
+                    format: int32
+        api.community.v1.ListCommentsReply:
+            type: object
+            properties:
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.community.v1.Comment'
+                nextCursor:
+                    type: string
+        api.community.v1.ListPostsReply:
+            type: object
+            properties:
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.community.v1.Post'
+                nextCursor:
+                    type: string
+        api.community.v1.Post:
+            type: object
+            properties:
+                id:
+                    type: string
+                author:
+                    $ref: '#/components/schemas/api.community.v1.Author'
+                title:
+                    type: string
+                content:
+                    type: string
+                images:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.community.v1.Image'
+                version:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                updatedAt:
+                    type: string
+                    format: date-time
+                likeCount:
+                    type: string
+                commentCount:
+                    type: string
+                likedByMe:
+                    type: boolean
+        api.community.v1.UpdatePostRequest:
+            type: object
+            properties:
+                title:
+                    type: string
+                content:
+                    type: string
+                imageIds:
+                    type: array
+                    items:
+                        type: string
+                    description: Full replacement (0-9). Omitted or empty removes all existing images.
+                id:
+                    type: string
+                expectedVersion:
+                    type: string
         api.mall.v1.Category:
             type: object
             properties:
@@ -1074,6 +1597,51 @@ components:
                 status:
                     type: integer
                     format: int32
+        api.media.v1.CreateImageUploadReply:
+            type: object
+            properties:
+                id:
+                    type: string
+                uploadUrl:
+                    type: string
+                formFields:
+                    type: object
+                    additionalProperties:
+                        type: string
+                expiresAt:
+                    type: string
+                    format: date-time
+        api.media.v1.CreateImageUploadRequest:
+            type: object
+            properties:
+                contentType:
+                    type: string
+                sizeBytes:
+                    type: string
+        api.media.v1.ImageAsset:
+            type: object
+            properties:
+                id:
+                    type: string
+                url:
+                    type: string
+                contentType:
+                    type: string
+                sizeBytes:
+                    type: string
+                width:
+                    type: integer
+                    format: int32
+                height:
+                    type: integer
+                    format: int32
+                status:
+                    type: string
+        api.media.v1.ImageRequest:
+            type: object
+            properties:
+                id:
+                    type: string
         api.order.v1.CancelOrderReply:
             type: object
             properties: {}
@@ -1330,6 +1898,25 @@ components:
             properties:
                 id:
                     type: string
+        api.user.v1.BrowsingHistoryItem:
+            type: object
+            properties:
+                productId:
+                    type: string
+                name:
+                    type: string
+                priceMinor:
+                    type: string
+                available:
+                    type: boolean
+                lastViewedAt:
+                    type: string
+                    format: date-time
+                coverImageJson:
+                    type: string
+        api.user.v1.ClearBrowsingHistoryReply:
+            type: object
+            properties: {}
         api.user.v1.CreateShippingAddressRequest:
             type: object
             properties:
@@ -1351,12 +1938,24 @@ components:
                     type: string
                 isDefault:
                     type: boolean
+        api.user.v1.DeleteBrowsingHistoryItemReply:
+            type: object
+            properties: {}
         api.user.v1.DeleteShippingAddressReply:
             type: object
             properties: {}
         api.user.v1.DeleteUserReply:
             type: object
             properties: {}
+        api.user.v1.ListBrowsingHistoryReply:
+            type: object
+            properties:
+                items:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.user.v1.BrowsingHistoryItem'
+                nextCursor:
+                    type: string
         api.user.v1.ListShippingAddressesReply:
             type: object
             properties:
@@ -1379,6 +1978,17 @@ components:
                 phone:
                     type: string
                 password:
+                    type: string
+        api.user.v1.RecordProductViewReply:
+            type: object
+            properties:
+                lastViewedAt:
+                    type: string
+                    format: date-time
+        api.user.v1.RecordProductViewRequest:
+            type: object
+            properties:
+                productId:
                     type: string
         api.user.v1.RefreshReply:
             type: object
@@ -1484,7 +2094,9 @@ components:
                     type: string
                     format: date-time
 tags:
+    - name: Community
     - name: Mall
+    - name: Media
     - name: Order
     - name: Payment
       description: |-

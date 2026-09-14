@@ -1,0 +1,13 @@
+syntax = "proto3";
+package api.media.v1;
+import "errors/errors.proto";
+option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/media/v1;v1";
+enum ErrorReason {
+  option (errors.default_code) = 500;
+  MEDIA_NOT_FOUND = 0 [(errors.code) = 404];
+  MEDIA_NOT_READY = 1 [(errors.code) = 409];
+  INVALID_IMAGE = 2 [(errors.code) = 400];
+  STORAGE_UNAVAILABLE = 3 [(errors.code) = 503];
+  MEDIA_FORBIDDEN = 4 [(errors.code) = 403];
+  RATE_LIMITED = 5 [(errors.code) = 429];
+}

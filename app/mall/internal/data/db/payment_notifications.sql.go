@@ -13,8 +13,11 @@ import (
 
 const beginPaymentNotificationProcessing = `-- name: BeginPaymentNotificationProcessing :one
 UPDATE payment_notifications
-SET status = 'processing', last_error = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('received', 'processing', 'failed')
+SET status = 'processing',
+    last_error = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status IN ('received', 'processing', 'failed')
 RETURNING id, provider, provider_event_id, out_trade_no, payload_hash, verified_at, processed_at, status, last_error, river_job_id, created_at, updated_at
 `
 
@@ -40,8 +43,13 @@ func (q *Queries) BeginPaymentNotificationProcessing(ctx context.Context, id int
 
 const createPaymentNotification = `-- name: CreatePaymentNotification :one
 INSERT INTO payment_notifications (
-  provider, provider_event_id, out_trade_no, payload_hash, verified_at
-) VALUES ($1, $2, $3, $4, $5)
+  provider,
+  provider_event_id,
+  out_trade_no,
+  payload_hash,
+  verified_at
+)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT DO NOTHING
 RETURNING id, provider, provider_event_id, out_trade_no, payload_hash, verified_at, processed_at, status, last_error, river_job_id, created_at, updated_at
 `
@@ -82,10 +90,18 @@ func (q *Queries) CreatePaymentNotification(ctx context.Context, arg CreatePayme
 
 const createPaymentReconciliationFailure = `-- name: CreatePaymentReconciliationFailure :one
 INSERT INTO payment_reconciliation_failures (
-  payment_id, provider, reason, river_job_id, attempt, last_error
-) VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (river_job_id) WHERE river_job_id IS NOT NULL
-DO UPDATE SET reason = EXCLUDED.reason, attempt = EXCLUDED.attempt, last_error = EXCLUDED.last_error
+  payment_id,
+  provider,
+  reason,
+  river_job_id,
+  attempt,
+  last_error
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (river_job_id) WHERE river_job_id IS NOT NULL DO UPDATE
+SET reason = EXCLUDED.reason,
+    attempt = EXCLUDED.attempt,
+    last_error = EXCLUDED.last_error
 RETURNING id, payment_id, provider, reason, river_job_id, attempt, last_error, created_at, resolved_at
 `
 
@@ -123,7 +139,9 @@ func (q *Queries) CreatePaymentReconciliationFailure(ctx context.Context, arg Cr
 }
 
 const getPaymentNotification = `-- name: GetPaymentNotification :one
-SELECT id, provider, provider_event_id, out_trade_no, payload_hash, verified_at, processed_at, status, last_error, river_job_id, created_at, updated_at FROM payment_notifications WHERE id = $1
+SELECT id, provider, provider_event_id, out_trade_no, payload_hash, verified_at, processed_at, status, last_error, river_job_id, created_at, updated_at
+FROM payment_notifications
+WHERE id = $1
 `
 
 func (q *Queries) GetPaymentNotification(ctx context.Context, id int64) (PaymentNotification, error) {
@@ -147,8 +165,10 @@ func (q *Queries) GetPaymentNotification(ctx context.Context, id int64) (Payment
 }
 
 const getPaymentNotificationByEvent = `-- name: GetPaymentNotificationByEvent :one
-SELECT id, provider, provider_event_id, out_trade_no, payload_hash, verified_at, processed_at, status, last_error, river_job_id, created_at, updated_at FROM payment_notifications
-WHERE provider = $1 AND provider_event_id = $2
+SELECT id, provider, provider_event_id, out_trade_no, payload_hash, verified_at, processed_at, status, last_error, river_job_id, created_at, updated_at
+FROM payment_notifications
+WHERE provider = $1
+  AND provider_event_id = $2
 `
 
 type GetPaymentNotificationByEventParams struct {
@@ -177,8 +197,11 @@ func (q *Queries) GetPaymentNotificationByEvent(ctx context.Context, arg GetPaym
 }
 
 const getPaymentNotificationByPayload = `-- name: GetPaymentNotificationByPayload :one
-SELECT id, provider, provider_event_id, out_trade_no, payload_hash, verified_at, processed_at, status, last_error, river_job_id, created_at, updated_at FROM payment_notifications
-WHERE provider = $1 AND out_trade_no = $2 AND payload_hash = $3
+SELECT id, provider, provider_event_id, out_trade_no, payload_hash, verified_at, processed_at, status, last_error, river_job_id, created_at, updated_at
+FROM payment_notifications
+WHERE provider = $1
+  AND out_trade_no = $2
+  AND payload_hash = $3
 `
 
 type GetPaymentNotificationByPayloadParams struct {
@@ -209,8 +232,11 @@ func (q *Queries) GetPaymentNotificationByPayload(ctx context.Context, arg GetPa
 
 const markPaymentNotificationFailed = `-- name: MarkPaymentNotificationFailed :execrows
 UPDATE payment_notifications
-SET status = 'failed', last_error = $2, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('received', 'processing', 'failed')
+SET status = 'failed',
+    last_error = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status IN ('received', 'processing', 'failed')
 `
 
 type MarkPaymentNotificationFailedParams struct {
@@ -228,9 +254,12 @@ func (q *Queries) MarkPaymentNotificationFailed(ctx context.Context, arg MarkPay
 
 const markPaymentNotificationProcessed = `-- name: MarkPaymentNotificationProcessed :execrows
 UPDATE payment_notifications
-SET status = 'processed', processed_at = CURRENT_TIMESTAMP,
-    last_error = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status IN ('received', 'processing')
+SET status = 'processed',
+    processed_at = CURRENT_TIMESTAMP,
+    last_error = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status IN ('received', 'processing')
 `
 
 func (q *Queries) MarkPaymentNotificationProcessed(ctx context.Context, id int64) (int64, error) {
@@ -243,8 +272,10 @@ func (q *Queries) MarkPaymentNotificationProcessed(ctx context.Context, id int64
 
 const recordPaymentNotificationError = `-- name: RecordPaymentNotificationError :execrows
 UPDATE payment_notifications
-SET last_error = $2, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status = 'processing'
+SET last_error = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'processing'
 `
 
 type RecordPaymentNotificationErrorParams struct {
@@ -262,8 +293,10 @@ func (q *Queries) RecordPaymentNotificationError(ctx context.Context, arg Record
 
 const setPaymentNotificationRiverJob = `-- name: SetPaymentNotificationRiverJob :exec
 UPDATE payment_notifications
-SET river_job_id = $2, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND status <> 'processed'
+SET river_job_id = $2,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status <> 'processed'
 `
 
 type SetPaymentNotificationRiverJobParams struct {

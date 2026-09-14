@@ -2,11 +2,7 @@ package data
 
 import (
 	"context"
-	"encoding/json"
 	stderrors "errors"
-	"fmt"
-	mrand "math/rand"
-	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
@@ -14,7 +10,6 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 )
 
 var _ biz.CategoryRepo = (*CategoryRepo)(nil)
@@ -29,7 +24,7 @@ func NewCategoryRepo(data *Data, logger log.Logger) *CategoryRepo {
 }
 
 func (r *CategoryRepo) CreateCategory(ctx context.Context, parentID int64, name string, sortOrder int32) (*biz.Category, error) {
-	c, err := r.data.q.CreateCategory(ctx, db.CreateCategoryParams{
+	c, err := r.data.DB(ctx).CreateCategory(ctx, db.CreateCategoryParams{
 		ParentID:  toPgParentID(parentID),
 		Name:      name,
 		SortOrder: sortOrder,
@@ -53,7 +48,7 @@ func (r *CategoryRepo) DeleteCategory(ctx context.Context, id int64) error {
 		return err
 	}
 
-	if err := r.data.q.DeleteCategory(ctx, id); err != nil {
+	if err := r.data.DB(ctx).DeleteCategory(ctx, id); err != nil {
 		return err
 	}
 
@@ -70,99 +65,37 @@ func (r *CategoryRepo) DeleteCategory(ctx context.Context, id int64) error {
 }
 
 func (r *CategoryRepo) GetCategory(ctx context.Context, id int64) (*biz.Category, error) {
-	cacheKey := redisKey("category", id)
-
-	c, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return c, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get category cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:category:%d", id)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		c, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return c, nil
+	return cacheAside(ctx, r.data, r.log, redisKey("category", id), r.getCache, r.setCache, func() (*biz.Category, error) {
+		row, err := r.data.DB(ctx).GetCategory(ctx, id)
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
 		}
-		dbc, err := r.data.q.GetCategory(ctx, id)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.Category)(nil), nil
-			}
-			return (*biz.Category)(nil), err
+			return nil, err
 		}
-		bizCategory := toBizCategory(dbc)
-		r.setCache(ctx, cacheKey, &bizCategory)
-		return &bizCategory, nil
+		value := toBizCategory(row)
+		return &value, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return val.(*biz.Category), nil
 }
 
 func (r *CategoryRepo) ListSubCategories(ctx context.Context, parentID int64) ([]biz.Category, error) {
-	cacheKey := categoryListCacheKey(parentID)
-
-	cs, err := r.getListCache(ctx, cacheKey)
-	if err == nil {
-		return cs, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get category sub list cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:%s", cacheKey)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		cs, err := r.getListCache(ctx, cacheKey)
-		if err == nil {
-			return cs, nil
-		}
-		dbcs, err := r.data.q.ListSubCategories(ctx, toPgParentID(parentID))
+	return cacheAside(ctx, r.data, r.log, categoryListCacheKey(parentID), r.getListCache, r.setListCache, func() ([]biz.Category, error) {
+		rows, err := r.data.DB(ctx).ListSubCategories(ctx, toPgParentID(parentID))
 		if err != nil {
 			return nil, err
 		}
-		bizCategories := toBizCategories(dbcs)
-		r.setListCache(ctx, cacheKey, bizCategories)
-		return bizCategories, nil
+		return toBizCategories(rows), nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return val.([]biz.Category), nil
 }
 
 func (r *CategoryRepo) ListTopCategories(ctx context.Context) ([]biz.Category, error) {
-	cacheKey := categoryListCacheKey(0)
-
-	cs, err := r.getListCache(ctx, cacheKey)
-	if err == nil {
-		return cs, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get category top list cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:%s", cacheKey)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		cs, err := r.getListCache(ctx, cacheKey)
-		if err == nil {
-			return cs, nil
-		}
-		dbcs, err := r.data.q.ListTopCategories(ctx)
+	return cacheAside(ctx, r.data, r.log, categoryListCacheKey(0), r.getListCache, r.setListCache, func() ([]biz.Category, error) {
+		rows, err := r.data.DB(ctx).ListTopCategories(ctx)
 		if err != nil {
 			return nil, err
 		}
-		bizCategories := toBizCategories(dbcs)
-		r.setListCache(ctx, cacheKey, bizCategories)
-		return bizCategories, nil
+		return toBizCategories(rows), nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return val.([]biz.Category), nil
 }
 
 func (r *CategoryRepo) UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*biz.Category, error) {
@@ -171,7 +104,7 @@ func (r *CategoryRepo) UpdateCategory(ctx context.Context, id int64, name string
 		return nil, err
 	}
 
-	c, err := r.data.q.UpdateCategory(ctx, db.UpdateCategoryParams{
+	c, err := r.data.DB(ctx).UpdateCategory(ctx, db.UpdateCategoryParams{
 		ID:        id,
 		Name:      name,
 		SortOrder: sortOrder,
@@ -194,56 +127,23 @@ func (r *CategoryRepo) UpdateCategory(ctx context.Context, id int64, name string
 }
 
 func (r *CategoryRepo) getCache(ctx context.Context, key string) (*biz.Category, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var c biz.Category
-	if err := json.Unmarshal(val, &c); err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return readJSONCache[*biz.Category](ctx, r.data, key)
 }
 
 func (r *CategoryRepo) getListCache(ctx context.Context, key string) ([]biz.Category, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var cs []biz.Category
-	if err := json.Unmarshal(val, &cs); err != nil {
-		return nil, err
-	}
-	return cs, nil
+	return readJSONCache[[]biz.Category](ctx, r.data, key)
 }
 
-func (r *CategoryRepo) setCache(ctx context.Context, key string, c *biz.Category) {
-	data, err := json.Marshal(c)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal category cache: %v", err)
-		return
-	}
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	exp := jitter + 10*time.Minute
-	r.data.rdb.Set(ctx, key, data, exp)
+func (r *CategoryRepo) setCache(ctx context.Context, key string, value *biz.Category) {
+	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
-func (r *CategoryRepo) setListCache(ctx context.Context, key string, cs []biz.Category) {
-	data, err := json.Marshal(cs)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal category list cache: %v", err)
-		return
-	}
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	exp := jitter + 10*time.Minute
-	r.data.rdb.Set(ctx, key, data, exp)
+func (r *CategoryRepo) setListCache(ctx context.Context, key string, value []biz.Category) {
+	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *CategoryRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("delete cache %s", key)
-		return
-	}
+	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
 func (r *CategoryRepo) deleteListCache(ctx context.Context, parentID int64) {

@@ -83,6 +83,12 @@ func (w *ReconcileRefundsWorker) Work(ctx context.Context, job *river.Job[biz.Re
 // instances do not multiply the sweep.
 func NewPeriodicJobs() []*river.PeriodicJob {
 	return []*river.PeriodicJob{
+		river.NewPeriodicJob(river.PeriodicInterval(time.Minute), func() (river.JobArgs, *river.InsertOpts) {
+			return biz.HistoryCleanupArgs{}, &river.InsertOpts{Queue: "maintenance", MaxAttempts: 10, UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}}
+		}, &river.PeriodicJobOpts{}),
+		river.NewPeriodicJob(river.PeriodicInterval(time.Minute), func() (river.JobArgs, *river.InsertOpts) {
+			return biz.MediaSweepArgs{}, &river.InsertOpts{Queue: "maintenance", MaxAttempts: 10, UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}}
+		}, &river.PeriodicJobOpts{}),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(reapInterval),
 			func() (river.JobArgs, *river.InsertOpts) {

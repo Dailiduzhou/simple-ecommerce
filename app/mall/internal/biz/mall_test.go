@@ -48,7 +48,7 @@ type fakeEventRepo struct {
 	createEvent       func(ctx context.Context, name string, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
 	deleteEvent       func(ctx context.Context, id int64) error
 	getEvent          func(ctx context.Context, id int64) (*Event, error)
-	listEvents        func(ctx context.Context, status int32, limit int32, offset int32) ([]Event, error)
+	listEvents        func(ctx context.Context, status *int32, limit int32, offset int32) ([]Event, error)
 	updateEvent       func(ctx context.Context, id int64, name string, coverImage []MediaInfo, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error)
 	updateEventStatus func(ctx context.Context, id int64, status int32) error
 }
@@ -65,7 +65,7 @@ func (r *fakeEventRepo) GetEvent(ctx context.Context, id int64) (*Event, error) 
 	return r.getEvent(ctx, id)
 }
 
-func (r *fakeEventRepo) ListEvents(ctx context.Context, status int32, limit int32, offset int32) ([]Event, error) {
+func (r *fakeEventRepo) ListEvents(ctx context.Context, status *int32, limit int32, offset int32) ([]Event, error) {
 	return r.listEvents(ctx, status, limit, offset)
 }
 
@@ -190,8 +190,8 @@ func TestEventUsecase_CreateEvent(t *testing.T) {
 
 func TestEventUsecase_ListEvents_ComputesOffset(t *testing.T) {
 	repo := &fakeEventRepo{
-		listEvents: func(ctx context.Context, status int32, limit int32, offset int32) ([]Event, error) {
-			assert.Equal(t, int32(1), status)
+		listEvents: func(ctx context.Context, status *int32, limit int32, offset int32) ([]Event, error) {
+			assert.Equal(t, int32(1), *status)
 			assert.Equal(t, int32(20), limit)
 			assert.Equal(t, int32(40), offset)
 			return []Event{{ID: 3, Name: "active"}}, nil
@@ -199,7 +199,7 @@ func TestEventUsecase_ListEvents_ComputesOffset(t *testing.T) {
 	}
 	uc := NewEventUsecase(repo, log.DefaultLogger)
 
-	es, err := uc.ListEvents(context.Background(), 1, 20, 3)
+	es, err := uc.ListEvents(context.Background(), ptrStatus(1), 20, 3)
 	require.NoError(t, err)
 	require.Len(t, es, 1)
 	assert.Equal(t, int64(3), es[0].ID)
@@ -257,3 +257,5 @@ func TestEventUsecase_DeleteEvent_PropagatesError(t *testing.T) {
 	err := uc.DeleteEvent(context.Background(), 8)
 	assert.ErrorIs(t, err, wantErr)
 }
+
+func ptrStatus(v int32) *int32 { return &v }

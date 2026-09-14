@@ -1,3 +1,10 @@
+DROP TABLE IF EXISTS post_comments;
+DROP FUNCTION IF EXISTS check_post_comment_relationship();
+DROP TABLE IF EXISTS post_likes;
+DROP TABLE IF EXISTS post_images;
+DROP TABLE IF EXISTS media_assets;
+DROP TABLE IF EXISTS posts;
+DROP TABLE IF EXISTS product_browsing_history;
 DROP TABLE IF EXISTS payment_reconciliation_failures;
 DROP TABLE IF EXISTS payment_notifications;
 DROP TABLE IF EXISTS order_refunds;

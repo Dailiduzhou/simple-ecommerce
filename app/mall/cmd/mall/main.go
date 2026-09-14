@@ -77,14 +77,14 @@ func main() {
 	}
 
 	var bc conf.Bootstrap
-	if err := c.Scan(&bc); err != nil {
+	if err := scanBootstrap(c, &bc); err != nil {
 		panic(err)
 	}
 	if err := validateBootstrap(&bc); err != nil {
 		panic(err)
 	}
 
-	app, cleanup, err := wireApp(bc.Server, bc.Data, bc.Auth, bc.Snowflake, bc.Payment, logger)
+	app, cleanup, err := wireApp(bc.Server, bc.Data, bc.Auth, bc.Snowflake, bc.Payment, bc.Community, bc.Storage, logger)
 	if err != nil {
 		panic(err)
 	}

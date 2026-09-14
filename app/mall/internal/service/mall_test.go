@@ -51,7 +51,7 @@ type fakeEventRepo struct {
 	createEvent       func(ctx context.Context, name string, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error)
 	deleteEvent       func(ctx context.Context, id int64) error
 	getEvent          func(ctx context.Context, id int64) (*biz.Event, error)
-	listEvents        func(ctx context.Context, status int32, limit int32, offset int32) ([]biz.Event, error)
+	listEvents        func(ctx context.Context, status *int32, limit int32, offset int32) ([]biz.Event, error)
 	updateEvent       func(ctx context.Context, id int64, name string, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error)
 	updateEventStatus func(ctx context.Context, id int64, status int32) error
 }
@@ -68,7 +68,7 @@ func (r *fakeEventRepo) GetEvent(ctx context.Context, id int64) (*biz.Event, err
 	return r.getEvent(ctx, id)
 }
 
-func (r *fakeEventRepo) ListEvents(ctx context.Context, status int32, limit int32, offset int32) ([]biz.Event, error) {
+func (r *fakeEventRepo) ListEvents(ctx context.Context, status *int32, limit int32, offset int32) ([]biz.Event, error) {
 	return r.listEvents(ctx, status, limit, offset)
 }
 
@@ -270,8 +270,8 @@ func TestMallService_GetEvent_NotFound(t *testing.T) {
 func TestMallService_ListEvents_DefaultPagination(t *testing.T) {
 	startAt := time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC)
 	s := newTestMallServiceWithEvent(&fakeEventRepo{
-		listEvents: func(ctx context.Context, status int32, limit int32, offset int32) ([]biz.Event, error) {
-			assert.Equal(t, int32(1), status)
+		listEvents: func(ctx context.Context, status *int32, limit int32, offset int32) ([]biz.Event, error) {
+			assert.Equal(t, int32(1), *status)
 			assert.Equal(t, int32(10), limit)
 			assert.Equal(t, int32(0), offset)
 			return []biz.Event{
@@ -289,7 +289,7 @@ func TestMallService_ListEvents_DefaultPagination(t *testing.T) {
 		},
 	})
 
-	got, err := s.ListEvents(authenticatedPaymentContext(1, "admin"), &pb.ListEventsRequest{Status: 1})
+	got, err := s.ListEvents(authenticatedPaymentContext(1, "admin"), &pb.ListEventsRequest{Status: ptrStatus(1)})
 	require.NoError(t, err)
 	require.Len(t, got.Events, 1)
 	assert.Equal(t, int64(31), got.Events[0].Id)
@@ -345,3 +345,5 @@ func TestMallService_DeleteEvent_PropagatesError(t *testing.T) {
 	assert.ErrorIs(t, err, wantErr)
 	assert.Nil(t, got)
 }
+
+func ptrStatus(v int32) *int32 { return &v }

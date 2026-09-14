@@ -51,6 +51,7 @@ services:
     volumes:
       - ./deploy/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/payment-alerts.yaml:/etc/prometheus/payment-alerts.yaml:ro
+      - ./deploy/community-alerts.yaml:/etc/prometheus/community-alerts.yaml:ro
     ports:
       - "9090:9090"
 
@@ -104,6 +105,14 @@ services:
       AUTH_ACCESS_TOKEN_SECRET: ${AUTH_ACCESS_TOKEN_SECRET:?set AUTH_ACCESS_TOKEN_SECRET}
       AUTH_REFRESH_TOKEN_SECRET: ${AUTH_REFRESH_TOKEN_SECRET:?set AUTH_REFRESH_TOKEN_SECRET}
       AUTH_PHONE_SECRET: ${AUTH_PHONE_SECRET:?set AUTH_PHONE_SECRET}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-disabled}
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-minio:9000}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-localhost:9002}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-ecommerce-images}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-}
+      STORAGE_USE_TLS: ${STORAGE_USE_TLS:-false}
+      STORAGE_PUBLIC_USE_TLS: ${STORAGE_PUBLIC_USE_TLS:-false}
       SNOWFLAKE_NODE_ID: ${SNOWFLAKE_NODE_ID:-1}
       PAYMENT_CALLBACK_BASE_URL: ${PAYMENT_CALLBACK_BASE_URL:-}
       PAYMENT_ALIPAY_ENABLED: ${PAYMENT_ALIPAY_ENABLED:-false}

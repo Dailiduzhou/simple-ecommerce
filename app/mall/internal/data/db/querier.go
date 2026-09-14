@@ -11,13 +11,27 @@ import (
 )
 
 type Querier interface {
+	// 1279476052 is this application's advisory-lock namespace for media object I/O.
+	// It is an arbitrary but fixed int4; keep it unique across every advisory-lock
+	// user in this database so unrelated features never contend by accident. The
+	// second key is hashint8(media id), giving one session-level lock per media row
+	// that survives COMMIT/ROLLBACK and is released on unlock or session end.
+	AcquireMediaIOLock(ctx context.Context, dollar_1 int64) error
 	BeginPaymentNotificationProcessing(ctx context.Context, id int64) (PaymentNotification, error)
+	BindPostImage(ctx context.Context, arg BindPostImageParams) error
+	CanReadMedia(ctx context.Context, arg CanReadMediaParams) (bool, error)
 	ClaimPaymentPrepay(ctx context.Context, arg ClaimPaymentPrepayParams) (Payment, error)
+	CleanupBrowsingHistory(ctx context.Context, arg CleanupBrowsingHistoryParams) (int64, error)
+	ClearBrowsingHistory(ctx context.Context, userID int64) error
 	ClearDefaultShippingAddress(ctx context.Context, userID int64) error
 	ConfirmPaymentRefunded(ctx context.Context, id int64) (Payment, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
+	CountProducts(ctx context.Context) (int64, error)
+	CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
+	CreateComment(ctx context.Context, arg CreateCommentParams) (PostComment, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
+	CreateMediaAsset(ctx context.Context, arg CreateMediaAssetParams) (MediaAsset, error)
 	CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error)
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error)
 	CreateOrderRefund(ctx context.Context, arg CreateOrderRefundParams) (OrderRefund, error)
@@ -25,21 +39,28 @@ type Querier interface {
 	CreatePaymentNotification(ctx context.Context, arg CreatePaymentNotificationParams) (PaymentNotification, error)
 	CreatePaymentReconciliationFailure(ctx context.Context, arg CreatePaymentReconciliationFailureParams) (PaymentReconciliationFailure, error)
 	CreatePaymentWithOutTradeNo(ctx context.Context, arg CreatePaymentWithOutTradeNoParams) (Payment, error)
+	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
 	CreateProduct(ctx context.Context, arg CreateProductParams) (Product, error)
 	CreateShippingAddress(ctx context.Context, arg CreateShippingAddressParams) (ShippingAddress, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DecrProductStock(ctx context.Context, arg DecrProductStockParams) (int32, error)
+	DeleteBrowsingHistoryItem(ctx context.Context, arg DeleteBrowsingHistoryItemParams) error
 	DeleteCategory(ctx context.Context, id int64) error
+	DeleteComment(ctx context.Context, arg DeleteCommentParams) (int64, error)
 	DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) error
 	DeleteUser(ctx context.Context, id int64) error
+	DeleteUserComments(ctx context.Context, authorID pgtype.Int8) error
 	FailPaymentPrepay(ctx context.Context, arg FailPaymentPrepayParams) (Payment, error)
 	FinalizePaymentPrepay(ctx context.Context, arg FinalizePaymentPrepayParams) (Payment, error)
 	GetActivePaymentByOrder(ctx context.Context, orderID int64) (Payment, error)
 	GetActivePaymentByOrderChannel(ctx context.Context, arg GetActivePaymentByOrderChannelParams) (Payment, error)
 	GetCategory(ctx context.Context, id int64) (Category, error)
+	GetComment(ctx context.Context, arg GetCommentParams) (PostComment, error)
 	GetDefaultShippingAddress(ctx context.Context, userID int64) (ShippingAddress, error)
 	GetEvent(ctx context.Context, id int64) (Event, error)
 	GetLatestPaymentByOrder(ctx context.Context, orderID int64) (Payment, error)
+	GetMediaAsset(ctx context.Context, id int64) (MediaAsset, error)
+	GetMediaBinding(ctx context.Context, mediaID int64) (int64, error)
 	GetOrder(ctx context.Context, id int64) (Order, error)
 	// 通过商户订单号(orders.out_trade_no)查询订单。
 	// 统一支付 API 的入口:order_no -> order。
@@ -56,13 +77,20 @@ type Querier interface {
 	GetPaymentNotification(ctx context.Context, id int64) (PaymentNotification, error)
 	GetPaymentNotificationByEvent(ctx context.Context, arg GetPaymentNotificationByEventParams) (PaymentNotification, error)
 	GetPaymentNotificationByPayload(ctx context.Context, arg GetPaymentNotificationByPayloadParams) (PaymentNotification, error)
+	GetPostImages(ctx context.Context, postIds []int64) ([]GetPostImagesRow, error)
+	GetPostStats(ctx context.Context, arg GetPostStatsParams) ([]GetPostStatsRow, error)
 	GetProduct(ctx context.Context, id int64) (Product, error)
 	GetProductForOrder(ctx context.Context, id int64) (Product, error)
 	GetShippingAddress(ctx context.Context, arg GetShippingAddressParams) (ShippingAddress, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error)
+	GetVisiblePost(ctx context.Context, id int64) (GetVisiblePostRow, error)
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
+	HideUserPosts(ctx context.Context, authorID pgtype.Int8) error
 	IncrementProductStock(ctx context.Context, arg IncrementProductStockParams) error
+	LikePost(ctx context.Context, arg LikePostParams) error
+	ListBrowsingHistory(ctx context.Context, arg ListBrowsingHistoryParams) ([]ListBrowsingHistoryRow, error)
+	ListCommentReplies(ctx context.Context, arg ListCommentRepliesParams) ([]ListCommentRepliesRow, error)
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
 	ListEventsByStatus(ctx context.Context, arg ListEventsByStatusParams) ([]Event, error)
 	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)
@@ -72,16 +100,34 @@ type Querier interface {
 	// the partial index idx_orders_pending_expiry keeps this scan cheap.
 	ListOverduePendingOrders(ctx context.Context, arg ListOverduePendingOrdersParams) ([]int64, error)
 	ListPaymentsByOrderForUpdate(ctx context.Context, orderID int64) ([]Payment, error)
+	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]Product, error)
 	// 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
 	ListProductsByCategory(ctx context.Context, arg ListProductsByCategoryParams) ([]Product, error)
+	ListRootComments(ctx context.Context, arg ListRootCommentsParams) ([]ListRootCommentsRow, error)
 	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
 	ListStalePendingRefunds(ctx context.Context, arg ListStalePendingRefundsParams) ([]OrderRefund, error)
 	ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error)
 	ListTopCategories(ctx context.Context) ([]Category, error)
 	ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error)
+	LockCommunityUser(ctx context.Context, id int64) (User, error)
+	// Each class gets its own bounded budget: arbitrarily many failed deletions
+	// cannot consume the slots needed to transition fresh expirations.
+	LockExpiredMedia(ctx context.Context, limit int32) ([]LockExpiredMediaRow, error)
+	LockMediaAssets(ctx context.Context, ids []int64) ([]MediaAsset, error)
 	// Lock the request identity BEFORE reading stock or checking for a replay.
 	LockOrderIdempotency(ctx context.Context, arg LockOrderIdempotencyParams) error
+	LockPost(ctx context.Context, id int64) (Post, error)
+	LockPostImageAssets(ctx context.Context, postID int64) ([]MediaAsset, error)
+	// First scheduling and retries have separate budgets. Touch the scheduled time
+	// in the enqueue transaction, so failing/queued jobs cannot starve later rows.
+	// Expired unbound resources are handled by full cleanup, not a second job.
+	LockStagingCleanupMedia(ctx context.Context, limit int32) ([]LockStagingCleanupMediaRow, error)
+	LockUserCommunityPosts(ctx context.Context, authorID pgtype.Int8) ([]Post, error)
+	LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]MediaAsset, error)
+	MarkMediaDeleted(ctx context.Context, id int64) error
+	MarkMediaDeleting(ctx context.Context, id int64) (int64, error)
+	MarkMediaStagingCleaned(ctx context.Context, id int64) error
 	MarkOrderCancelled(ctx context.Context, id int64) (Order, error)
 	MarkOrderCancelling(ctx context.Context, id int64) (Order, error)
 	MarkOrderPaid(ctx context.Context, id int64) (Order, error)
@@ -94,21 +140,34 @@ type Querier interface {
 	// Expiry decisions must use the database clock, not the application server's,
 	// so instances with skewed clocks cannot extend or shrink the payment window.
 	OrderIsExpired(ctx context.Context, id int64) (bool, error)
+	ReadyMediaAsset(ctx context.Context, arg ReadyMediaAssetParams) (MediaAsset, error)
 	RecordOrderRefundError(ctx context.Context, arg RecordOrderRefundErrorParams) (OrderRefund, error)
 	RecordPaymentNotificationError(ctx context.Context, arg RecordPaymentNotificationErrorParams) (int64, error)
 	RecordPaymentPrepayError(ctx context.Context, arg RecordPaymentPrepayErrorParams) (int64, error)
 	RecordPaymentSuccess(ctx context.Context, arg RecordPaymentSuccessParams) (Payment, error)
+	RecordProductView(ctx context.Context, arg RecordProductViewParams) (ProductBrowsingHistory, error)
+	// Must run on the same session that acquired the lock; false means the session
+	// did not hold it, so the caller must discard the connection instead of
+	// returning a possibly locked session to the pool.
+	ReleaseMediaIOLock(ctx context.Context, dollar_1 int64) (bool, error)
 	RequirePaymentReconciliation(ctx context.Context, arg RequirePaymentReconciliationParams) (Payment, error)
 	RestoreOrderItemStock(ctx context.Context, orderID int64) error
 	RetryOrderRefund(ctx context.Context, id int64) (OrderRefund, error)
 	SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) error
 	SetPaymentNotificationRiverJob(ctx context.Context, arg SetPaymentNotificationRiverJobParams) error
 	SoftDeleteEvent(ctx context.Context, id int64) error
+	SoftDeletePost(ctx context.Context, arg SoftDeletePostParams) (int64, error)
 	SoftDeleteProduct(ctx context.Context, id int64) error
+	TouchDeletingMedia(ctx context.Context, id int64) error
+	TouchMediaStagingCleanup(ctx context.Context, id int64) error
+	UnbindPostImages(ctx context.Context, postID int64) error
+	UnbindUserImages(ctx context.Context, ownerID pgtype.Int8) error
+	UnlikePost(ctx context.Context, arg UnlikePostParams) error
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event, error)
 	UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) error
 	UpdatePaymentRefunded(ctx context.Context, id int64) (int64, error)
+	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 	UpdateProduct(ctx context.Context, arg UpdateProductParams) (Product, error)
 	UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) error
 	UpdateShippingAddress(ctx context.Context, arg UpdateShippingAddressParams) (ShippingAddress, error)

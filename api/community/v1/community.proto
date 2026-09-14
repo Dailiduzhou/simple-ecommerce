@@ -1,0 +1,171 @@
+syntax = "proto3";
+package api.community.v1;
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
+option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/community/v1;v1";
+service Community {
+  rpc CreatePost(CreatePostRequest) returns (Post) {
+    option (google.api.http) = {
+      post: "/v1/posts"
+      body: "*"
+    };
+  }
+  rpc GetPost(PostRequest) returns (Post) {
+    option (google.api.http) = {
+      get: "/v1/posts/{id}"
+    };
+  }
+  rpc ListPosts(ListPostsRequest) returns (ListPostsReply) {
+    option (google.api.http) = {
+      get: "/v1/posts"
+    };
+  }
+  rpc UpdatePost(UpdatePostRequest) returns (Post) {
+    option (google.api.http) = {
+      put: "/v1/posts/{id}"
+      body: "*"
+    };
+  }
+  rpc DeletePost(PostRequest) returns (EmptyReply) {
+    option (google.api.http) = {
+      delete: "/v1/posts/{id}"
+    };
+  }
+  rpc LikePost(PostRequest) returns (EmptyReply) {
+    option (google.api.http) = {
+      put: "/v1/posts/{id}/like"
+    };
+  }
+  rpc UnlikePost(PostRequest) returns (EmptyReply) {
+    option (google.api.http) = {
+      delete: "/v1/posts/{id}/like"
+    };
+  }
+  rpc CreateComment(CreateCommentRequest) returns (Comment) {
+    option (google.api.http) = {
+      post: "/v1/posts/{post_id}/comments"
+      body: "*"
+    };
+  }
+  rpc ListComments(ListCommentsRequest) returns (ListCommentsReply) {
+    option (google.api.http) = {
+      get: "/v1/posts/{post_id}/comments"
+    };
+  }
+  rpc ListCommentReplies(ListCommentRepliesRequest)
+      returns (ListCommentsReply) {
+    option (google.api.http) = {
+      get: "/v1/posts/{post_id}/comments/{root_comment_id}/replies"
+    };
+  }
+  rpc DeleteComment(DeleteCommentRequest) returns (EmptyReply) {
+    option (google.api.http) = {
+      delete: "/v1/posts/{post_id}/comments/{id}"
+    };
+  }
+}
+message Author {
+  int64 id = 1;
+  string nickname = 2;
+}
+message Image {
+  int64 id = 1;
+  string url = 2;
+  string content_type = 3;
+  int64 size_bytes = 4;
+  int32 width = 5;
+  int32 height = 6;
+}
+message Post {
+  int64 id = 1;
+  Author author = 2;
+  string title = 3;
+  string content = 4;
+  repeated Image images = 5;
+  int64 version = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  int64 like_count = 9;
+  int64 comment_count = 10;
+  bool liked_by_me = 11;
+}
+message EmptyReply {}
+message PostRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+}
+// Text is trimmed before domain limits (title 100, body 5000 Unicode
+// characters). Images are optional; a post can contain 0-9 images.
+message CreatePostRequest {
+  string title = 1
+      [(buf.validate.field).string = { min_len: 1, max_len: 16384 }];
+  string content = 2
+      [(buf.validate.field).string = { min_len: 1, max_len: 16384 }];
+  // Optional ordered image IDs (0-9). Omitted or empty means a text-only post.
+  repeated int64 image_ids = 3 [(buf.validate.field).repeated = {
+    max_items: 9,
+    unique: true,
+    items: { int64: { gt: 0 } }
+  }];
+}
+message UpdatePostRequest {
+  string title = 1
+      [(buf.validate.field).string = { min_len: 1, max_len: 16384 }];
+  string content = 2
+      [(buf.validate.field).string = { min_len: 1, max_len: 16384 }];
+  // Full replacement (0-9). Omitted or empty removes all existing images.
+  repeated int64 image_ids = 3 [(buf.validate.field).repeated = {
+    max_items: 9,
+    unique: true,
+    items: { int64: { gt: 0 } }
+  }];
+  int64 id = 4 [(buf.validate.field).int64.gt = 0];
+  int64 expected_version = 5 [(buf.validate.field).int64.gt = 0];
+}
+message ListPostsRequest {
+  string cursor = 1 [(buf.validate.field).string.max_len = 512];
+  int32 page_size = 2 [(buf.validate.field).int32 = { gte: 0, lte: 50 }];
+  int64 author_id = 3 [(buf.validate.field).int64.gte = 0];
+}
+message ListPostsReply {
+  repeated Post items = 1;
+  string next_cursor = 2;
+}
+message Comment {
+  int64 id = 1;
+  int64 post_id = 2;
+  Author author = 3;
+  string content = 4;
+  int64 root_comment_id = 5;
+  int64 reply_to_comment_id = 6;
+  bool deleted = 7;
+  google.protobuf.Timestamp created_at = 8;
+  int64 reply_count = 9;
+  bool reply_to_deleted = 10;
+  Author reply_to_author = 11;
+}
+message CreateCommentRequest {
+  int64 post_id = 1 [(buf.validate.field).int64.gt = 0];
+  string content = 2
+      [(buf.validate.field).string = { min_len: 1, max_len: 16384 }];
+  int64 reply_to_comment_id = 3 [(buf.validate.field).int64.gte = 0];
+}
+message ListCommentsRequest {
+  string cursor = 1 [(buf.validate.field).string.max_len = 512];
+  int32 page_size = 2 [(buf.validate.field).int32 = { gte: 0, lte: 50 }];
+  int64 post_id = 3 [(buf.validate.field).int64.gt = 0];
+}
+message ListCommentRepliesRequest {
+  string cursor = 1 [(buf.validate.field).string.max_len = 512];
+  int32 page_size = 2 [(buf.validate.field).int32 = { gte: 0, lte: 50 }];
+  int64 post_id = 3 [(buf.validate.field).int64.gt = 0];
+  int64 root_comment_id = 4 [(buf.validate.field).int64.gt = 0];
+}
+message ListCommentsReply {
+  repeated Comment items = 1;
+  string next_cursor = 2;
+}
+message DeleteCommentRequest {
+  int64 post_id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 id = 2 [(buf.validate.field).int64.gt = 0];
+}

@@ -4,19 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	stderrors "errors"
-	"fmt"
-	mrand "math/rand"
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
-	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -49,7 +44,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEnc
 		rand.Read(b)
 		nickname = "u" + hex.EncodeToString(b)
 	}
-	u, err := r.data.q.CreateUser(ctx, db.CreateUserParams{
+	u, err := r.data.DB(ctx).CreateUser(ctx, db.CreateUserParams{
 		Nickname:     nickname,
 		PhoneHash:    phoneHash,
 		PhoneEncrypt: phoneEncrypt,
@@ -64,66 +59,49 @@ func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEnc
 	return bizUser, nil
 }
 
-func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error) {
-	cacheKey := redisKey("user", id)
-
-	u, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return u, nil
+func (r *UserRepo) GetAuthUser(ctx context.Context, id int64) (*biz.User, error) {
+	row, err := r.data.DB(ctx).GetUserByID(ctx, id)
+	if stderrors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get user cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:user:%d", id)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		userDoublecheck, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return userDoublecheck, nil
-		}
-		u, err := r.data.q.GetUserByID(ctx, id)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.User)(nil), nil
-			}
-			return nil, err
-		}
-		bizUser := toBizUser(u)
-		r.setCache(ctx, cacheKey, bizUser)
-		return bizUser, nil
-	})
-
 	if err != nil {
 		return nil, err
 	}
-
-	return val.(*biz.User), nil
+	return toBizUser(row), nil
 }
 
-func (r *UserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*biz.User, error) {
-	sfKey := fmt.Sprintf("sf:user:phone:%s", phoneHash)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		u, err := r.data.q.GetUserByPhoneHash(ctx, phoneHash)
+func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error) {
+	return cacheAside(ctx, r.data, r.log, redisKey("user", id), r.getCache, r.setCache, func() (*biz.User, error) {
+		row, err := r.data.DB(ctx).GetUserByID(ctx, id)
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.User)(nil), nil
-			}
 			return nil, err
 		}
-		bizUser := toBizUser(u)
-		r.setCache(ctx, redisKey("user", bizUser.ID), bizUser)
-		return bizUser, nil
+		return toBizUser(row), nil
 	})
+}
 
+// GetUserByPhoneHash is an authentication lookup. Never serve credentials or
+// account-existence decisions from the public-profile cache.
+func (r *UserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*biz.User, error) {
+	u, err := r.data.DB(ctx).GetUserByPhoneHash(ctx, phoneHash)
+	if stderrors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-
-	return val.(*biz.User), nil
+	user := toBizUser(u)
+	if !inTransaction(ctx) {
+		r.setCache(ctx, redisKey("user", user.ID), user)
+	}
+	return user, nil
 }
 
 func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*biz.User, error) {
-	u, err := r.data.q.UpdateUser(ctx, db.UpdateUserParams{
+	u, err := r.data.DB(ctx).UpdateUser(ctx, db.UpdateUserParams{
 		ID:       id,
 		Nickname: nickname,
 		RealName: realName,
@@ -138,32 +116,27 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName 
 }
 
 func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
-	u, err := r.data.q.GetUserByID(ctx, id)
+	u, err := r.data.DB(ctx).GetUserByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	err = r.data.q.DeleteUser(ctx, id)
+	err = r.data.DB(ctx).DeleteUser(ctx, id)
 	if err != nil {
 		return err
 	}
-	r.deleteCache(ctx, redisKey("user", id))
-	r.deleteCache(ctx, redisKey("user", "phone", u.PhoneHash))
+	deleteJSONCache(ctx, r.data, r.log, redisKey("user", id), redisKey("user", "phone", u.PhoneHash))
 	return nil
 }
 
 func (r *UserRepo) getCache(ctx context.Context, key string) (*biz.User, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var user biz.User
-	if err := json.Unmarshal(val, &user); err != nil {
-		return nil, err
-	}
-	return &user, nil
+	return readJSONCache[*biz.User](ctx, r.data, key)
 }
 
 func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.User) {
+	if user == nil {
+		writeJSONCache(ctx, r.data, r.log, key, user, negativeCacheTTL)
+		return
+	}
 	profile := struct {
 		ID        int64
 		Nickname  string
@@ -172,23 +145,11 @@ func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.User) {
 		CreatedAt time.Time
 		UpdatedAt time.Time
 	}{user.ID, user.Nickname, user.RealName, user.Role, user.CreatedAt, user.UpdatedAt}
-	data, err := json.Marshal(profile)
-	if err != nil {
-		r.log.WithContext(ctx).Errorf("marshal user cache: %v", err)
-		return
-	}
-	jitter := time.Duration(mrand.Intn(10)) * time.Minute
-	exp := jitter + 10*time.Minute
-	if err := r.data.rdb.Set(ctx, key, data, exp).Err(); err != nil {
-		r.log.WithContext(ctx).Errorw("msg", "write user profile cache failed", "key", key, "error", err)
-	}
+	writeJSONCache(ctx, r.data, r.log, key, profile, cacheTTL())
 }
 
 func (r *UserRepo) deleteCache(ctx context.Context, key string) {
-	if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-		r.log.WithContext(ctx).Errorf("delete cache %s", key)
-		return
-	}
+	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
 func toBizUser(u db.User) *biz.User {
@@ -224,67 +185,27 @@ func toBizShippingAddress(sa db.ShippingAddress) biz.ShippingAddress {
 }
 
 func (r *ShippingAddressRepo) getCache(ctx context.Context, key string) (*biz.ShippingAddress, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var sa biz.ShippingAddress
-	if err := json.Unmarshal(val, &sa); err != nil {
-		return nil, err
-	}
-	return &sa, nil
+	return readJSONCache[*biz.ShippingAddress](ctx, r.data, key)
 }
 
 func (r *ShippingAddressRepo) getListCache(ctx context.Context, key string) ([]biz.ShippingAddress, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var sas []biz.ShippingAddress
-	if err := json.Unmarshal(val, &sas); err != nil {
-		return nil, err
-	}
-	return sas, nil
+	return readJSONCache[[]biz.ShippingAddress](ctx, r.data, key)
 }
 
-func (r *ShippingAddressRepo) setCache(ctx context.Context, key string, sa *biz.ShippingAddress) {
-	afterCommit(ctx, func() {
-		data, err := json.Marshal(sa)
-		if err == nil {
-			err = r.data.rdb.Set(ctx, key, data, time.Duration(mrand.Intn(10))*time.Minute+10*time.Minute).Err()
-		}
-		if err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write shipping address cache failed", "key", key, "error", err)
-		}
-	})
+func (r *ShippingAddressRepo) setCache(ctx context.Context, key string, value *biz.ShippingAddress) {
+	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
-func (r *ShippingAddressRepo) setListCache(ctx context.Context, key string, sas []biz.ShippingAddress) {
-	afterCommit(ctx, func() {
-		data, err := json.Marshal(sas)
-		if err == nil {
-			err = r.data.rdb.Set(ctx, key, data, time.Duration(mrand.Intn(10))*time.Minute+10*time.Minute).Err()
-		}
-		if err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write shipping address list cache failed", "key", key, "error", err)
-		}
-	})
+func (r *ShippingAddressRepo) setListCache(ctx context.Context, key string, value []biz.ShippingAddress) {
+	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *ShippingAddressRepo) deleteCache(ctx context.Context, key string) {
-	afterCommit(ctx, func() {
-		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-			r.log.WithContext(ctx).Errorf("delete cache %s", key)
-		}
-	})
+	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
 func (r *ShippingAddressRepo) deleteListCache(ctx context.Context, key string) {
-	afterCommit(ctx, func() {
-		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-			r.log.WithContext(ctx).Errorf("delete list cache %s", key)
-		}
-	})
+	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
 func (r *ShippingAddressRepo) CreateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, receiverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*biz.ShippingAddress, error) {
@@ -321,85 +242,44 @@ func (r *ShippingAddressRepo) CreateShippingAddress(ctx context.Context, userID 
 }
 
 func (r *ShippingAddressRepo) ListShippingAddressesByUser(ctx context.Context, userID int64) ([]biz.ShippingAddress, error) {
-	cacheKey := redisKey("shipping_addr", "user", userID)
-
-	sas, err := r.getListCache(ctx, cacheKey)
-	if err == nil {
-		return sas, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get shipping address list cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:shipping_addr:user:%d", userID)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		sas, err := r.getListCache(ctx, cacheKey)
-		if err == nil {
-			return sas, nil
-		}
-		dbSas, err := r.data.q.ListShippingAddressesByUser(ctx, userID)
+	key := redisKey("shipping_addr", "user", userID)
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.ShippingAddress, error) {
+		rows, err := r.data.DB(ctx).ListShippingAddressesByUser(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
-		var bizSas []biz.ShippingAddress
-		for _, sa := range dbSas {
-			bizSas = append(bizSas, toBizShippingAddress(sa))
+		addresses := make([]biz.ShippingAddress, len(rows))
+		for i, row := range rows {
+			addresses[i] = toBizShippingAddress(row)
 		}
-		r.setListCache(ctx, cacheKey, bizSas)
-		return bizSas, nil
+		return addresses, nil
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return val.([]biz.ShippingAddress), nil
 }
 
 func (r *ShippingAddressRepo) GetShippingAddress(ctx context.Context, id int64, userID int64) (*biz.ShippingAddress, error) {
-	cacheKey := shippingAddressCacheKey(userID, id)
-
-	sa, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		if sa.UserID != userID {
-			r.deleteCache(ctx, cacheKey)
-			return nil, biz.ErrShippingAddressNotFound
+	key := shippingAddressCacheKey(userID, id)
+	address, err := cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.ShippingAddress, error) {
+		row, err := r.data.DB(ctx).GetShippingAddress(ctx, db.GetShippingAddressParams{ID: id, UserID: userID})
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
 		}
-		return sa, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get shipping address cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:shipping_addr:%d", id)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		sa, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			if sa.UserID != userID {
-				return nil, biz.ErrShippingAddressNotFound
-			}
-			return sa, nil
-		}
-		dbSa, err := r.data.q.GetShippingAddress(ctx, db.GetShippingAddressParams{
-			ID:     id,
-			UserID: userID,
-		})
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, biz.ErrShippingAddressNotFound
-			}
 			return nil, err
 		}
-		bizSa := toBizShippingAddress(dbSa)
-		r.setCache(ctx, cacheKey, &bizSa)
-		return &bizSa, nil
+		value := toBizShippingAddress(row)
+		return &value, nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
-	return val.(*biz.ShippingAddress), nil
+	if address == nil {
+		return nil, biz.ErrShippingAddressNotFound
+	}
+	if address.UserID != userID || address.ID != id {
+		r.deleteCache(ctx, key)
+		return nil, biz.ErrShippingAddressNotFound
+	}
+	return address, nil
 }
 
 func (r *ShippingAddressRepo) UpdateShippingAddress(ctx context.Context, id int64, userID int64, receiverName string, receiverPhoneHash string, receiverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string) (*biz.ShippingAddress, error) {

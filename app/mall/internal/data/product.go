@@ -4,17 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
-	"fmt"
-	mrand "math/rand"
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
-	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 )
 
@@ -30,6 +26,10 @@ func NewProductRepo(data *Data, logger log.Logger) *ProductRepo {
 }
 
 func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+	minor, err := biz.ProductPriceMinor(price)
+	if err != nil {
+		return nil, err
+	}
 	coverImageJSON, err := json.Marshal(coverImage)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 	p, err := querierFromContext(ctx, r.data.q).CreateProduct(ctx, db.CreateProductParams{
 		CategoryID:  categoryID,
 		Name:        name,
-		PriceMinor:  decimalToMinor(price),
+		PriceMinor:  minor,
 		Discount:    discount,
 		Stock:       stock,
 		Status:      status,
@@ -53,7 +53,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 		return nil, err
 	}
 	bizProduct := toBizProduct(p)
-	r.setCache(ctx, redisKey("product", bizProduct.ID), &bizProduct)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", bizProduct.ID, "gen"))
 	r.invalidateProductLists(ctx, 0, categoryID)
 	return &bizProduct, nil
 }
@@ -72,119 +72,49 @@ func (r *ProductRepo) DecrProductStock(ctx context.Context, ID int64, amount int
 		return 0, err
 	}
 	r.deleteCache(ctx, redisKey("product", ID))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", ID, "gen"))
 	r.invalidateProductLists(ctx, product.CategoryID)
 	return stock, nil
 }
 
 func (r *ProductRepo) GetProduct(ctx context.Context, id int64) (*biz.Product, error) {
-	cacheKey := redisKey("product", id)
-
-	p, err := r.getCache(ctx, cacheKey)
-	if err == nil {
-		return p, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get product cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:product:%d", id)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		p, err := r.getCache(ctx, cacheKey)
-		if err == nil {
-			return p, nil
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
+	key := generationCacheKey(generation, redisKey("product", id, "g", generation))
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.Product, error) {
+		row, err := r.data.DB(ctx).GetProduct(ctx, id)
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
 		}
-		dbp, err := r.data.q.GetProduct(ctx, id)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return (*biz.Product)(nil), nil
-			}
-			return (*biz.Product)(nil), err
+			return nil, err
 		}
-		bizProduct := toBizProduct(dbp)
-		r.setCache(ctx, cacheKey, &bizProduct)
-		return &bizProduct, nil
+		value := toBizProduct(row)
+		return &value, nil
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return val.(*biz.Product), nil
 }
 
 func (r *ProductRepo) ListProducts(ctx context.Context, limit int32, offset int32) ([]biz.Product, error) {
-	generation := cacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
-	cacheKey := redisKey("product", "list", generation, limit, offset)
-
-	ps, err := r.getListCache(ctx, cacheKey)
-	if err == nil {
-		return ps, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get product list cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:product:list:%d:%d", limit, offset)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		ps, err := r.getListCache(ctx, cacheKey)
-		if err == nil {
-			return ps, nil
-		}
-		dbps, err := r.data.q.ListProducts(ctx, db.ListProductsParams{
-			Limit:  limit,
-			Offset: offset,
-		})
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
+	key := generationCacheKey(generation, redisKey("product", "list", generation, limit, offset))
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
+		rows, err := r.data.DB(ctx).ListProducts(ctx, db.ListProductsParams{Limit: limit, Offset: offset})
 		if err != nil {
 			return nil, err
 		}
-		bizProducts := toBizProducts(dbps)
-		r.setListCache(ctx, cacheKey, bizProducts)
-		return bizProducts, nil
+		return toBizProducts(rows), nil
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return val.([]biz.Product), nil
 }
 
 func (r *ProductRepo) ListProductsByCategory(ctx context.Context, categoryID int64, limit int32, offset int32) ([]biz.Product, error) {
-	generation := cacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", categoryID, "gen"))
-	cacheKey := redisKey("product", "category", categoryID, generation, limit, offset)
-
-	ps, err := r.getListCache(ctx, cacheKey)
-	if err == nil {
-		return ps, nil
-	}
-	if !stderrors.Is(err, redis.Nil) {
-		r.log.WithContext(ctx).Errorf("get product category list cache: %v", err)
-	}
-
-	sfKey := fmt.Sprintf("sf:product:cat:%d:%d:%d", categoryID, limit, offset)
-	val, err, _ := r.data.sg.Do(sfKey, func() (any, error) {
-		ps, err := r.getListCache(ctx, cacheKey)
-		if err == nil {
-			return ps, nil
-		}
-		dbps, err := r.data.q.ListProductsByCategory(ctx, db.ListProductsByCategoryParams{
-			CategoryID: categoryID,
-			Limit:      limit,
-			Offset:     offset,
-		})
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", categoryID, "gen"))
+	key := generationCacheKey(generation, redisKey("product", "category", categoryID, generation, limit, offset))
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
+		rows, err := r.data.DB(ctx).ListProductsByCategory(ctx, db.ListProductsByCategoryParams{CategoryID: categoryID, Limit: limit, Offset: offset})
 		if err != nil {
 			return nil, err
 		}
-		bizProducts := toBizProducts(dbps)
-		r.setListCache(ctx, cacheKey, bizProducts)
-		return bizProducts, nil
+		return toBizProducts(rows), nil
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return val.([]biz.Product), nil
 }
 
 func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
@@ -198,11 +128,16 @@ func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
 		return err
 	}
 	r.deleteCache(ctx, redisKey("product", id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
 	r.invalidateProductLists(ctx, existing.CategoryID)
 	return nil
 }
 
 func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+	minor, err := biz.ProductPriceMinor(price)
+	if err != nil {
+		return nil, err
+	}
 	coverImageJSON, err := json.Marshal(coverImage)
 	if err != nil {
 		return nil, err
@@ -220,7 +155,7 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		ID:          id,
 		CategoryID:  categoryID,
 		Name:        name,
-		PriceMinor:  decimalToMinor(price),
+		PriceMinor:  minor,
 		Discount:    discount,
 		Stock:       stock,
 		CoverImage:  coverImageJSON,
@@ -232,7 +167,7 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 	}
 	bizProduct := toBizProduct(p)
 	r.deleteCache(ctx, redisKey("product", id))
-	r.setCache(ctx, redisKey("product", id), &bizProduct)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
 	r.invalidateProductLists(ctx, existing.CategoryID, categoryID)
 	return &bizProduct, nil
 }
@@ -251,68 +186,29 @@ func (r *ProductRepo) UpdateProductStatus(ctx context.Context, ID int64, status 
 		return err
 	}
 	r.deleteCache(ctx, redisKey("product", ID))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", ID, "gen"))
 	r.invalidateProductLists(ctx, existing.CategoryID)
 	return nil
 }
 
 func (r *ProductRepo) getCache(ctx context.Context, key string) (*biz.Product, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var p biz.Product
-	if err := json.Unmarshal(val, &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
+	return readJSONCache[*biz.Product](ctx, r.data, key)
 }
 
 func (r *ProductRepo) getListCache(ctx context.Context, key string) ([]biz.Product, error) {
-	val, err := r.data.rdb.Get(ctx, key).Bytes()
-	if err != nil {
-		return nil, err
-	}
-	var ps []biz.Product
-	if err := json.Unmarshal(val, &ps); err != nil {
-		return nil, err
-	}
-	return ps, nil
+	return readJSONCache[[]biz.Product](ctx, r.data, key)
 }
 
-func (r *ProductRepo) setCache(ctx context.Context, key string, p *biz.Product) {
-	afterCommit(ctx, func() {
-		data, err := json.Marshal(p)
-		if err != nil {
-			r.log.WithContext(ctx).Errorf("marshal product cache: %v", err)
-			return
-		}
-		jitter := time.Duration(mrand.Intn(10)) * time.Minute
-		if err := r.data.rdb.Set(ctx, key, data, jitter+10*time.Minute).Err(); err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write product cache failed", "key", key, "error", err)
-		}
-	})
+func (r *ProductRepo) setCache(ctx context.Context, key string, value *biz.Product) {
+	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
-func (r *ProductRepo) setListCache(ctx context.Context, key string, ps []biz.Product) {
-	afterCommit(ctx, func() {
-		data, err := json.Marshal(ps)
-		if err != nil {
-			r.log.WithContext(ctx).Errorf("marshal product list cache: %v", err)
-			return
-		}
-		jitter := time.Duration(mrand.Intn(10)) * time.Minute
-		if err := r.data.rdb.Set(ctx, key, data, jitter+10*time.Minute).Err(); err != nil {
-			r.log.WithContext(ctx).Errorw("msg", "write product list cache failed", "key", key, "error", err)
-		}
-	})
+func (r *ProductRepo) setListCache(ctx context.Context, key string, value []biz.Product) {
+	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *ProductRepo) deleteCache(ctx context.Context, key string) {
-	afterCommit(ctx, func() {
-		if err := r.data.rdb.Unlink(ctx, key).Err(); err != nil {
-			r.log.WithContext(ctx).Errorf("delete cache %s", key)
-		}
-	})
+	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
 func (r *ProductRepo) invalidateProductLists(ctx context.Context, categoryIDs ...int64) {
@@ -348,10 +244,6 @@ func toBizProduct(p db.Product) biz.Product {
 	}
 }
 
-func decimalToMinor(value decimal.Decimal) int64 {
-	return value.Shift(2).IntPart()
-}
-
 func toBizProducts(ps []db.Product) []biz.Product {
 	result := make([]biz.Product, len(ps))
 	for i, p := range ps {
@@ -376,4 +268,11 @@ func parseMediaInfoJSON(data []byte) []biz.MediaInfo {
 		return nil
 	}
 	return result
+}
+
+func (r *ProductRepo) CountProducts(ctx context.Context, categoryID int64) (int64, error) {
+	if categoryID > 0 {
+		return r.data.DB(ctx).CountProductsByCategory(ctx, categoryID)
+	}
+	return r.data.DB(ctx).CountProducts(ctx)
 }
