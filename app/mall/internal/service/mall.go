@@ -15,11 +15,12 @@ type MallService struct {
 	productUc  biz.ProductUsecase
 	categoryUc biz.CategoryUsecase
 	eventUc    biz.EventUsecase
+	wellnessUc biz.WellnessUsecase
 	log        *log.Helper
 }
 
-func NewMallService(productUc biz.ProductUsecase, categoryUc biz.CategoryUsecase, eventUc biz.EventUsecase, logger log.Logger) *MallService {
-	return &MallService{productUc: productUc, categoryUc: categoryUc, eventUc: eventUc, log: log.NewHelper(logger)}
+func NewMallService(productUc biz.ProductUsecase, categoryUc biz.CategoryUsecase, eventUc biz.EventUsecase, wellnessUc biz.WellnessUsecase, logger log.Logger) *MallService {
+	return &MallService{productUc: productUc, categoryUc: categoryUc, eventUc: eventUc, wellnessUc: wellnessUc, log: log.NewHelper(logger)}
 }
 
 func (s *MallService) CreateProduct(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {

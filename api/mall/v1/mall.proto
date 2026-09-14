@@ -10,6 +10,13 @@ option java_multiple_files = true;
 option java_package = "api.mall.v1";
 
 service Mall {
+  // 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
+  rpc GetTodayWellness (GetTodayWellnessRequest) returns (TodayWellnessReply) {
+    option (google.api.http) = {
+      get: "/v1/wellness/today"
+    };
+  }
+
   // Categories
   rpc CreateCategory (CreateCategoryRequest) returns (Category) {
     option (google.api.http) = {
@@ -266,3 +273,15 @@ message DeleteEventRequest {
   int64 id = 1;
 }
 message DeleteEventReply {}
+
+// 不接受用户 ID 或指定日期，不提供个性化及历史查询。
+message GetTodayWellnessRequest {}
+
+message TodayWellnessReply {
+  // 北京时间（UTC+8）的公历日期，格式 YYYY-MM-DD。
+  string date = 1;
+  // 当前所处节气的中文名称，在交节日北京时间 00:00 切换。
+  string solar_term = 2;
+  // 内置的通用生活建议，同一节气内所有用户一致；非医疗建议。
+  string advice = 3;
+}
