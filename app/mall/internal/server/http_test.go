@@ -64,7 +64,7 @@ func (u *callbackPaymentUsecase) SupportsNotificationProvider(provider string) b
 }
 
 func newHTTPTestServer(uc biz.PaymentUsecase) http.Handler {
-	mall := service.NewMallService(nil, nil, nil, log.DefaultLogger)
+	mall := service.NewMallService(nil, nil, nil, nil, log.DefaultLogger)
 	user := service.NewUserService(nil, nil, nil, nil, log.DefaultLogger)
 	order := service.NewOrderService(nil)
 	payment := service.NewPaymentService(uc, nil, log.DefaultLogger)

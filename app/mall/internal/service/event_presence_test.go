@@ -31,7 +31,7 @@ func TestReviewEventHTTPPresence(t *testing.T) {
 				return nil, nil
 			}}
 			s := http.NewServer()
-			pb.RegisterMallHTTPServer(s, NewMallService(nil, nil, biz.NewEventUsecase(r, log.DefaultLogger), log.DefaultLogger))
+			pb.RegisterMallHTTPServer(s, NewMallService(nil, nil, biz.NewEventUsecase(r, log.DefaultLogger), nil, log.DefaultLogger))
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, httptest.NewRequest("GET", "/v1/events"+query, nil))
 			require.Equal(t, 200, w.Code)
