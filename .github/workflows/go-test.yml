@@ -61,7 +61,7 @@ jobs:
             -p 127.0.0.1:19000:9000 \
             -e MINIO_ROOT_USER="$ECOMMERCE_INTEGRATION_S3_ACCESS_KEY" \
             -e MINIO_ROOT_PASSWORD="$ECOMMERCE_INTEGRATION_S3_SECRET_KEY" \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+            quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:19000/minio/health/ready; then exit 0; fi
             sleep 2
