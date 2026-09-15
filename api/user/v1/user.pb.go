@@ -1192,6 +1192,88 @@ func (x *RefreshReply) GetRefreshToken() string {
 	return ""
 }
 
+type LogoutRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional: the client's current refresh token; when supplied it is burned
+	// together with the access token revocation.
+	RefreshToken  string `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutRequest) Reset() {
+	*x = LogoutRequest{}
+	mi := &file_user_v1_user_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutRequest) ProtoMessage() {}
+
+func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
+func (*LogoutRequest) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *LogoutRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+type LogoutReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutReply) Reset() {
+	*x = LogoutReply{}
+	mi := &file_user_v1_user_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutReply) ProtoMessage() {}
+
+func (x *LogoutReply) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutReply.ProtoReflect.Descriptor instead.
+func (*LogoutReply) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{21}
+}
+
 type RecordProductViewRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProductId     int64                  `protobuf:"varint,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
@@ -1201,7 +1283,7 @@ type RecordProductViewRequest struct {
 
 func (x *RecordProductViewRequest) Reset() {
 	*x = RecordProductViewRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[20]
+	mi := &file_user_v1_user_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1213,7 +1295,7 @@ func (x *RecordProductViewRequest) String() string {
 func (*RecordProductViewRequest) ProtoMessage() {}
 
 func (x *RecordProductViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[20]
+	mi := &file_user_v1_user_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1226,7 +1308,7 @@ func (x *RecordProductViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordProductViewRequest.ProtoReflect.Descriptor instead.
 func (*RecordProductViewRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{20}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RecordProductViewRequest) GetProductId() int64 {
@@ -1245,7 +1327,7 @@ type RecordProductViewReply struct {
 
 func (x *RecordProductViewReply) Reset() {
 	*x = RecordProductViewReply{}
-	mi := &file_user_v1_user_proto_msgTypes[21]
+	mi := &file_user_v1_user_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1257,7 +1339,7 @@ func (x *RecordProductViewReply) String() string {
 func (*RecordProductViewReply) ProtoMessage() {}
 
 func (x *RecordProductViewReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[21]
+	mi := &file_user_v1_user_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1270,7 +1352,7 @@ func (x *RecordProductViewReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordProductViewReply.ProtoReflect.Descriptor instead.
 func (*RecordProductViewReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{21}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RecordProductViewReply) GetLastViewedAt() *timestamppb.Timestamp {
@@ -1295,7 +1377,7 @@ type ListBrowsingHistoryRequest struct {
 
 func (x *ListBrowsingHistoryRequest) Reset() {
 	*x = ListBrowsingHistoryRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[22]
+	mi := &file_user_v1_user_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1307,7 +1389,7 @@ func (x *ListBrowsingHistoryRequest) String() string {
 func (*ListBrowsingHistoryRequest) ProtoMessage() {}
 
 func (x *ListBrowsingHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[22]
+	mi := &file_user_v1_user_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +1402,7 @@ func (x *ListBrowsingHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBrowsingHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ListBrowsingHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{22}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListBrowsingHistoryRequest) GetCursor() string {
@@ -1365,7 +1447,7 @@ type BrowsingHistoryItem struct {
 
 func (x *BrowsingHistoryItem) Reset() {
 	*x = BrowsingHistoryItem{}
-	mi := &file_user_v1_user_proto_msgTypes[23]
+	mi := &file_user_v1_user_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1377,7 +1459,7 @@ func (x *BrowsingHistoryItem) String() string {
 func (*BrowsingHistoryItem) ProtoMessage() {}
 
 func (x *BrowsingHistoryItem) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[23]
+	mi := &file_user_v1_user_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1390,7 +1472,7 @@ func (x *BrowsingHistoryItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrowsingHistoryItem.ProtoReflect.Descriptor instead.
 func (*BrowsingHistoryItem) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{23}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *BrowsingHistoryItem) GetProductId() int64 {
@@ -1445,7 +1527,7 @@ type ListBrowsingHistoryReply struct {
 
 func (x *ListBrowsingHistoryReply) Reset() {
 	*x = ListBrowsingHistoryReply{}
-	mi := &file_user_v1_user_proto_msgTypes[24]
+	mi := &file_user_v1_user_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1457,7 +1539,7 @@ func (x *ListBrowsingHistoryReply) String() string {
 func (*ListBrowsingHistoryReply) ProtoMessage() {}
 
 func (x *ListBrowsingHistoryReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[24]
+	mi := &file_user_v1_user_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1470,7 +1552,7 @@ func (x *ListBrowsingHistoryReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBrowsingHistoryReply.ProtoReflect.Descriptor instead.
 func (*ListBrowsingHistoryReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{24}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListBrowsingHistoryReply) GetItems() []*BrowsingHistoryItem {
@@ -1496,7 +1578,7 @@ type DeleteBrowsingHistoryItemRequest struct {
 
 func (x *DeleteBrowsingHistoryItemRequest) Reset() {
 	*x = DeleteBrowsingHistoryItemRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[25]
+	mi := &file_user_v1_user_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1508,7 +1590,7 @@ func (x *DeleteBrowsingHistoryItemRequest) String() string {
 func (*DeleteBrowsingHistoryItemRequest) ProtoMessage() {}
 
 func (x *DeleteBrowsingHistoryItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[25]
+	mi := &file_user_v1_user_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1521,7 +1603,7 @@ func (x *DeleteBrowsingHistoryItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBrowsingHistoryItemRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBrowsingHistoryItemRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{25}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *DeleteBrowsingHistoryItemRequest) GetProductId() int64 {
@@ -1539,7 +1621,7 @@ type DeleteBrowsingHistoryItemReply struct {
 
 func (x *DeleteBrowsingHistoryItemReply) Reset() {
 	*x = DeleteBrowsingHistoryItemReply{}
-	mi := &file_user_v1_user_proto_msgTypes[26]
+	mi := &file_user_v1_user_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1551,7 +1633,7 @@ func (x *DeleteBrowsingHistoryItemReply) String() string {
 func (*DeleteBrowsingHistoryItemReply) ProtoMessage() {}
 
 func (x *DeleteBrowsingHistoryItemReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[26]
+	mi := &file_user_v1_user_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1564,7 +1646,7 @@ func (x *DeleteBrowsingHistoryItemReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBrowsingHistoryItemReply.ProtoReflect.Descriptor instead.
 func (*DeleteBrowsingHistoryItemReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{26}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{28}
 }
 
 type ClearBrowsingHistoryRequest struct {
@@ -1575,7 +1657,7 @@ type ClearBrowsingHistoryRequest struct {
 
 func (x *ClearBrowsingHistoryRequest) Reset() {
 	*x = ClearBrowsingHistoryRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[27]
+	mi := &file_user_v1_user_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1587,7 +1669,7 @@ func (x *ClearBrowsingHistoryRequest) String() string {
 func (*ClearBrowsingHistoryRequest) ProtoMessage() {}
 
 func (x *ClearBrowsingHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[27]
+	mi := &file_user_v1_user_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1600,7 +1682,7 @@ func (x *ClearBrowsingHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearBrowsingHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ClearBrowsingHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{27}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{29}
 }
 
 type ClearBrowsingHistoryReply struct {
@@ -1611,7 +1693,7 @@ type ClearBrowsingHistoryReply struct {
 
 func (x *ClearBrowsingHistoryReply) Reset() {
 	*x = ClearBrowsingHistoryReply{}
-	mi := &file_user_v1_user_proto_msgTypes[28]
+	mi := &file_user_v1_user_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1623,7 +1705,7 @@ func (x *ClearBrowsingHistoryReply) String() string {
 func (*ClearBrowsingHistoryReply) ProtoMessage() {}
 
 func (x *ClearBrowsingHistoryReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[28]
+	mi := &file_user_v1_user_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1636,7 +1718,7 @@ func (x *ClearBrowsingHistoryReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearBrowsingHistoryReply.ProtoReflect.Descriptor instead.
 func (*ClearBrowsingHistoryReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{28}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{30}
 }
 
 var File_user_v1_user_proto protoreflect.FileDescriptor
@@ -1727,7 +1809,10 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"V\n" +
 	"\fRefreshReply\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"B\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"4\n" +
+	"\rLogoutRequest\x12#\n" +
+	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"\r\n" +
+	"\vLogoutReply\"B\n" +
 	"\x18RecordProductViewRequest\x12&\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\tproductId\"Z\n" +
@@ -1757,7 +1842,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"product_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\tproductId\" \n" +
 	"\x1eDeleteBrowsingHistoryItemReply\"\x1d\n" +
 	"\x1bClearBrowsingHistoryRequest\"\x1b\n" +
-	"\x19ClearBrowsingHistoryReply2\x9f\x0f\n" +
+	"\x19ClearBrowsingHistoryReply2\xfc\x0f\n" +
 	"\x04User\x12\x89\x01\n" +
 	"\x11RecordProductView\x12%.api.user.v1.RecordProductViewRequest\x1a#.api.user.v1.RecordProductViewReply\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/users/me/browsing-history\x12\x8c\x01\n" +
 	"\x13ListBrowsingHistory\x12'.api.user.v1.ListBrowsingHistoryRequest\x1a%.api.user.v1.ListBrowsingHistoryReply\"%\x82\xd3\xe4\x93\x02\x1f\x12\x1d/v1/users/me/browsing-history\x12\xab\x01\n" +
@@ -1775,7 +1860,8 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x15UpdateShippingAddress\x12).api.user.v1.UpdateShippingAddressRequest\x1a\x1c.api.user.v1.ShippingAddress\"-\x82\xd3\xe4\x93\x02':\x01*\x1a\"/v1/users/{user_id}/addresses/{id}\x12\xae\x01\n" +
 	"\x19SetDefaultShippingAddress\x12-.api.user.v1.SetDefaultShippingAddressRequest\x1a+.api.user.v1.SetDefaultShippingAddressReply\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/v1/users/{user_id}/addresses/{id}/default\x12\x97\x01\n" +
 	"\x15DeleteShippingAddress\x12).api.user.v1.DeleteShippingAddressRequest\x1a'.api.user.v1.DeleteShippingAddressReply\"*\x82\xd3\xe4\x93\x02$*\"/v1/users/{user_id}/addresses/{id}\x12d\n" +
-	"\fRefreshToken\x12\x1b.api.user.v1.RefreshRequest\x1a\x19.api.user.v1.RefreshReply\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/users/refreshBG\n" +
+	"\fRefreshToken\x12\x1b.api.user.v1.RefreshRequest\x1a\x19.api.user.v1.RefreshReply\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/users/refresh\x12[\n" +
+	"\x06Logout\x12\x1a.api.user.v1.LogoutRequest\x1a\x18.api.user.v1.LogoutReply\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/users/logoutBG\n" +
 	"\vapi.user.v1P\x01Z6github.com/Dailiduzhou/simple-ecommerce/api/user/v1;v1b\x06proto3"
 
 var (
@@ -1790,7 +1876,7 @@ func file_user_v1_user_proto_rawDescGZIP() []byte {
 	return file_user_v1_user_proto_rawDescData
 }
 
-var file_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_user_v1_user_proto_goTypes = []any{
 	(*RegisterRequest)(nil),                  // 0: api.user.v1.RegisterRequest
 	(*RegisterReply)(nil),                    // 1: api.user.v1.RegisterReply
@@ -1812,29 +1898,31 @@ var file_user_v1_user_proto_goTypes = []any{
 	(*DeleteShippingAddressReply)(nil),       // 17: api.user.v1.DeleteShippingAddressReply
 	(*RefreshRequest)(nil),                   // 18: api.user.v1.RefreshRequest
 	(*RefreshReply)(nil),                     // 19: api.user.v1.RefreshReply
-	(*RecordProductViewRequest)(nil),         // 20: api.user.v1.RecordProductViewRequest
-	(*RecordProductViewReply)(nil),           // 21: api.user.v1.RecordProductViewReply
-	(*ListBrowsingHistoryRequest)(nil),       // 22: api.user.v1.ListBrowsingHistoryRequest
-	(*BrowsingHistoryItem)(nil),              // 23: api.user.v1.BrowsingHistoryItem
-	(*ListBrowsingHistoryReply)(nil),         // 24: api.user.v1.ListBrowsingHistoryReply
-	(*DeleteBrowsingHistoryItemRequest)(nil), // 25: api.user.v1.DeleteBrowsingHistoryItemRequest
-	(*DeleteBrowsingHistoryItemReply)(nil),   // 26: api.user.v1.DeleteBrowsingHistoryItemReply
-	(*ClearBrowsingHistoryRequest)(nil),      // 27: api.user.v1.ClearBrowsingHistoryRequest
-	(*ClearBrowsingHistoryReply)(nil),        // 28: api.user.v1.ClearBrowsingHistoryReply
-	(*timestamppb.Timestamp)(nil),            // 29: google.protobuf.Timestamp
+	(*LogoutRequest)(nil),                    // 20: api.user.v1.LogoutRequest
+	(*LogoutReply)(nil),                      // 21: api.user.v1.LogoutReply
+	(*RecordProductViewRequest)(nil),         // 22: api.user.v1.RecordProductViewRequest
+	(*RecordProductViewReply)(nil),           // 23: api.user.v1.RecordProductViewReply
+	(*ListBrowsingHistoryRequest)(nil),       // 24: api.user.v1.ListBrowsingHistoryRequest
+	(*BrowsingHistoryItem)(nil),              // 25: api.user.v1.BrowsingHistoryItem
+	(*ListBrowsingHistoryReply)(nil),         // 26: api.user.v1.ListBrowsingHistoryReply
+	(*DeleteBrowsingHistoryItemRequest)(nil), // 27: api.user.v1.DeleteBrowsingHistoryItemRequest
+	(*DeleteBrowsingHistoryItemReply)(nil),   // 28: api.user.v1.DeleteBrowsingHistoryItemReply
+	(*ClearBrowsingHistoryRequest)(nil),      // 29: api.user.v1.ClearBrowsingHistoryRequest
+	(*ClearBrowsingHistoryReply)(nil),        // 30: api.user.v1.ClearBrowsingHistoryReply
+	(*timestamppb.Timestamp)(nil),            // 31: google.protobuf.Timestamp
 }
 var file_user_v1_user_proto_depIdxs = []int32{
-	29, // 0: api.user.v1.UserInfo.created_at:type_name -> google.protobuf.Timestamp
+	31, // 0: api.user.v1.UserInfo.created_at:type_name -> google.protobuf.Timestamp
 	9,  // 1: api.user.v1.ListShippingAddressesReply.addresses:type_name -> api.user.v1.ShippingAddress
-	29, // 2: api.user.v1.RecordProductViewReply.last_viewed_at:type_name -> google.protobuf.Timestamp
-	29, // 3: api.user.v1.ListBrowsingHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
-	29, // 4: api.user.v1.ListBrowsingHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
-	29, // 5: api.user.v1.BrowsingHistoryItem.last_viewed_at:type_name -> google.protobuf.Timestamp
-	23, // 6: api.user.v1.ListBrowsingHistoryReply.items:type_name -> api.user.v1.BrowsingHistoryItem
-	20, // 7: api.user.v1.User.RecordProductView:input_type -> api.user.v1.RecordProductViewRequest
-	22, // 8: api.user.v1.User.ListBrowsingHistory:input_type -> api.user.v1.ListBrowsingHistoryRequest
-	25, // 9: api.user.v1.User.DeleteBrowsingHistoryItem:input_type -> api.user.v1.DeleteBrowsingHistoryItemRequest
-	27, // 10: api.user.v1.User.ClearBrowsingHistory:input_type -> api.user.v1.ClearBrowsingHistoryRequest
+	31, // 2: api.user.v1.RecordProductViewReply.last_viewed_at:type_name -> google.protobuf.Timestamp
+	31, // 3: api.user.v1.ListBrowsingHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
+	31, // 4: api.user.v1.ListBrowsingHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
+	31, // 5: api.user.v1.BrowsingHistoryItem.last_viewed_at:type_name -> google.protobuf.Timestamp
+	25, // 6: api.user.v1.ListBrowsingHistoryReply.items:type_name -> api.user.v1.BrowsingHistoryItem
+	22, // 7: api.user.v1.User.RecordProductView:input_type -> api.user.v1.RecordProductViewRequest
+	24, // 8: api.user.v1.User.ListBrowsingHistory:input_type -> api.user.v1.ListBrowsingHistoryRequest
+	27, // 9: api.user.v1.User.DeleteBrowsingHistoryItem:input_type -> api.user.v1.DeleteBrowsingHistoryItemRequest
+	29, // 10: api.user.v1.User.ClearBrowsingHistory:input_type -> api.user.v1.ClearBrowsingHistoryRequest
 	0,  // 11: api.user.v1.User.Register:input_type -> api.user.v1.RegisterRequest
 	2,  // 12: api.user.v1.User.Login:input_type -> api.user.v1.LoginRequest
 	4,  // 13: api.user.v1.User.GetUser:input_type -> api.user.v1.GetUserRequest
@@ -1846,23 +1934,25 @@ var file_user_v1_user_proto_depIdxs = []int32{
 	14, // 19: api.user.v1.User.SetDefaultShippingAddress:input_type -> api.user.v1.SetDefaultShippingAddressRequest
 	16, // 20: api.user.v1.User.DeleteShippingAddress:input_type -> api.user.v1.DeleteShippingAddressRequest
 	18, // 21: api.user.v1.User.RefreshToken:input_type -> api.user.v1.RefreshRequest
-	21, // 22: api.user.v1.User.RecordProductView:output_type -> api.user.v1.RecordProductViewReply
-	24, // 23: api.user.v1.User.ListBrowsingHistory:output_type -> api.user.v1.ListBrowsingHistoryReply
-	26, // 24: api.user.v1.User.DeleteBrowsingHistoryItem:output_type -> api.user.v1.DeleteBrowsingHistoryItemReply
-	28, // 25: api.user.v1.User.ClearBrowsingHistory:output_type -> api.user.v1.ClearBrowsingHistoryReply
-	1,  // 26: api.user.v1.User.Register:output_type -> api.user.v1.RegisterReply
-	3,  // 27: api.user.v1.User.Login:output_type -> api.user.v1.LoginReply
-	8,  // 28: api.user.v1.User.GetUser:output_type -> api.user.v1.UserInfo
-	8,  // 29: api.user.v1.User.UpdateUser:output_type -> api.user.v1.UserInfo
-	7,  // 30: api.user.v1.User.DeleteUser:output_type -> api.user.v1.DeleteUserReply
-	9,  // 31: api.user.v1.User.CreateShippingAddress:output_type -> api.user.v1.ShippingAddress
-	12, // 32: api.user.v1.User.ListShippingAddresses:output_type -> api.user.v1.ListShippingAddressesReply
-	9,  // 33: api.user.v1.User.UpdateShippingAddress:output_type -> api.user.v1.ShippingAddress
-	15, // 34: api.user.v1.User.SetDefaultShippingAddress:output_type -> api.user.v1.SetDefaultShippingAddressReply
-	17, // 35: api.user.v1.User.DeleteShippingAddress:output_type -> api.user.v1.DeleteShippingAddressReply
-	19, // 36: api.user.v1.User.RefreshToken:output_type -> api.user.v1.RefreshReply
-	22, // [22:37] is the sub-list for method output_type
-	7,  // [7:22] is the sub-list for method input_type
+	20, // 22: api.user.v1.User.Logout:input_type -> api.user.v1.LogoutRequest
+	23, // 23: api.user.v1.User.RecordProductView:output_type -> api.user.v1.RecordProductViewReply
+	26, // 24: api.user.v1.User.ListBrowsingHistory:output_type -> api.user.v1.ListBrowsingHistoryReply
+	28, // 25: api.user.v1.User.DeleteBrowsingHistoryItem:output_type -> api.user.v1.DeleteBrowsingHistoryItemReply
+	30, // 26: api.user.v1.User.ClearBrowsingHistory:output_type -> api.user.v1.ClearBrowsingHistoryReply
+	1,  // 27: api.user.v1.User.Register:output_type -> api.user.v1.RegisterReply
+	3,  // 28: api.user.v1.User.Login:output_type -> api.user.v1.LoginReply
+	8,  // 29: api.user.v1.User.GetUser:output_type -> api.user.v1.UserInfo
+	8,  // 30: api.user.v1.User.UpdateUser:output_type -> api.user.v1.UserInfo
+	7,  // 31: api.user.v1.User.DeleteUser:output_type -> api.user.v1.DeleteUserReply
+	9,  // 32: api.user.v1.User.CreateShippingAddress:output_type -> api.user.v1.ShippingAddress
+	12, // 33: api.user.v1.User.ListShippingAddresses:output_type -> api.user.v1.ListShippingAddressesReply
+	9,  // 34: api.user.v1.User.UpdateShippingAddress:output_type -> api.user.v1.ShippingAddress
+	15, // 35: api.user.v1.User.SetDefaultShippingAddress:output_type -> api.user.v1.SetDefaultShippingAddressReply
+	17, // 36: api.user.v1.User.DeleteShippingAddress:output_type -> api.user.v1.DeleteShippingAddressReply
+	19, // 37: api.user.v1.User.RefreshToken:output_type -> api.user.v1.RefreshReply
+	21, // 38: api.user.v1.User.Logout:output_type -> api.user.v1.LogoutReply
+	23, // [23:39] is the sub-list for method output_type
+	7,  // [7:23] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -1879,7 +1969,7 @@ func file_user_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_user_v1_user_proto_rawDesc), len(file_user_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   29,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

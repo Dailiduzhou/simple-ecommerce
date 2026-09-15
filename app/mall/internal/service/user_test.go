@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,15 +46,32 @@ func (r *fakeUserRepo) DeleteUser(ctx context.Context, id int64) error {
 	return r.deleteUser(ctx, id)
 }
 
-type fakeAuthRepo struct{}
+type fakeAuthRepo struct {
+	mu       sync.Mutex
+	consumed map[string]bool
+}
 
 func (r *fakeAuthRepo) SetBlacklist(ctx context.Context, tokenID string, expiration time.Duration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.consumed == nil {
+		r.consumed = map[string]bool{}
+	}
+	r.consumed[tokenID] = true
 	return nil
 }
 
 func (r *fakeAuthRepo) IsBlacklisted(ctx context.Context, tokenID string) (bool, error) {
-	return false, nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.consumed[tokenID], nil
 }
+
+func (r *fakeAuthRepo) LoginFailures(context.Context, string) (int64, error) { return 0, nil }
+
+func (r *fakeAuthRepo) RecordLoginFailure(context.Context, string, time.Duration) error { return nil }
+
+func (r *fakeAuthRepo) ClearLoginFailures(context.Context, string) error { return nil }
 
 func testAuthConf() *conf.Auth {
 	return &conf.Auth{
@@ -68,7 +86,7 @@ func testAuthConf() *conf.Auth {
 func newTestUserService(userRepo biz.UserRepo) *UserService {
 	ac := testAuthConf()
 	authUc := biz.NewAuthUsecase(userRepo, &fakeAuthRepo{}, ac)
-	userUc := biz.NewUserUsecase(userRepo, ac, log.DefaultLogger)
+	userUc := biz.NewUserUsecase(userRepo, &fakeAuthRepo{}, ac, log.DefaultLogger)
 	return NewUserService(authUc, userUc, nil, nil, log.DefaultLogger)
 }
 
@@ -193,5 +211,59 @@ func (r *fakeUserRepo) GetAuthUser(ctx context.Context, id int64) (*biz.User, er
 }
 
 func (r *fakeAuthRepo) ConsumeRefresh(ctx context.Context, id string, ttl time.Duration) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.consumed == nil {
+		r.consumed = map[string]bool{}
+	}
+	if r.consumed[id] {
+		return false, nil
+	}
+	r.consumed[id] = true
 	return true, nil
+}
+
+func TestUserService_Logout(t *testing.T) {
+	passwordHash, err := pwdhash.HashPassword("secret-pass")
+	require.NoError(t, err)
+	repo := &fakeUserRepo{
+		getUserByPhoneHash: func(ctx context.Context, phoneHash string) (*biz.User, error) {
+			return &biz.User{ID: 9, PasswordHash: passwordHash, Role: "user"}, nil
+		},
+	}
+	store := &fakeAuthRepo{}
+	ac := testAuthConf()
+	authUc := biz.NewAuthUsecase(repo, store, ac)
+	userUc := biz.NewUserUsecase(repo, store, ac, log.DefaultLogger)
+	s := NewUserService(authUc, userUc, nil, nil, log.DefaultLogger)
+	ctx := context.Background()
+
+	login, err := s.Login(ctx, &pb.LoginRequest{Phone: "13800138000", Password: "secret-pass"})
+	require.NoError(t, err)
+	claims, err := authUc.ParseAccessToken(login.Token)
+	require.NoError(t, err)
+
+	// Logout revokes the access token and burns the supplied refresh token.
+	_, err = s.Logout(biz.WithClaims(ctx, claims), &pb.LogoutRequest{RefreshToken: login.RefreshToken})
+	require.NoError(t, err)
+	revoked, err := authUc.IsTokenBlacklisted(ctx, claims.ID)
+	require.NoError(t, err)
+	require.True(t, revoked, "logout must blacklist the access token jti")
+	_, err = s.RefreshToken(ctx, &pb.RefreshRequest{RefreshToken: login.RefreshToken})
+	require.Error(t, err, "logout must burn the refresh token")
+
+	// Unauthenticated logout is rejected before any revocation happens.
+	_, err = s.Logout(ctx, &pb.LogoutRequest{})
+	require.True(t, kratoserrors.IsUnauthorized(err))
+
+	// A garbage refresh token is ignored: the access token is still revoked.
+	second, err := authUc.GenerateAccessToken(9, "user")
+	require.NoError(t, err)
+	secondClaims, err := authUc.ParseAccessToken(second)
+	require.NoError(t, err)
+	_, err = s.Logout(biz.WithClaims(ctx, secondClaims), &pb.LogoutRequest{RefreshToken: "garbage-token"})
+	require.NoError(t, err)
+	revoked, err = authUc.IsTokenBlacklisted(ctx, secondClaims.ID)
+	require.NoError(t, err)
+	require.True(t, revoked)
 }

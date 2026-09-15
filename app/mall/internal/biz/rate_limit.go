@@ -14,7 +14,9 @@ type WriteLimiter interface {
 
 // RateLimitCategory returns the quota bucket for a rate-limited write
 // operation, or "" for read-only operations. Transport middleware uses it so
-// reads never depend on the limiter or Redis availability.
+// reads never depend on the limiter or Redis availability. The "auth" bucket
+// also applies to the JWT-whitelisted login/register/refresh endpoints, which
+// arrive without claims and are throttled on the IP dimension alone.
 func RateLimitCategory(operation string) string {
 	switch operation {
 	case communityv1.OperationCommunityCreatePost, communityv1.OperationCommunityUpdatePost:
@@ -26,6 +28,8 @@ func RateLimitCategory(operation string) string {
 	case userv1.OperationUserRecordProductView, userv1.OperationUserDeleteBrowsingHistoryItem, userv1.OperationUserClearBrowsingHistory,
 		communityv1.OperationCommunityLikePost, communityv1.OperationCommunityUnlikePost, communityv1.OperationCommunityDeletePost, communityv1.OperationCommunityDeleteComment:
 		return "interactions"
+	case userv1.OperationUserLogin, userv1.OperationUserRegister, userv1.OperationUserRefreshToken:
+		return "auth"
 	}
 	return ""
 }
