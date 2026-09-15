@@ -34,6 +34,7 @@ const (
 	User_SetDefaultShippingAddress_FullMethodName = "/api.user.v1.User/SetDefaultShippingAddress"
 	User_DeleteShippingAddress_FullMethodName     = "/api.user.v1.User/DeleteShippingAddress"
 	User_RefreshToken_FullMethodName              = "/api.user.v1.User/RefreshToken"
+	User_Logout_FullMethodName                    = "/api.user.v1.User/Logout"
 )
 
 // UserClient is the client API for User service.
@@ -56,6 +57,7 @@ type UserClient interface {
 	SetDefaultShippingAddress(ctx context.Context, in *SetDefaultShippingAddressRequest, opts ...grpc.CallOption) (*SetDefaultShippingAddressReply, error)
 	DeleteShippingAddress(ctx context.Context, in *DeleteShippingAddressRequest, opts ...grpc.CallOption) (*DeleteShippingAddressReply, error)
 	RefreshToken(ctx context.Context, in *RefreshRequest, opts ...grpc.CallOption) (*RefreshReply, error)
+	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*LogoutReply, error)
 }
 
 type userClient struct {
@@ -216,6 +218,16 @@ func (c *userClient) RefreshToken(ctx context.Context, in *RefreshRequest, opts 
 	return out, nil
 }
 
+func (c *userClient) Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*LogoutReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LogoutReply)
+	err := c.cc.Invoke(ctx, User_Logout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UserServer is the server API for User service.
 // All implementations must embed UnimplementedUserServer
 // for forward compatibility.
@@ -236,6 +248,7 @@ type UserServer interface {
 	SetDefaultShippingAddress(context.Context, *SetDefaultShippingAddressRequest) (*SetDefaultShippingAddressReply, error)
 	DeleteShippingAddress(context.Context, *DeleteShippingAddressRequest) (*DeleteShippingAddressReply, error)
 	RefreshToken(context.Context, *RefreshRequest) (*RefreshReply, error)
+	Logout(context.Context, *LogoutRequest) (*LogoutReply, error)
 	mustEmbedUnimplementedUserServer()
 }
 
@@ -290,6 +303,9 @@ func (UnimplementedUserServer) DeleteShippingAddress(context.Context, *DeleteShi
 }
 func (UnimplementedUserServer) RefreshToken(context.Context, *RefreshRequest) (*RefreshReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method RefreshToken not implemented")
+}
+func (UnimplementedUserServer) Logout(context.Context, *LogoutRequest) (*LogoutReply, error) {
+	return nil, status.Error(codes.Unimplemented, "method Logout not implemented")
 }
 func (UnimplementedUserServer) mustEmbedUnimplementedUserServer() {}
 func (UnimplementedUserServer) testEmbeddedByValue()              {}
@@ -582,6 +598,24 @@ func _User_RefreshToken_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _User_Logout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LogoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServer).Logout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: User_Logout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServer).Logout(ctx, req.(*LogoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // User_ServiceDesc is the grpc.ServiceDesc for User service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -648,6 +682,10 @@ var User_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RefreshToken",
 			Handler:    _User_RefreshToken_Handler,
+		},
+		{
+			MethodName: "Logout",
+			Handler:    _User_Logout_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

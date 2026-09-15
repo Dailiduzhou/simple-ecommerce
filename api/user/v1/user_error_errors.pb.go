@@ -106,3 +106,27 @@ func IsInvalidTimeRange(err error) bool {
 func ErrorInvalidTimeRange(format string, args ...interface{}) *errors.Error {
 	return errors.New(400, ErrorReason_INVALID_TIME_RANGE.String(), fmt.Sprintf(format, args...))
 }
+
+func IsInvalidCredentials(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_INVALID_CREDENTIALS.String() && e.Code == 401
+}
+
+func ErrorInvalidCredentials(format string, args ...interface{}) *errors.Error {
+	return errors.New(401, ErrorReason_INVALID_CREDENTIALS.String(), fmt.Sprintf(format, args...))
+}
+
+func IsUserLoginLocked(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_USER_LOGIN_LOCKED.String() && e.Code == 429
+}
+
+func ErrorUserLoginLocked(format string, args ...interface{}) *errors.Error {
+	return errors.New(429, ErrorReason_USER_LOGIN_LOCKED.String(), fmt.Sprintf(format, args...))
+}

@@ -53,3 +53,53 @@ func TestReviewAuthBypassesDeletedProfile(t *testing.T) {
 	require.NoError(t, e)
 	require.Nil(t, u)
 }
+
+// The login-failure window is armed once from the first failure and is never
+// extended by later attempts, so an attacker cannot stretch a lockout or keep
+// a counter alive by probing.
+func TestLoginFailureWindowArmsOnceAndExpires(t *testing.T) {
+	mr := miniredis.RunT(t)
+	d := newTestData(t, mockdb.NewMockQuerier(gomock.NewController(t)), mr)
+	r := NewAuthRepo(d.rdb, log.DefaultLogger)
+	ctx := context.Background()
+
+	n, e := r.LoginFailures(ctx, "hash-a")
+	require.NoError(t, e)
+	require.EqualValues(t, 0, n)
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, r.RecordLoginFailure(ctx, "hash-a", 15*time.Minute))
+	}
+	n, e = r.LoginFailures(ctx, "hash-a")
+	require.NoError(t, e)
+	require.EqualValues(t, 3, n)
+	first := mr.TTL("auth:login:fail:hash-a")
+	require.Greater(t, first, time.Duration(0))
+	require.LessOrEqual(t, first, 15*time.Minute)
+
+	// A later failure must not extend the window set by the first one.
+	mr.FastForward(10 * time.Minute)
+	require.NoError(t, r.RecordLoginFailure(ctx, "hash-a", 15*time.Minute))
+	second := mr.TTL("auth:login:fail:hash-a")
+	require.LessOrEqual(t, second, 5*time.Minute)
+
+	require.NoError(t, r.ClearLoginFailures(ctx, "hash-a"))
+	n, e = r.LoginFailures(ctx, "hash-a")
+	require.NoError(t, e)
+	require.EqualValues(t, 0, n)
+
+	// A non-positive window is rejected instead of arming a sticky counter.
+	require.Error(t, r.RecordLoginFailure(ctx, "hash-a", 0))
+}
+
+func TestLoginFailureStoreErrorsPropagate(t *testing.T) {
+	mr := miniredis.RunT(t)
+	d := newTestData(t, mockdb.NewMockQuerier(gomock.NewController(t)), mr)
+	r := NewAuthRepo(d.rdb, log.DefaultLogger)
+	ctx := context.Background()
+	mr.SetError("store failed")
+	_, e := r.LoginFailures(ctx, "hash-a")
+	require.Error(t, e)
+	require.Error(t, r.RecordLoginFailure(ctx, "hash-a", time.Minute))
+	require.Error(t, r.ClearLoginFailures(ctx, "hash-a"))
+}

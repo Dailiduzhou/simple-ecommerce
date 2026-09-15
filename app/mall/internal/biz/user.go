@@ -100,15 +100,38 @@ type UserUsecase interface {
 
 type userUsecase struct {
 	userRepo    UserRepo
+	authRepo    AuthRepo
 	phoneSecret string
-	log         *log.Helper
+	// loginMaxAttempts is the recent-failure count (per phone hash) at which
+	// Login is rejected outright; loginLockoutDuration arms that window.
+	loginMaxAttempts     int64
+	loginLockoutDuration time.Duration
+	log                  *log.Helper
 }
 
-func NewUserUsecase(userRepo UserRepo, ac *conf.Auth, logger log.Logger) UserUsecase {
+const (
+	defaultLoginMaxAttempts     = 5
+	defaultLoginLockoutDuration = 15 * time.Minute
+)
+
+func NewUserUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth, logger log.Logger) UserUsecase {
+	maxAttempts := int64(defaultLoginMaxAttempts)
+	if v := ac.GetLoginMaxAttempts(); v > 0 {
+		maxAttempts = int64(v)
+	}
+	lockout := defaultLoginLockoutDuration
+	if ac.GetLoginLockoutDuration() != nil {
+		if d := ac.GetLoginLockoutDuration().AsDuration(); d > 0 {
+			lockout = d
+		}
+	}
 	return &userUsecase{
-		userRepo:    userRepo,
-		phoneSecret: ac.PhoneSecret,
-		log:         log.NewHelper(logger),
+		userRepo:             userRepo,
+		authRepo:             authRepo,
+		phoneSecret:          ac.PhoneSecret,
+		loginMaxAttempts:     maxAttempts,
+		loginLockoutDuration: lockout,
+		log:                  log.NewHelper(logger),
 	}
 }
 
@@ -116,6 +139,9 @@ type AuthRepo interface {
 	ConsumeRefresh(ctx context.Context, tokenID string, expiration time.Duration) (bool, error)
 	SetBlacklist(ctx context.Context, tokenID string, expiration time.Duration) error
 	IsBlacklisted(ctx context.Context, tokenID string) (bool, error)
+	LoginFailures(ctx context.Context, phoneHash string) (int64, error)
+	RecordLoginFailure(ctx context.Context, phoneHash string, window time.Duration) error
+	ClearLoginFailures(ctx context.Context, phoneHash string) error
 }
 
 type EcommerceClaims struct {
@@ -133,6 +159,7 @@ type AuthUsecase interface {
 	ParseRefreshToken(tokenStr string) (*EcommerceClaims, error)
 	BlacklistToken(ctx context.Context, tokenID string, expiresAt time.Time) error
 	IsTokenBlacklisted(ctx context.Context, tokenID string) (bool, error)
+	Logout(ctx context.Context, claims *EcommerceClaims, refreshToken string) error
 }
 
 type authUsecase struct {
@@ -239,6 +266,28 @@ func (uc *authUsecase) IsTokenBlacklisted(ctx context.Context, tokenID string) (
 	return uc.authRepo.IsBlacklisted(ctx, tokenID)
 }
 
+// Logout revokes the caller's access token via the blacklist and, when the
+// client supplies its refresh token, burns that token too. The refresh burn
+// is best effort: a token that fails to parse or is already expired has
+// nothing left to revoke, and a store failure only leaves an unused token
+// that the client discarded and that expires on its own.
+func (uc *authUsecase) Logout(ctx context.Context, claims *EcommerceClaims, refreshToken string) error {
+	if claims == nil || claims.ID == "" || claims.ExpiresAt == nil {
+		return userv1.ErrorUnauthorized("invalid token claims")
+	}
+	if err := uc.BlacklistToken(ctx, claims.ID, claims.ExpiresAt.Time); err != nil {
+		return userv1.ErrorUnauthorized("logout failed")
+	}
+	if refreshToken != "" {
+		if refreshClaims, err := uc.ParseRefreshToken(refreshToken); err == nil && refreshClaims.ID != "" && refreshClaims.ExpiresAt != nil {
+			if ttl := time.Until(refreshClaims.ExpiresAt.Time); ttl > 0 {
+				_, _ = uc.authRepo.ConsumeRefresh(ctx, refreshClaims.ID, ttl)
+			}
+		}
+	}
+	return nil
+}
+
 func (uc *authUsecase) parseToken(tokenStr, secret string) (*EcommerceClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &EcommerceClaims{}, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -313,6 +362,10 @@ func (uc *userUsecase) Register(ctx context.Context, phone string, password stri
 	return u, nil
 }
 
+// dummyPasswordHash only exists so the unregistered-phone path performs the
+// same bcrypt work as the wrong-password path; the compare result is discarded.
+const dummyPasswordHash = "$2a$10$97/qsqxly3VJ7Ki3hFWBmeeIycSA27wKnnuXExTTum6GY9L4cOGCa"
+
 func (uc *userUsecase) Login(ctx context.Context, phone string, password string) (*User, error) {
 	if len(password) < 8 || len(password) > 72 {
 		return nil, userv1.ErrorInvalidPassword("password must be 8 to 72 bytes")
@@ -324,20 +377,52 @@ func (uc *userUsecase) Login(ctx context.Context, phone string, password string)
 	secret := []byte(uc.phoneSecret)
 	phoneHash := phonecrypto.HashPhone(phone, secret)
 
+	// Account lockout: reject before any credential work once the recent
+	// failure count for this phone hash reached the configured maximum. The
+	// lookup is fail-open on store errors: the transport limiter already fails
+	// closed for auth operations, so a Redis outage keeps login unavailable
+	// and a second fail-closed layer would add no protection.
+	failures, err := uc.authRepo.LoginFailures(ctx, phoneHash)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("get login failures failed: %v", err)
+	} else if failures >= uc.loginMaxAttempts {
+		return nil, userv1.ErrorUserLoginLocked("too many failed attempts, try again later")
+	}
+
 	u, err := uc.userRepo.GetUserByPhoneHash(ctx, phoneHash)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("get user by phone hash failed: %v", err)
 		return nil, fmt.Errorf("get user by phone hash: %w", err)
 	}
 	if u == nil {
-		return nil, userv1.ErrorUserNotFound("phone not registered")
+		// Burn the same bcrypt work as the wrong-password path and count the
+		// failure identically, so an unregistered phone is indistinguishable
+		// from a wrong password in both the response and the lockout state.
+		_ = pwdhash.ComparePassword(dummyPasswordHash, password)
+		uc.recordLoginFailure(ctx, phoneHash)
+		return nil, userv1.ErrorInvalidCredentials("invalid credentials")
 	}
 
 	if err := pwdhash.ComparePassword(u.PasswordHash, password); err != nil {
-		return nil, userv1.ErrorInvalidPassword("wrong password")
+		uc.recordLoginFailure(ctx, phoneHash)
+		return nil, userv1.ErrorInvalidCredentials("invalid credentials")
 	}
 
+	// Best effort: a stale failure counter must never block a valid login.
+	uc.clearLoginFailures(ctx, phoneHash)
 	return u, nil
+}
+
+func (uc *userUsecase) recordLoginFailure(ctx context.Context, phoneHash string) {
+	if err := uc.authRepo.RecordLoginFailure(ctx, phoneHash, uc.loginLockoutDuration); err != nil {
+		uc.log.WithContext(ctx).Errorf("record login failure failed: %v", err)
+	}
+}
+
+func (uc *userUsecase) clearLoginFailures(ctx context.Context, phoneHash string) {
+	if err := uc.authRepo.ClearLoginFailures(ctx, phoneHash); err != nil {
+		uc.log.WithContext(ctx).Errorf("clear login failures failed: %v", err)
+	}
 }
 
 func (uc *userUsecase) GetUser(ctx context.Context, id int64) (*User, error) {

@@ -165,8 +165,14 @@ type Auth struct {
 	RefreshTokenSecret  string                 `protobuf:"bytes,3,opt,name=refresh_token_secret,json=refreshTokenSecret,proto3" json:"refresh_token_secret,omitempty"`
 	RefreshTokenTimeout *durationpb.Duration   `protobuf:"bytes,4,opt,name=refresh_token_timeout,json=refreshTokenTimeout,proto3" json:"refresh_token_timeout,omitempty"`
 	PhoneSecret         string                 `protobuf:"bytes,5,opt,name=phone_secret,json=phoneSecret,proto3" json:"phone_secret,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Per-minute budget for anonymous login/register/refresh requests. Zero means the default.
+	AuthRequestsPerMinute int32 `protobuf:"varint,6,opt,name=auth_requests_per_minute,json=authRequestsPerMinute,proto3" json:"auth_requests_per_minute,omitempty"`
+	// Failed-login attempts before an account is temporarily locked. Zero means the default.
+	LoginMaxAttempts int32 `protobuf:"varint,7,opt,name=login_max_attempts,json=loginMaxAttempts,proto3" json:"login_max_attempts,omitempty"`
+	// How long a login lockout lasts from the first recorded failure.
+	LoginLockoutDuration *durationpb.Duration `protobuf:"bytes,8,opt,name=login_lockout_duration,json=loginLockoutDuration,proto3" json:"login_lockout_duration,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Auth) Reset() {
@@ -232,6 +238,27 @@ func (x *Auth) GetPhoneSecret() string {
 		return x.PhoneSecret
 	}
 	return ""
+}
+
+func (x *Auth) GetAuthRequestsPerMinute() int32 {
+	if x != nil {
+		return x.AuthRequestsPerMinute
+	}
+	return 0
+}
+
+func (x *Auth) GetLoginMaxAttempts() int32 {
+	if x != nil {
+		return x.LoginMaxAttempts
+	}
+	return 0
+}
+
+func (x *Auth) GetLoginLockoutDuration() *durationpb.Duration {
+	if x != nil {
+		return x.LoginLockoutDuration
+	}
+	return nil
 }
 
 type Server struct {
@@ -1148,13 +1175,16 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\tcommunity\x18\x06 \x01(\v2\x15.kratos.api.CommunityR\tcommunity\x12-\n" +
 	"\astorage\x18\a \x01(\v2\x13.kratos.api.StorageR\astorage\"$\n" +
 	"\tSnowflake\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\"\xa7\x02\n" +
+	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\"\xdf\x03\n" +
 	"\x04Auth\x12.\n" +
 	"\x13access_token_secret\x18\x01 \x01(\tR\x11accessTokenSecret\x12K\n" +
 	"\x14access_token_timeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x12accessTokenTimeout\x120\n" +
 	"\x14refresh_token_secret\x18\x03 \x01(\tR\x12refreshTokenSecret\x12M\n" +
 	"\x15refresh_token_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x13refreshTokenTimeout\x12!\n" +
-	"\fphone_secret\x18\x05 \x01(\tR\vphoneSecret\"\xb8\x02\n" +
+	"\fphone_secret\x18\x05 \x01(\tR\vphoneSecret\x127\n" +
+	"\x18auth_requests_per_minute\x18\x06 \x01(\x05R\x15authRequestsPerMinute\x12,\n" +
+	"\x12login_max_attempts\x18\a \x01(\x05R\x10loginMaxAttempts\x12O\n" +
+	"\x16login_lockout_duration\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginLockoutDuration\"\xb8\x02\n" +
 	"\x06Server\x12+\n" +
 	"\x04http\x18\x01 \x01(\v2\x17.kratos.api.Server.HTTPR\x04http\x12+\n" +
 	"\x04grpc\x18\x02 \x01(\v2\x17.kratos.api.Server.GRPCR\x04grpc\x1ai\n" +
@@ -1269,27 +1299,28 @@ var file_conf_conf_proto_depIdxs = []int32{
 	10, // 6: kratos.api.Bootstrap.storage:type_name -> kratos.api.Storage
 	15, // 7: kratos.api.Auth.access_token_timeout:type_name -> google.protobuf.Duration
 	15, // 8: kratos.api.Auth.refresh_token_timeout:type_name -> google.protobuf.Duration
-	11, // 9: kratos.api.Server.http:type_name -> kratos.api.Server.HTTP
-	12, // 10: kratos.api.Server.grpc:type_name -> kratos.api.Server.GRPC
-	13, // 11: kratos.api.Data.database:type_name -> kratos.api.Data.Database
-	14, // 12: kratos.api.Data.redis:type_name -> kratos.api.Data.Redis
-	6,  // 13: kratos.api.Payment.alipay:type_name -> kratos.api.Alipay
-	7,  // 14: kratos.api.Payment.wechat:type_name -> kratos.api.Wechat
-	8,  // 15: kratos.api.Payment.check_pay_job:type_name -> kratos.api.CheckPayJob
-	15, // 16: kratos.api.Payment.order_payment_timeout:type_name -> google.protobuf.Duration
-	15, // 17: kratos.api.Payment.prepay_lease_duration:type_name -> google.protobuf.Duration
-	15, // 18: kratos.api.CheckPayJob.initial_delay:type_name -> google.protobuf.Duration
-	15, // 19: kratos.api.CheckPayJob.poll_interval:type_name -> google.protobuf.Duration
-	15, // 20: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
-	15, // 21: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	15, // 22: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
-	15, // 23: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
-	15, // 24: kratos.api.Data.Redis.dial_timeout:type_name -> google.protobuf.Duration
-	25, // [25:25] is the sub-list for method output_type
-	25, // [25:25] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	15, // 9: kratos.api.Auth.login_lockout_duration:type_name -> google.protobuf.Duration
+	11, // 10: kratos.api.Server.http:type_name -> kratos.api.Server.HTTP
+	12, // 11: kratos.api.Server.grpc:type_name -> kratos.api.Server.GRPC
+	13, // 12: kratos.api.Data.database:type_name -> kratos.api.Data.Database
+	14, // 13: kratos.api.Data.redis:type_name -> kratos.api.Data.Redis
+	6,  // 14: kratos.api.Payment.alipay:type_name -> kratos.api.Alipay
+	7,  // 15: kratos.api.Payment.wechat:type_name -> kratos.api.Wechat
+	8,  // 16: kratos.api.Payment.check_pay_job:type_name -> kratos.api.CheckPayJob
+	15, // 17: kratos.api.Payment.order_payment_timeout:type_name -> google.protobuf.Duration
+	15, // 18: kratos.api.Payment.prepay_lease_duration:type_name -> google.protobuf.Duration
+	15, // 19: kratos.api.CheckPayJob.initial_delay:type_name -> google.protobuf.Duration
+	15, // 20: kratos.api.CheckPayJob.poll_interval:type_name -> google.protobuf.Duration
+	15, // 21: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
+	15, // 22: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	15, // 23: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
+	15, // 24: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
+	15, // 25: kratos.api.Data.Redis.dial_timeout:type_name -> google.protobuf.Duration
+	26, // [26:26] is the sub-list for method output_type
+	26, // [26:26] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_conf_conf_proto_init() }

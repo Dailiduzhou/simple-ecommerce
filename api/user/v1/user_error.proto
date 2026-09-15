@@ -19,4 +19,6 @@ enum ErrorReason {
   INVALID_PASSWORD = 5 [(errors.code) = 400];
   PRODUCT_NOT_AVAILABLE = 6 [(errors.code) = 404];
   INVALID_TIME_RANGE = 7 [(errors.code) = 400];
+  INVALID_CREDENTIALS = 8 [(errors.code) = 401];
+  USER_LOGIN_LOCKED = 9 [(errors.code) = 429];
 }

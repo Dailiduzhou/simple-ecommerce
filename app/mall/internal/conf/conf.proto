@@ -25,6 +25,12 @@ message Auth {
   string refresh_token_secret = 3;
   google.protobuf.Duration refresh_token_timeout = 4;
   string phone_secret = 5;
+  // Per-minute budget for anonymous login/register/refresh requests. Zero means the default.
+  int32 auth_requests_per_minute = 6;
+  // Failed-login attempts before an account is temporarily locked. Zero means the default.
+  int32 login_max_attempts = 7;
+  // How long a login lockout lasts from the first recorded failure.
+  google.protobuf.Duration login_lockout_duration = 8;
 }
 
 message Server {
