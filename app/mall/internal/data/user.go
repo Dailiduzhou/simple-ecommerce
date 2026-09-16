@@ -154,10 +154,6 @@ func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.User) {
 	writeJSONCache(ctx, r.data, r.log, key, profile, cacheTTL())
 }
 
-func (r *UserRepo) deleteCache(ctx context.Context, key string) {
-	deleteJSONCache(ctx, r.data, r.log, key)
-}
-
 func userGenerationKey(id int64) string {
 	return redisKey("user", id, "gen")
 }

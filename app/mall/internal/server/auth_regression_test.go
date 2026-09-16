@@ -159,7 +159,9 @@ func TestAccountRevocationThroughTransports(t *testing.T) {
 			conn, e := grpc.NewClient(endpoint.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			require.NoError(t, e)
 			defer conn.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			// The subtest performs several bcrypt verifications (cost 12) and
+			// runs under -race in CI, so the transport deadline needs headroom.
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			signed := metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+access))
 			mc := mallv1.NewMallClient(conn)
