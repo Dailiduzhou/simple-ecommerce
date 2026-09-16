@@ -167,6 +167,21 @@ func (mr *MockQuerierMockRecorder) ConfirmPaymentRefunded(ctx, id interface{}) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmPaymentRefunded", reflect.TypeOf((*MockQuerier)(nil).ConfirmPaymentRefunded), ctx, id)
 }
 
+// CountCategoryProductReferences mocks base method.
+func (m *MockQuerier) CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountCategoryProductReferences", ctx, categoryID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountCategoryProductReferences indicates an expected call of CountCategoryProductReferences.
+func (mr *MockQuerierMockRecorder) CountCategoryProductReferences(ctx, categoryID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountCategoryProductReferences", reflect.TypeOf((*MockQuerier)(nil).CountCategoryProductReferences), ctx, categoryID)
+}
+
 // CountOrdersByUser mocks base method.
 func (m *MockQuerier) CountOrdersByUser(ctx context.Context, userID int64) (int64, error) {
 	m.ctrl.T.Helper()
@@ -210,6 +225,21 @@ func (m *MockQuerier) CountProductsByCategory(ctx context.Context, categoryID in
 func (mr *MockQuerierMockRecorder) CountProductsByCategory(ctx, categoryID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountProductsByCategory", reflect.TypeOf((*MockQuerier)(nil).CountProductsByCategory), ctx, categoryID)
+}
+
+// CountSubCategories mocks base method.
+func (m *MockQuerier) CountSubCategories(ctx context.Context, parentID pgtype.Int8) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountSubCategories", ctx, parentID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountSubCategories indicates an expected call of CountSubCategories.
+func (mr *MockQuerierMockRecorder) CountSubCategories(ctx, parentID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountSubCategories", reflect.TypeOf((*MockQuerier)(nil).CountSubCategories), ctx, parentID)
 }
 
 // CreateCategory mocks base method.
@@ -466,18 +496,19 @@ func (mr *MockQuerierMockRecorder) DeleteBrowsingHistoryItem(ctx, arg interface{
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteBrowsingHistoryItem", reflect.TypeOf((*MockQuerier)(nil).DeleteBrowsingHistoryItem), ctx, arg)
 }
 
-// DeleteCategory mocks base method.
-func (m *MockQuerier) DeleteCategory(ctx context.Context, id int64) error {
+// DeleteCategoryIfUnused mocks base method.
+func (m *MockQuerier) DeleteCategoryIfUnused(ctx context.Context, id int64) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteCategory", ctx, id)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret := m.ctrl.Call(m, "DeleteCategoryIfUnused", ctx, id)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
-// DeleteCategory indicates an expected call of DeleteCategory.
-func (mr *MockQuerierMockRecorder) DeleteCategory(ctx, id interface{}) *gomock.Call {
+// DeleteCategoryIfUnused indicates an expected call of DeleteCategoryIfUnused.
+func (mr *MockQuerierMockRecorder) DeleteCategoryIfUnused(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteCategory", reflect.TypeOf((*MockQuerier)(nil).DeleteCategory), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteCategoryIfUnused", reflect.TypeOf((*MockQuerier)(nil).DeleteCategoryIfUnused), ctx, id)
 }
 
 // DeleteComment mocks base method.

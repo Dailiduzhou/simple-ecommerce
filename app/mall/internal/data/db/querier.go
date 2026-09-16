@@ -25,9 +25,13 @@ type Querier interface {
 	ClearBrowsingHistory(ctx context.Context, userID int64) error
 	ClearDefaultShippingAddress(ctx context.Context, userID int64) error
 	ConfirmPaymentRefunded(ctx context.Context, id int64) (Payment, error)
+	// Any product row still owns a foreign key to the category; soft-deleted rows
+	// count too, because the FK is not conditional on deleted_at.
+	CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CountProducts(ctx context.Context) (int64, error)
 	CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error)
+	CountSubCategories(ctx context.Context, parentID pgtype.Int8) (int64, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateComment(ctx context.Context, arg CreateCommentParams) (PostComment, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
@@ -45,7 +49,9 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DecrProductStock(ctx context.Context, arg DecrProductStockParams) (int32, error)
 	DeleteBrowsingHistoryItem(ctx context.Context, arg DeleteBrowsingHistoryItemParams) error
-	DeleteCategory(ctx context.Context, id int64) error
+	// 单条语句完成"没有子类、没有被商品引用"检查与删除：避免应用层
+	// check-then-delete 的 TOCTOU 竞争。返回 0 行表示未删除。
+	DeleteCategoryIfUnused(ctx context.Context, id int64) (int64, error)
 	DeleteComment(ctx context.Context, arg DeleteCommentParams) (int64, error)
 	DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) error
 	DeleteUser(ctx context.Context, id int64) error

@@ -95,6 +95,18 @@ func ErrorCategoryHasProducts(format string, args ...interface{}) *errors.Error 
 	return errors.New(409, ErrorReason_CATEGORY_HAS_PRODUCTS.String(), fmt.Sprintf(format, args...))
 }
 
+func IsCategoryHasChildren(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_CATEGORY_HAS_CHILDREN.String() && e.Code == 409
+}
+
+func ErrorCategoryHasChildren(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_CATEGORY_HAS_CHILDREN.String(), fmt.Sprintf(format, args...))
+}
+
 func IsShippingAddressNotFound(err error) bool {
 	if err == nil {
 		return false

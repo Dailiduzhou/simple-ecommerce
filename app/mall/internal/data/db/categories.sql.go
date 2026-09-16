@@ -11,6 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countCategoryProductReferences = `-- name: CountCategoryProductReferences :one
+SELECT COUNT(*)
+FROM products
+WHERE category_id = $1
+`
+
+// Any product row still owns a foreign key to the category; soft-deleted rows
+// count too, because the FK is not conditional on deleted_at.
+func (q *Queries) CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countCategoryProductReferences, categoryID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSubCategories = `-- name: CountSubCategories :one
+SELECT COUNT(*)
+FROM categories
+WHERE parent_id = $1
+`
+
+func (q *Queries) CountSubCategories(ctx context.Context, parentID pgtype.Int8) (int64, error) {
+	row := q.db.QueryRow(ctx, countSubCategories, parentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createCategory = `-- name: CreateCategory :one
 INSERT INTO categories (parent_id, name, sort_order)
 VALUES ($1, $2, $3)
@@ -37,14 +65,21 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 	return i, err
 }
 
-const deleteCategory = `-- name: DeleteCategory :exec
+const deleteCategoryIfUnused = `-- name: DeleteCategoryIfUnused :execrows
 DELETE FROM categories
-WHERE id = $1
+WHERE categories.id = $1
+  AND NOT EXISTS (SELECT 1 FROM categories child WHERE child.parent_id = categories.id)
+  AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = categories.id)
 `
 
-func (q *Queries) DeleteCategory(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteCategory, id)
-	return err
+// 单条语句完成"没有子类、没有被商品引用"检查与删除：避免应用层
+// check-then-delete 的 TOCTOU 竞争。返回 0 行表示未删除。
+func (q *Queries) DeleteCategoryIfUnused(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteCategoryIfUnused, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getCategory = `-- name: GetCategory :one
