@@ -25,7 +25,14 @@ func TestStorageFactoryAndSeparateSigningEndpoint(t *testing.T) {
 	_, e = NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: "localhost:9000", Bucket: "private"})
 	require.Error(t, e)
 	// Signing never contacts the public endpoint (nor fetches a client URL).
-	s, e = NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: "minio.internal:9000", PublicEndpoint: "images.example.test", PublicUseTls: true, Bucket: "private", AccessKeyEnv: "TEST_S3_ACCESS", SecretKeyEnv: "TEST_S3_SECRET"})
+	_, e = NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: "minio.internal:9000", UseTls: false, Bucket: "private", AccessKeyEnv: "TEST_S3_ACCESS", SecretKeyEnv: "TEST_S3_SECRET"})
+	require.ErrorContains(t, e, "allow_insecure", "plaintext credentials need an explicit opt-in")
+	_, e = NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: "minio.internal:9000", UseTls: true, PublicEndpoint: "images.example.test", PublicUseTls: false, Bucket: "private", AccessKeyEnv: "TEST_S3_ACCESS", SecretKeyEnv: "TEST_S3_SECRET"})
+	require.ErrorContains(t, e, "public_use_tls", "plaintext presigned URLs need an explicit opt-in")
+	s, e = NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: "minio.internal:9000", UseTls: true, PublicEndpoint: "images.example.test", PublicUseTls: true, Bucket: "private", AccessKeyEnv: "TEST_S3_ACCESS", SecretKeyEnv: "TEST_S3_SECRET"})
+	require.NoError(t, e)
+	// The local-development opt-out is honoured for both endpoints.
+	_, e = NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: "localhost:9000", PublicEndpoint: "localhost:9002", AllowInsecure: true, Bucket: "private", AccessKeyEnv: "TEST_S3_ACCESS", SecretKeyEnv: "TEST_S3_SECRET"})
 	require.NoError(t, e)
 	ref := biz.ObjectRef{Provider: "s3", Bucket: "private", Key: "images/unique"}
 	signed, e := s.ReadURL(context.Background(), ref, time.Minute)

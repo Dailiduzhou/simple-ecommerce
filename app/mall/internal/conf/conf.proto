@@ -126,4 +126,9 @@ message Storage {
   int32 upload_ttl_seconds = 10;
   int32 read_ttl_seconds = 11;
   int32 unused_retention_hours = 12;
+  // Explicit opt-out of the TLS requirement. Only for local development with
+  // a plaintext MinIO: with it false, use_tls/public_use_tls must be true or
+  // startup fails, because static credentials and presigned URLs would travel
+  // in cleartext.
+  bool allow_insecure = 13;
 }
