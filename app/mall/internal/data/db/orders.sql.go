@@ -516,6 +516,40 @@ func (q *Queries) MarkOrderPaid(ctx context.Context, id int64) (Order, error) {
 	return i, err
 }
 
+const markOrderRefunded = `-- name: MarkOrderRefunded :one
+UPDATE orders
+SET is_completed = TRUE,
+    status = 'refunded',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'paid'
+RETURNING id, user_id, address_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+`
+
+// A fully refunded paid order reaches its terminal state. The CAS guard keeps
+// non-paid orders out (e.g. already cancelled), so a refund can never silently
+// rewrite an order that is not in the refundable state.
+func (q *Queries) MarkOrderRefunded(ctx context.Context, id int64) (Order, error) {
+	row := q.db.QueryRow(ctx, markOrderRefunded, id)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AddressID,
+		&i.TotalAmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const orderIsExpired = `-- name: OrderIsExpired :one
 SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired
 FROM orders

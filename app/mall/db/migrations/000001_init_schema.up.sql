@@ -105,10 +105,10 @@ CREATE TABLE orders (
     FOREIGN KEY (address_id) REFERENCES shipping_addresses(id),
   CONSTRAINT orders_amount_check CHECK (total_amount_minor > 0),
   CONSTRAINT orders_status_check CHECK (
-    status IN ('pending_payment', 'paid', 'shipped', 'completed', 'cancelling', 'cancelled')
+    status IN ('pending_payment', 'paid', 'shipped', 'completed', 'cancelling', 'cancelled', 'refunded')
   ),
   CONSTRAINT orders_completion_check CHECK (
-    is_completed = (status IN ('completed', 'cancelled'))
+    is_completed = (status IN ('completed', 'cancelled', 'refunded'))
   )
 );
 

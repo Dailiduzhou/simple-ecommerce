@@ -72,6 +72,18 @@ WHERE id = $1
   AND status = 'pending_payment'
 RETURNING *;
 
+-- name: MarkOrderRefunded :one
+-- A fully refunded paid order reaches its terminal state. The CAS guard keeps
+-- non-paid orders out (e.g. already cancelled), so a refund can never silently
+-- rewrite an order that is not in the refundable state.
+UPDATE orders
+SET is_completed = TRUE,
+    status = 'refunded',
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+  AND status = 'paid'
+RETURNING *;
+
 -- name: MarkOrderCancelling :one
 UPDATE orders
 SET status = 'cancelling',
