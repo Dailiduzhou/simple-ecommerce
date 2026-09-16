@@ -27,6 +27,12 @@ const (
 	// orderNoAttempts bounds how often CreateOrder retries after an
 	// out_trade_no unique-violation before giving up.
 	orderNoAttempts = 3
+
+	// MaxOrderItems and MaxOrderItemQuantity bound a single checkout. The whole
+	// order is one transaction that locks every product row, so an unbounded
+	// item list is a cheap way to hold hundreds of locks.
+	MaxOrderItems         = 50
+	MaxOrderItemQuantity  = 999
 )
 
 var (
@@ -43,6 +49,8 @@ var (
 	// number instead of surfacing a 500 to the client.
 	ErrOrderNoCollision       = errors.InternalServer("ORDER_NO_COLLISION", "order number already exists")
 	ErrOrderInputInvalid      = errors.BadRequest("ORDER_INPUT_INVALID", "order items are invalid")
+	ErrOrderTooManyItems      = errors.BadRequest("ORDER_TOO_MANY_ITEMS", "order items exceed the per-order limit")
+	ErrOrderQuantityInvalid   = errors.BadRequest("ORDER_ITEM_QUANTITY_INVALID", "order item quantity is out of range")
 	ErrOrderAmountInvalid     = errors.Conflict("ORDER_AMOUNT_INVALID", "order total must be greater than zero")
 	ErrOrderNotExpired        = errors.Conflict("ORDER_NOT_EXPIRED", "order payment window has not expired")
 	ErrIdempotencyKeyRequired = errors.BadRequest("IDEMPOTENCY_KEY_REQUIRED", "idempotency_key is required")
@@ -184,10 +192,16 @@ func (uc *orderUsecase) CreateOrder(ctx context.Context, req *CreateOrderReq) (*
 		return nil, ErrIdempotencyKeyInvalid
 	}
 	items := append([]OrderItemInput(nil), req.Items...)
+	if len(items) > MaxOrderItems {
+		return nil, ErrOrderTooManyItems
+	}
 	seen := make(map[int64]struct{}, len(req.Items))
 	for _, item := range items {
-		if item.ProductID <= 0 || item.Quantity <= 0 {
+		if item.ProductID <= 0 {
 			return nil, ErrOrderInputInvalid
+		}
+		if item.Quantity <= 0 || item.Quantity > MaxOrderItemQuantity {
+			return nil, ErrOrderQuantityInvalid
 		}
 		if _, duplicate := seen[item.ProductID]; duplicate {
 			return nil, errors.BadRequest("DUPLICATE_ORDER_ITEM", "duplicate product in order items")
