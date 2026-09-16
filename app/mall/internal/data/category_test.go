@@ -11,6 +11,7 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang/mock/gomock"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -195,40 +196,89 @@ func TestCategoryRepo_UpdateCategory_InvalidatesParentListCache(t *testing.T) {
 	assert.Equal(t, "new", cs[0].Name)
 }
 
-func TestCategoryRepo_DeleteCategory_ClearsRelatedCaches(t *testing.T) {
+func TestCategoryRepo_DeleteCategory_ClearsCachesWhenUnused(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockQ := mockdb.NewMockQuerier(ctrl)
 	mr := miniredis.RunT(t)
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewCategoryRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), redisKey("category", 3, "g", 0), &biz.Category{
-		ID:       3,
-		ParentID: 2,
-		Name:     "parent",
-	})
-	repo.setCache(context.Background(), redisKey("category", 4, "g", 0), &biz.Category{
-		ID:       4,
-		ParentID: 3,
-		Name:     "child",
-	})
-	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(0), "g", 0), []biz.Category{{ID: 99, Name: "stale top"}})
-	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2), "g", 0), []biz.Category{{ID: 3, ParentID: 2, Name: "stale parent list"}})
-	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(3), "g", 0), []biz.Category{{ID: 4, ParentID: 3, Name: "child"}})
+	repo.setCache(context.Background(), redisKey("category", 3, "g", 0), &biz.Category{ID: 3, ParentID: 2, Name: "leaf"})
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2), "g", 0), []biz.Category{{ID: 3, ParentID: 2, Name: "stale"}})
 
+	// One statement performs the dependency checks and the delete.
 	mockQ.EXPECT().
-		DeleteCategory(gomock.Any(), int64(3)).
+		DeleteCategoryIfUnused(gomock.Any(), int64(3)).
 		Times(1).
-		Return(nil)
+		Return(int64(1), nil)
 
-	err := repo.DeleteCategory(context.Background(), 3)
-	require.NoError(t, err)
+	require.NoError(t, repo.DeleteCategory(context.Background(), 3))
 
 	// Superseded generations stay in Redis until their TTL expires, but every
 	// generation a reader consults has advanced past them.
 	ctx := context.Background()
-	for _, key := range []string{categoryGenerationKey(3), categoryGenerationKey(4), categoryListGenerationKey} {
+	for _, key := range []string{categoryGenerationKey(3), categoryListGenerationKey} {
 		assert.Equal(t, "1", d.rdb.Get(ctx, key).Val(), key)
 	}
 	assert.Equal(t, int64(0), d.rdb.Exists(ctx, redisKey("category", 3, "g", 1)).Val())
+}
+
+// Refusing to delete a category that still has children or products is the
+// "closed loop" behaviour: no silent ON DELETE SET NULL reparenting and no
+// foreign-key 500.
+func TestCategoryRepo_DeleteCategory_RefusesWhenReferenced(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+	ctx := context.Background()
+
+	mockQ.EXPECT().DeleteCategoryIfUnused(gomock.Any(), int64(3)).Return(int64(0), nil)
+	mockQ.EXPECT().GetCategory(gomock.Any(), int64(3)).Return(db.Category{ID: 3}, nil)
+	mockQ.EXPECT().CountCategoryProductReferences(gomock.Any(), int64(3)).Return(int64(0), nil)
+	mockQ.EXPECT().CountSubCategories(gomock.Any(), pgtype.Int8{Int64: 3, Valid: true}).Return(int64(2), nil)
+
+	d := newTestData(t, mockQ, mr)
+	repo := NewCategoryRepo(d, log.DefaultLogger)
+	require.ErrorIs(t, repo.DeleteCategory(ctx, 3), biz.ErrCategoryHasChildren)
+	assert.Equal(t, int64(0), d.rdb.Exists(ctx, categoryGenerationKey(3)).Val(), "a refused delete must not invalidate caches")
+}
+
+func TestCategoryRepo_DeleteCategory_RefusesWhenProductsReferenceIt(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+
+	mockQ.EXPECT().DeleteCategoryIfUnused(gomock.Any(), int64(3)).Return(int64(0), nil)
+	mockQ.EXPECT().GetCategory(gomock.Any(), int64(3)).Return(db.Category{ID: 3}, nil)
+	mockQ.EXPECT().CountCategoryProductReferences(gomock.Any(), int64(3)).Return(int64(4), nil)
+
+	repo := NewCategoryRepo(newTestData(t, mockQ, mr), log.DefaultLogger)
+	require.ErrorIs(t, repo.DeleteCategory(context.Background(), 3), biz.ErrCategoryHasProducts)
+}
+
+func TestCategoryRepo_DeleteCategory_ReportsMissingCategory(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+
+	mockQ.EXPECT().DeleteCategoryIfUnused(gomock.Any(), int64(404)).Return(int64(0), nil)
+	mockQ.EXPECT().GetCategory(gomock.Any(), int64(404)).Return(db.Category{}, pgx.ErrNoRows)
+
+	repo := NewCategoryRepo(newTestData(t, mockQ, mr), log.DefaultLogger)
+	require.ErrorIs(t, repo.DeleteCategory(context.Background(), 404), biz.ErrCategoryNotFound)
+}
+
+// A product inserted after the single-statement check still trips the foreign
+// key; that race must surface as the same business conflict.
+func TestCategoryRepo_DeleteCategory_MapsForeignKeyRace(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+
+	mockQ.EXPECT().DeleteCategoryIfUnused(gomock.Any(), int64(3)).Return(int64(0), &pgconn.PgError{
+		Code: "23503", ConstraintName: "fk_product_category",
+	})
+
+	repo := NewCategoryRepo(newTestData(t, mockQ, mr), log.DefaultLogger)
+	require.ErrorIs(t, repo.DeleteCategory(context.Background(), 3), biz.ErrCategoryHasProducts)
 }

@@ -32,6 +32,7 @@ const (
 	ErrorReason_INSUFFICIENT_STOCK         ErrorReason = 3
 	ErrorReason_PRODUCT_STATUS_INVALID     ErrorReason = 4
 	ErrorReason_CATEGORY_HAS_PRODUCTS      ErrorReason = 5
+	ErrorReason_CATEGORY_HAS_CHILDREN      ErrorReason = 8
 	ErrorReason_SHIPPING_ADDRESS_NOT_FOUND ErrorReason = 6
 )
 
@@ -45,6 +46,7 @@ var (
 		3: "INSUFFICIENT_STOCK",
 		4: "PRODUCT_STATUS_INVALID",
 		5: "CATEGORY_HAS_PRODUCTS",
+		8: "CATEGORY_HAS_CHILDREN",
 		6: "SHIPPING_ADDRESS_NOT_FOUND",
 	}
 	ErrorReason_value = map[string]int32{
@@ -55,6 +57,7 @@ var (
 		"INSUFFICIENT_STOCK":         3,
 		"PRODUCT_STATUS_INVALID":     4,
 		"CATEGORY_HAS_PRODUCTS":      5,
+		"CATEGORY_HAS_CHILDREN":      8,
 		"SHIPPING_ADDRESS_NOT_FOUND": 6,
 	}
 )
@@ -90,7 +93,7 @@ var File_mall_v1_mall_error_proto protoreflect.FileDescriptor
 
 const file_mall_v1_mall_error_proto_rawDesc = "" +
 	"\n" +
-	"\x18mall/v1/mall_error.proto\x12\vapi.mall.v1\x1a\x13errors/errors.proto*\x90\x02\n" +
+	"\x18mall/v1/mall_error.proto\x12\vapi.mall.v1\x1a\x13errors/errors.proto*\xb1\x02\n" +
 	"\vErrorReason\x12\x1b\n" +
 	"\x11PRODUCT_NOT_FOUND\x10\x00\x1a\x04\xa8E\x94\x03\x12\x1c\n" +
 	"\x12CATEGORY_NOT_FOUND\x10\x01\x1a\x04\xa8E\x94\x03\x12\x19\n" +
@@ -98,7 +101,8 @@ const file_mall_v1_mall_error_proto_rawDesc = "" +
 	"\x14EVENT_INVALID_WINDOW\x10\a\x1a\x04\xa8E\x90\x03\x12\x1c\n" +
 	"\x12INSUFFICIENT_STOCK\x10\x03\x1a\x04\xa8E\x99\x03\x12 \n" +
 	"\x16PRODUCT_STATUS_INVALID\x10\x04\x1a\x04\xa8E\x90\x03\x12\x1f\n" +
-	"\x15CATEGORY_HAS_PRODUCTS\x10\x05\x1a\x04\xa8E\x99\x03\x12$\n" +
+	"\x15CATEGORY_HAS_PRODUCTS\x10\x05\x1a\x04\xa8E\x99\x03\x12\x1f\n" +
+	"\x15CATEGORY_HAS_CHILDREN\x10\b\x1a\x04\xa8E\x99\x03\x12$\n" +
 	"\x1aSHIPPING_ADDRESS_NOT_FOUND\x10\x06\x1a\x04\xa8E\x94\x03\x1a\x04\xa0E\xf4\x03BG\n" +
 	"\vapi.mall.v1P\x01Z6github.com/Dailiduzhou/simple-ecommerce/api/mall/v1;v1b\x06proto3"
 

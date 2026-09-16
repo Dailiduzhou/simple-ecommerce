@@ -9,6 +9,7 @@ import (
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -38,25 +39,51 @@ func (r *CategoryRepo) CreateCategory(ctx context.Context, parentID int64, name 
 	return &bizCategory, nil
 }
 
+// DeleteCategory removes a category only when nothing depends on it. The delete
+// and both usage checks run in a single statement, so a concurrent child,
+// product or delete cannot slip between them; the follow-up reads only pick the
+// error to report.
 func (r *CategoryRepo) DeleteCategory(ctx context.Context, id int64) error {
-	if _, err := r.GetCategory(ctx, id); err != nil {
-		return err
-	}
-	children, err := r.ListSubCategories(ctx, id)
+	q := r.data.DB(ctx)
+	deleted, err := q.DeleteCategoryIfUnused(ctx, id)
 	if err != nil {
+		// A product inserted after the statement's snapshot still trips the
+		// foreign key at delete time; report it as the business conflict.
+		var pgErr *pgconn.PgError
+		if stderrors.As(err, &pgErr) && pgErr.Code == "23503" && pgErr.ConstraintName == "fk_product_category" {
+			return biz.ErrCategoryHasProducts
+		}
 		return err
 	}
-
-	if err := r.data.DB(ctx).DeleteCategory(ctx, id); err != nil {
-		return err
+	if deleted == 0 {
+		return r.categoryDeletionRefusal(ctx, q, id)
 	}
 
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryGenerationKey(id))
-	for i := range children {
-		bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryGenerationKey(children[i].ID))
-	}
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryListGenerationKey)
 	return nil
+}
+
+// categoryDeletionRefusal explains why DeleteCategoryIfUnused removed nothing.
+func (r *CategoryRepo) categoryDeletionRefusal(ctx context.Context, q db.Querier, id int64) error {
+	if _, err := q.GetCategory(ctx, id); err != nil {
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return biz.ErrCategoryNotFound
+		}
+		return err
+	}
+	if count, err := q.CountCategoryProductReferences(ctx, id); err != nil {
+		return err
+	} else if count > 0 {
+		return biz.ErrCategoryHasProducts
+	}
+	if count, err := q.CountSubCategories(ctx, toPgParentID(id)); err != nil {
+		return err
+	} else if count > 0 {
+		return biz.ErrCategoryHasChildren
+	}
+	// Nothing explains the miss: another request deleted the row in between.
+	return biz.ErrCategoryNotFound
 }
 
 func (r *CategoryRepo) GetCategory(ctx context.Context, id int64) (*biz.Category, error) {

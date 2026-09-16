@@ -202,6 +202,15 @@ type CategoryUsecase interface {
 	DeleteCategory(ctx context.Context, id int64) error
 }
 
+// Category deletion is refused while anything still references the row: the
+// category tree and product FKs must be reparented first (closed loop instead
+// of a silent FK failure or an accidental ON DELETE SET NULL reparent).
+var (
+	ErrCategoryNotFound    = mallv1.ErrorCategoryNotFound("category not found")
+	ErrCategoryHasProducts = mallv1.ErrorCategoryHasProducts("category still has products")
+	ErrCategoryHasChildren = mallv1.ErrorCategoryHasChildren("category still has subcategories")
+)
+
 type categoryUsecase struct {
 	repo CategoryRepo
 	log  *log.Helper
