@@ -31,8 +31,8 @@ const (
 	// MaxOrderItems and MaxOrderItemQuantity bound a single checkout. The whole
 	// order is one transaction that locks every product row, so an unbounded
 	// item list is a cheap way to hold hundreds of locks.
-	MaxOrderItems         = 50
-	MaxOrderItemQuantity  = 999
+	MaxOrderItems        = 50
+	MaxOrderItemQuantity = 999
 )
 
 var (
