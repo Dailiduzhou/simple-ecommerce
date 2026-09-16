@@ -220,6 +220,27 @@ func TestCheckPayWorker_NotificationBindingMismatchIsCancelled(t *testing.T) {
 	require.Equal(t, biz.ErrPaymentNotificationBinding.Error(), repo.notificationFailed)
 }
 
+func TestCheckPayWorker_PendingPollsSnoozeByInterval(t *testing.T) {
+	method := biz.PaymentMethod{Provider: "wechat", Product: "native"}
+	payment := &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusPending, Method: method.String(), OutTradeNo: "pay_8"}
+	gateway := &workerGateway{result: &biz.PaymentQueryResult{Method: method, OutTradeNo: "pay_8", TradeState: biz.TradeStateNotPay}}
+	repo := &workerRepo{payment: payment}
+	worker := NewCheckPayWorker(gateway, repo, log.DefaultLogger)
+	worker.recordOutput = func(context.Context, pollOutput) error { return nil }
+	// Poll 2 of 3 with the order window still far away: the worker must
+	// keep polling on the configured interval, not snooze to the deadline.
+	expiry := time.Now().Add(25 * time.Minute)
+	job := &river.Job[biz.CheckPayArgs]{
+		JobRow: &rivertype.JobRow{Attempt: 1, Metadata: []byte(`{"output":{"poll_count":1}}`)},
+		Args:   biz.CheckPayArgs{PaymentID: 8, Provider: "wechat", NotificationID: 17, Trigger: "prepay", MaxPolls: 3, PollIntervalSeconds: 10, OrderExpiresAt: expiry},
+	}
+	err := worker.Work(context.Background(), job)
+	var snooze *river.JobSnoozeError
+	require.True(t, errors.As(err, &snooze))
+	require.Equal(t, 10*time.Second, snooze.Duration)
+	require.Zero(t, repo.closePendingCalls)
+}
+
 func TestCheckPayWorker_ExhaustionSnoozesUntilOrderExpiry(t *testing.T) {
 	method := biz.PaymentMethod{Provider: "wechat", Product: "native"}
 	payment := &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusPending, Method: method.String(), OutTradeNo: "pay_8"}
@@ -237,6 +258,9 @@ func TestCheckPayWorker_ExhaustionSnoozesUntilOrderExpiry(t *testing.T) {
 	err := worker.Work(context.Background(), job)
 	var snooze *river.JobSnoozeError
 	require.True(t, errors.As(err, &snooze))
+	// The snooze must land on the order deadline plus the safety margin,
+	// not on some other arbitrary delay.
+	require.InDelta(t, float64(26*time.Minute), float64(snooze.Duration), float64(30*time.Second))
 	require.Zero(t, repo.closePendingCalls)
 }
 
@@ -291,6 +315,7 @@ func TestCheckPayWorker_ExhaustionResolvesMissingDeadlineFromOrder(t *testing.T)
 	err := worker.Work(context.Background(), job)
 	var snooze *river.JobSnoozeError
 	require.True(t, errors.As(err, &snooze))
+	require.InDelta(t, float64(26*time.Minute), float64(snooze.Duration), float64(30*time.Second))
 	require.Zero(t, repo.closePendingCalls)
 }
 

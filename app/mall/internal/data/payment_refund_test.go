@@ -94,6 +94,7 @@ func TestApplyPaymentRefundUpdatesRefundAndPaymentAtomically(t *testing.T) {
 	}
 	refundedPayment := payment
 	refundedPayment.Status = biz.PaymentStatusRefunded
+	q.EXPECT().GetOrderForUpdateByPaymentID(gomock.Any(), payment.ID).Return(db.Order{ID: payment.OrderID, Status: biz.OrderStatusPaid}, nil)
 	q.EXPECT().GetPaymentForUpdate(gomock.Any(), payment.ID).Return(payment, nil)
 	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), pgtype.Int8{Int64: payment.ID, Valid: true}).Return(refund, nil)
 	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), db.MarkOrderRefundSuccessParams{
@@ -122,6 +123,7 @@ func TestApplyPaymentRefundRejectsOrderOutsidePaidState(t *testing.T) {
 		TotalAmountMinor: payment.AmountMinor, RefundAmountMinor: payment.AmountMinor,
 		Currency: payment.Currency, Status: biz.PaymentRefundStatusPending,
 	}
+	q.EXPECT().GetOrderForUpdateByPaymentID(gomock.Any(), payment.ID).Return(db.Order{ID: payment.OrderID, Status: biz.OrderStatusPendingPayment}, nil)
 	q.EXPECT().GetPaymentForUpdate(gomock.Any(), payment.ID).Return(payment, nil)
 	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), pgtype.Int8{Int64: payment.ID, Valid: true}).Return(refund, nil)
 	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), gomock.Any()).Return(refund, nil)

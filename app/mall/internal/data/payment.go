@@ -873,6 +873,15 @@ func (r *PaymentRepo) ApplyPaymentRefund(ctx context.Context, paymentID, refundI
 	var changed db.Payment
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
+		// Lock the order row before the payment row: every other
+		// order-payment transaction locks orders first, and inverting the
+		// order here would open a deadlock window against them.
+		if _, err := q.GetOrderForUpdateByPaymentID(ctx, paymentID); err != nil {
+			if stderrors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrPaymentNotFound
+			}
+			return err
+		}
 		current, err := q.GetPaymentForUpdate(ctx, paymentID)
 		if err != nil {
 			if stderrors.Is(err, pgx.ErrNoRows) {
