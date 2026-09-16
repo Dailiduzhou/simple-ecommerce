@@ -183,6 +183,8 @@ type Querier interface {
 	UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) error
 	UpdateShippingAddress(ctx context.Context, arg UpdateShippingAddressParams) (ShippingAddress, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
+	// password_changed_at is truncated to whole seconds so it can be compared
+	// against the second-resolution iat claim of already-issued JWTs.
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error
 }

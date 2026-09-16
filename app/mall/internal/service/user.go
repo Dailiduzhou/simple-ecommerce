@@ -99,6 +99,17 @@ func (s *UserService) UpdateUser(ctx context.Context, req *pb.UpdateUserRequest)
 	}, nil
 }
 
+func (s *UserService) ChangePassword(ctx context.Context, req *pb.ChangePasswordRequest) (*pb.ChangePasswordReply, error) {
+	claims, err := authenticatedClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.uc.ChangePassword(ctx, claims.UserID, req.OldPassword, req.NewPassword); err != nil {
+		return nil, err
+	}
+	return &pb.ChangePasswordReply{}, nil
+}
+
 func (s *UserService) DeleteUser(ctx context.Context, req *pb.DeleteUserRequest) (*pb.DeleteUserReply, error) {
 	claims, err := authenticatedClaims(ctx)
 	if err != nil {

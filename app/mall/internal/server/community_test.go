@@ -154,6 +154,10 @@ func TestCommunityHTTPAuthenticationRoutesAndOwnership(t *testing.T) {
 	require.Equal(t, 400, invoke("GET", "/v1/users/me/browsing-history?"+equal, "", token).Code)
 	require.Equal(t, 400, invoke("GET", "/v1/users/me/browsing-history?start_time=not-a-time", "", token).Code)
 	require.Equal(t, 413, invoke("POST", "/v1/posts", strings.Repeat("x", 65<<10), token).Code)
+	// Profile and password writes are authenticated and body-capped too.
+	require.Equal(t, 401, invoke("PUT", "/v1/users/me/password", `{"old_password":"secret-pass","new_password":"brand-new-pass"}`, "").Code)
+	require.Equal(t, 413, invoke("PUT", "/v1/users/me/password", strings.Repeat("x", 65<<10), token).Code)
+	require.Equal(t, 413, invoke("PUT", "/v1/users/41", strings.Repeat("x", 65<<10), token).Code)
 	require.Positive(t, limiter.calls.Load())
 }
 

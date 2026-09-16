@@ -982,6 +982,27 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.DeleteBrowsingHistoryItemReply'
+    /v1/users/me/password:
+        put:
+            tags:
+                - User
+            description: |-
+                ChangePassword rotates the caller's password and revokes every session
+                 issued before the change (including the caller's own tokens).
+            operationId: User_ChangePassword
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.ChangePasswordRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.ChangePasswordReply'
     /v1/users/refresh:
         post:
             tags:
@@ -1963,6 +1984,16 @@ components:
                 coverImageJson:
                     type: string
                 effectivePriceMinor:
+                    type: string
+        api.user.v1.ChangePasswordReply:
+            type: object
+            properties: {}
+        api.user.v1.ChangePasswordRequest:
+            type: object
+            properties:
+                oldPassword:
+                    type: string
+                newPassword:
                     type: string
         api.user.v1.ClearBrowsingHistoryReply:
             type: object

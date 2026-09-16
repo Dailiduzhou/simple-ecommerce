@@ -12,6 +12,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/pwdhash"
 	"github.com/go-kratos/kratos/v2/log"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +22,7 @@ type fakeUserRepo struct {
 	getUserByID        func(ctx context.Context, id int64) (*User, error)
 	getUserByPhoneHash func(ctx context.Context, phoneHash string) (*User, error)
 	updateUser         func(ctx context.Context, id int64, nickname, realName string) (*User, error)
+	updateUserPassword func(ctx context.Context, id int64, passwordHash string) error
 	deleteUser         func(ctx context.Context, id int64) error
 }
 
@@ -38,6 +40,13 @@ func (r *fakeUserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string)
 
 func (r *fakeUserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
 	return r.updateUser(ctx, id, nickname, realName)
+}
+
+func (r *fakeUserRepo) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	if r.updateUserPassword == nil {
+		return nil
+	}
+	return r.updateUserPassword(ctx, id, passwordHash)
 }
 
 func (r *fakeUserRepo) DeleteUser(ctx context.Context, id int64) error {
@@ -325,4 +334,72 @@ func TestUserUsecase_GetUpdateDelete(t *testing.T) {
 
 func (r *fakeUserRepo) GetAuthUser(ctx context.Context, id int64) (*User, error) {
 	return r.GetUserByID(ctx, id)
+}
+
+func TestUserUsecase_ChangePasswordRotatesHashAndClearsFailures(t *testing.T) {
+	oldHash, err := pwdhash.HashPassword("old-secret")
+	require.NoError(t, err)
+	var gotID int64
+	var gotHash string
+	repo := &fakeUserRepo{
+		getUserByID: func(_ context.Context, id int64) (*User, error) {
+			return &User{ID: id, PhoneHash: "phone-hash", PasswordHash: oldHash}, nil
+		},
+		updateUserPassword: func(_ context.Context, id int64, passwordHash string) error {
+			gotID, gotHash = id, passwordHash
+			return nil
+		},
+	}
+	authRepo := &fakeAuthRepo{}
+	uc := NewUserUsecase(repo, authRepo, testUserAuth(), log.DefaultLogger)
+
+	require.NoError(t, uc.ChangePassword(context.Background(), 7, "old-secret", "new-secret"))
+	require.Equal(t, int64(7), gotID)
+	require.NoError(t, pwdhash.ComparePassword(gotHash, "new-secret"))
+	require.Equal(t, []string{"phone-hash"}, authRepo.cleared, "the rotation must clear the login-failure window")
+}
+
+func TestUserUsecase_ChangePasswordRejectsBadInputAndCredentials(t *testing.T) {
+	oldHash, err := pwdhash.HashPassword("old-secret")
+	require.NoError(t, err)
+	updated := false
+	repo := &fakeUserRepo{
+		getUserByID: func(_ context.Context, id int64) (*User, error) {
+			if id == 0 {
+				return nil, nil
+			}
+			return &User{ID: id, PasswordHash: oldHash}, nil
+		},
+		updateUserPassword: func(context.Context, int64, string) error {
+			updated = true
+			return errors.New("must not be called")
+		},
+	}
+	uc := NewUserUsecase(repo, &fakeAuthRepo{}, testUserAuth(), log.DefaultLogger)
+	ctx := context.Background()
+
+	require.ErrorIs(t, uc.ChangePassword(ctx, 0, "old-secret", "new-secret"), userv1.ErrorUnauthorized(""))
+	require.ErrorIs(t, uc.ChangePassword(ctx, 1, "old-secret", "short"), userv1.ErrorInvalidPassword(""))
+	require.ErrorIs(t, uc.ChangePassword(ctx, 1, "old-secret", "old-secret"), userv1.ErrorInvalidPassword(""))
+	require.ErrorIs(t, uc.ChangePassword(ctx, 1, "wrong-secret", "new-secret"), userv1.ErrorInvalidCredentials(""))
+	require.False(t, updated, "no invalid request may reach the database")
+}
+
+func TestAuthUsecase_ValidateAccountRevokesTokensIssuedBeforePasswordChange(t *testing.T) {
+	changedAt := time.Now().Truncate(time.Second)
+	repo := &fakeUserRepo{
+		getUserByID: func(context.Context, int64) (*User, error) {
+			return &User{ID: 1, Role: "user", PasswordChangedAt: changedAt}, nil
+		},
+	}
+	uc := NewAuthUsecase(repo, &fakeAuthRepo{}, testUserAuth())
+
+	stale := &EcommerceClaims{UserID: 1, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt.Add(-time.Minute))}}
+	require.Error(t, uc.ValidateAccount(context.Background(), stale))
+
+	// A token issued in the same second as the rotation stays valid: JWTs only
+	// carry second-resolution iat values.
+	fresh := &EcommerceClaims{UserID: 1, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt)}}
+	require.NoError(t, uc.ValidateAccount(context.Background(), fresh))
+	require.Equal(t, "user", fresh.Role)
 }

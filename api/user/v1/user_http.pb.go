@@ -19,6 +19,7 @@ var _ = binding.EncodeURL
 
 const _ = http.SupportPackageIsVersion1
 
+const OperationUserChangePassword = "/api.user.v1.User/ChangePassword"
 const OperationUserClearBrowsingHistory = "/api.user.v1.User/ClearBrowsingHistory"
 const OperationUserCreateShippingAddress = "/api.user.v1.User/CreateShippingAddress"
 const OperationUserDeleteBrowsingHistoryItem = "/api.user.v1.User/DeleteBrowsingHistoryItem"
@@ -37,6 +38,9 @@ const OperationUserUpdateShippingAddress = "/api.user.v1.User/UpdateShippingAddr
 const OperationUserUpdateUser = "/api.user.v1.User/UpdateUser"
 
 type UserHTTPServer interface {
+	// ChangePassword ChangePassword rotates the caller's password and revokes every session
+	// issued before the change (including the caller's own tokens).
+	ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordReply, error)
 	ClearBrowsingHistory(context.Context, *ClearBrowsingHistoryRequest) (*ClearBrowsingHistoryReply, error)
 	// CreateShippingAddress Shipping Addresses
 	CreateShippingAddress(context.Context, *CreateShippingAddressRequest) (*ShippingAddress, error)
@@ -66,6 +70,7 @@ func RegisterUserHTTPServer(s *http.Server, srv UserHTTPServer) {
 	r.POST("/v1/users/login", _User_Login0_HTTP_Handler(srv))
 	r.GET("/v1/users/{id}", _User_GetUser0_HTTP_Handler(srv))
 	r.PUT("/v1/users/{id}", _User_UpdateUser0_HTTP_Handler(srv))
+	r.PUT("/v1/users/me/password", _User_ChangePassword0_HTTP_Handler(srv))
 	r.DELETE("/v1/users/{id}", _User_DeleteUser0_HTTP_Handler(srv))
 	r.POST("/v1/users/{user_id}/addresses", _User_CreateShippingAddress0_HTTP_Handler(srv))
 	r.GET("/v1/users/{user_id}/addresses", _User_ListShippingAddresses0_HTTP_Handler(srv))
@@ -245,6 +250,28 @@ func _User_UpdateUser0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context) e
 			return err
 		}
 		reply := out.(*UserInfo)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _User_ChangePassword0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ChangePasswordRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationUserChangePassword)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ChangePassword(ctx, req.(*ChangePasswordRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ChangePasswordReply)
 		return ctx.Result(200, reply)
 	}
 }
@@ -435,6 +462,9 @@ func _User_Logout0_HTTP_Handler(srv UserHTTPServer) func(ctx http.Context) error
 }
 
 type UserHTTPClient interface {
+	// ChangePassword ChangePassword rotates the caller's password and revokes every session
+	// issued before the change (including the caller's own tokens).
+	ChangePassword(ctx context.Context, req *ChangePasswordRequest, opts ...http.CallOption) (rsp *ChangePasswordReply, err error)
 	ClearBrowsingHistory(ctx context.Context, req *ClearBrowsingHistoryRequest, opts ...http.CallOption) (rsp *ClearBrowsingHistoryReply, err error)
 	// CreateShippingAddress Shipping Addresses
 	CreateShippingAddress(ctx context.Context, req *CreateShippingAddressRequest, opts ...http.CallOption) (rsp *ShippingAddress, err error)
@@ -460,6 +490,21 @@ type UserHTTPClientImpl struct {
 
 func NewUserHTTPClient(client *http.Client) UserHTTPClient {
 	return &UserHTTPClientImpl{client}
+}
+
+// ChangePassword ChangePassword rotates the caller's password and revokes every session
+// issued before the change (including the caller's own tokens).
+func (c *UserHTTPClientImpl) ChangePassword(ctx context.Context, in *ChangePasswordRequest, opts ...http.CallOption) (*ChangePasswordReply, error) {
+	var out ChangePasswordReply
+	pattern := "/v1/users/me/password"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationUserChangePassword))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "PUT", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 func (c *UserHTTPClientImpl) ClearBrowsingHistory(ctx context.Context, in *ClearBrowsingHistoryRequest, opts ...http.CallOption) (*ClearBrowsingHistoryReply, error) {

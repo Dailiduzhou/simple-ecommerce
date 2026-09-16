@@ -27,6 +27,7 @@ type UserRepo interface {
 	GetAuthUser(ctx context.Context, id int64) (*User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (*User, error)
 	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
+	UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error
 	DeleteUser(ctx context.Context, id int64) error
 }
 
@@ -80,15 +81,16 @@ func NewShippingAddressUsecase(addressRepo ShippingAddressRepo, ac *conf.Auth, l
 }
 
 type User struct {
-	ID           int64
-	Nickname     string
-	RealName     string
-	PhoneHash    string
-	PhoneEncrypt string
-	PasswordHash string
-	Role         string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID                int64
+	Nickname          string
+	RealName          string
+	PhoneHash         string
+	PhoneEncrypt      string
+	PasswordHash      string
+	PasswordChangedAt time.Time
+	Role              string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type UserUsecase interface {
@@ -96,6 +98,7 @@ type UserUsecase interface {
 	Login(ctx context.Context, phone string, password string) (*User, error)
 	GetUser(ctx context.Context, id int64) (*User, error)
 	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
+	ChangePassword(ctx context.Context, id int64, oldPassword, newPassword string) error
 	DeleteUser(ctx context.Context, id int64) error
 }
 
@@ -184,7 +187,9 @@ func NewAuthUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth) AuthUse
 }
 
 // ValidateAccount always uses the authoritative account, so deleting an account
-// revokes every session and role changes apply to already-issued tokens.
+// revokes every session, role changes apply to already-issued tokens, and a
+// password change invalidates every token issued before it (the only global
+// revocation path: no per-token sweep is needed).
 func (uc *authUsecase) ValidateAccount(ctx context.Context, claims *EcommerceClaims) error {
 	u, err := uc.userRepo.GetAuthUser(ctx, claims.UserID)
 	if err != nil {
@@ -192,6 +197,9 @@ func (uc *authUsecase) ValidateAccount(ctx context.Context, claims *EcommerceCla
 	}
 	if u == nil {
 		return userv1.ErrorUnauthorized("account no longer exists")
+	}
+	if claims.IssuedAt != nil && !u.PasswordChangedAt.IsZero() && claims.IssuedAt.Time.Before(u.PasswordChangedAt) {
+		return userv1.ErrorUnauthorized("credentials changed; sign in again")
 	}
 	claims.Role = u.Role
 	return nil
@@ -434,6 +442,51 @@ func (uc *userUsecase) GetUser(ctx context.Context, id int64) (*User, error) {
 
 func (uc *userUsecase) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
 	return uc.userRepo.UpdateUser(ctx, id, nickname, realName)
+}
+
+// ChangePassword rotates the caller's password. It verifies the current
+// password against the authoritative row (never a cached profile), stores the
+// new hash and lets users.password_changed_at revoke every previously issued
+// access and refresh token: ValidateAccount rejects tokens issued before the
+// change, so a leaked password can be cut off globally without blacklisting
+// tokens one by one.
+func (uc *userUsecase) ChangePassword(ctx context.Context, id int64, oldPassword, newPassword string) error {
+	if id <= 0 {
+		return userv1.ErrorUnauthorized("invalid account")
+	}
+	if len(newPassword) < 8 || len(newPassword) > 72 {
+		return userv1.ErrorInvalidPassword("password must be 8 to 72 bytes")
+	}
+	if newPassword == oldPassword {
+		return userv1.ErrorInvalidPassword("new password must differ from the current one")
+	}
+
+	u, err := uc.userRepo.GetAuthUser(ctx, id)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("load account for password change failed: %v", err)
+		return fmt.Errorf("load account: %w", err)
+	}
+	if u == nil {
+		return userv1.ErrorUnauthorized("account no longer exists")
+	}
+	if err := pwdhash.ComparePassword(u.PasswordHash, oldPassword); err != nil {
+		// Same generic credential error as Login: never reveal whether the
+		// password was wrong or the account state changed.
+		return userv1.ErrorInvalidCredentials("invalid credentials")
+	}
+
+	passwordHash, err := pwdhash.HashPassword(newPassword)
+	if err != nil {
+		uc.log.WithContext(ctx).Errorf("hash new password failed: %v", err)
+		return fmt.Errorf("hash password: %w", err)
+	}
+	if err := uc.userRepo.UpdateUserPassword(ctx, id, passwordHash); err != nil {
+		return err
+	}
+	// Best effort: the old password's failure window must not survive the
+	// rotation.
+	uc.clearLoginFailures(ctx, u.PhoneHash)
+	return nil
 }
 
 func (uc *userUsecase) DeleteUser(ctx context.Context, id int64) error {

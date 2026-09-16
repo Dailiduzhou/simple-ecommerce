@@ -233,7 +233,9 @@ type User struct {
 	PhoneEncrypt string
 	// Bcrypt加密后的密码
 	PasswordHash string
-	Role         string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	// 密码最近变更时间；早于该时间签发的访问/刷新令牌全部失效
+	PasswordChangedAt pgtype.Timestamptz
+	Role              string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
 }
