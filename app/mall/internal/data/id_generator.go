@@ -5,21 +5,50 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
-	"github.com/bwmarrin/snowflake"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
 )
 
 // EnvSnowflakeNodeID is the env var consulted when no conf.Snowflake is
 // provided (e.g. in tests or local dev runs without the YAML entry).
 const EnvSnowflakeNodeID = "SNOWFLAKE_NODE_ID"
 
+// Layout is compatible with Twitter's reference snowflake (and therefore with
+// the ids the previous bwmarrin implementation produced): 41-bit milliseconds
+// since snowflakeEpochMs, 10-bit node id, 12-bit per-millisecond sequence.
+const (
+	snowflakeEpochMs   = int64(1288834974657) // 2010-11-04T01:42:54.657Z
+	snowflakeNodeBits  = 10
+	snowflakeStepBits  = 12
+	snowflakeNodeShift = snowflakeStepBits
+	snowflakeTimeShift = snowflakeNodeBits + snowflakeStepBits
+	snowflakeStepMask  = int64(1)<<snowflakeStepBits - 1
+)
+
 var _ biz.IDGenerator = (*snowflakeGenerator)(nil)
 
+// snowflakeGenerator issues monotonically increasing ids from one node.
+//
+// The previous implementation (bwmarrin/snowflake v0.3.0) rewound its clock to
+// the rolled-back wall time, so an NTP step could reissue an already handed out
+// (time, node, sequence) triple and collide on unique indexes. This generator
+// never moves its clock backwards: while wall time is behind the last timestamp
+// it handed out, it keeps issuing from that timestamp (advancing the sequence,
+// borrowing the next millisecond when the sequence is exhausted). Uniqueness
+// therefore holds for any backwards step, and forward steps are honoured
+// because the timestamp only ever increases.
 type snowflakeGenerator struct {
-	node *snowflake.Node
+	mu        sync.Mutex
+	nodeID    int64
+	wallMs    int64
+	lastMs    int64
+	step      int64
+	now       func() time.Time
+	rollbacks int64
 }
 
 func NewSnowflakeIDGenerator(c *conf.Snowflake) (*snowflakeGenerator, error) {
@@ -27,15 +56,51 @@ func NewSnowflakeIDGenerator(c *conf.Snowflake) (*snowflakeGenerator, error) {
 	if err != nil {
 		return nil, err
 	}
-	node, err := snowflake.NewNode(nodeID)
-	if err != nil {
-		return nil, fmt.Errorf("create snowflake node %d: %w", nodeID, err)
-	}
-	return &snowflakeGenerator{node: node}, nil
+	return &snowflakeGenerator{nodeID: nodeID, now: time.Now}, nil
 }
 
 func (g *snowflakeGenerator) GenerateString() string {
-	return g.node.Generate().String()
+	return strconv.FormatInt(g.nextID(), 10)
+}
+
+// nextID returns the next unique, strictly increasing id.
+func (g *snowflakeGenerator) nextID() int64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	rawMs := g.now().UnixMilli()
+	if rawMs < g.wallMs {
+		// The host clock itself moved backwards (NTP step): report it. This is
+		// distinct from the monotonic timestamp below merely running ahead of
+		// the wall clock after a sequence overflow.
+		g.rollbacks++
+		observability.IDGeneratorClockRollback()
+	} else {
+		g.wallMs = rawMs
+	}
+	nowMs := max(rawMs, g.lastMs)
+	if nowMs == g.lastMs {
+		g.step++
+		if g.step > snowflakeStepMask {
+			// Sequence exhausted for this millisecond: borrow the next one so
+			// ids stay unique and increasing even above 4096 ids/ms.
+			g.lastMs++
+			g.step = 0
+		}
+	} else {
+		g.lastMs = nowMs
+		g.step = 0
+	}
+	return (g.lastMs-snowflakeEpochMs)<<snowflakeTimeShift |
+		g.nodeID<<snowflakeNodeShift |
+		g.step
+}
+
+// clockRollbacks reports how many backwards clock steps have been absorbed.
+func (g *snowflakeGenerator) clockRollbacks() int64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.rollbacks
 }
 
 func resolveSnowflakeNodeID(c *conf.Snowflake) (int64, error) {
@@ -56,11 +121,10 @@ func resolveSnowflakeNodeID(c *conf.Snowflake) (int64, error) {
 	return nodeID, nil
 }
 
-// snowflakeMaxNode mirrors the upper bound enforced by snowflake.NewNode
-// (NodeBits=10 by default), kept here so we can return a precise error
-// before the package does its own check.
+// snowflakeMaxNode mirrors the upper bound of the 10-bit node field, kept here
+// so we can return a precise error before any id is generated.
 func snowflakeMaxNode() int64 {
-	return int64(1)<<snowflake.NodeBits - 1
+	return int64(1)<<snowflakeNodeBits - 1
 }
 
 // GenerateOrderNo32 生成严格 32 位的订单号
@@ -73,7 +137,7 @@ func (g *snowflakeGenerator) GenerateOrderNo32(prefix string) string {
 	}
 
 	timestamp := time.Now().Format("20060102150405")
-	snowInt64 := g.node.Generate().Int64()
+	snowInt64 := g.nextID()
 
 	// %016x 会将 int64 转换为绝对的 16 位小写十六进制字符串
 	return fmt.Sprintf("%s%s%016x", prefix, timestamp, snowInt64)
@@ -91,7 +155,7 @@ func (g *snowflakeGenerator) GenerateOrderNo64(prefix string, userID int64) stri
 	timestamp := time.Now().Format("20060102150405")
 
 	// 雪花 ID 原始十进制 (使用 %019d 保证固定 19 位)
-	snowInt64 := g.node.Generate().Int64()
+	snowInt64 := g.nextID()
 
 	// 生成 19 位安全随机串 (包含大小写字母和数字)
 	randomStr := generateSecureRandomString(19)

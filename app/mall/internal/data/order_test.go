@@ -160,6 +160,29 @@ func TestOrderRepo_CreateMapsConcurrentConstraintErrors(t *testing.T) {
 		require.Equal(t, "winner", order.OutTradeNo)
 	})
 
+	t.Run("out_trade_no collision is retryable instead of a 500", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		q := mockdb.NewMockQuerier(ctrl)
+		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
+		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
+		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, Discount: decimal.NewFromInt(1), PriceMinor: 5000, Stock: 10, Status: 1}, nil)
+		q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).Return(db.Order{}, &pgconn.PgError{
+			Code: "23505", ConstraintName: "idx_orders_out_trade_no",
+		})
+		d := newTestData(t, q, redisServer)
+		repo := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger)
+
+		_, err := repo.CreateOrder(context.Background(), biz.CreateOrderArgs{
+			UserID: 42, AddressID: 9, OutTradeNo: "duplicate", Currency: "CNY",
+			IdempotencyKey: "checkout-42", RequestHash: "hash", ExpiresAt: time.Now().Add(time.Minute),
+			Items: []biz.OrderItemInput{{ProductID: 3, Quantity: 1}},
+		})
+
+		require.ErrorIs(t, err, biz.ErrOrderNoCollision)
+	})
+
 	t.Run("address deleted after ownership check remains a not-found error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		q := mockdb.NewMockQuerier(ctrl)

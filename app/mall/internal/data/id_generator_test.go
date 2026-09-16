@@ -13,6 +13,66 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSnowflakeGenerator_ToleratesBackwardsClocksSteps(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 1})
+	require.NoError(t, err)
+
+	wall := time.Now()
+	g.now = func() time.Time { return wall }
+
+	first := g.GenerateString()
+	require.NotEmpty(t, first)
+
+	// NTP steps the host clock back by an hour: ids must stay unique and
+	// strictly increasing instead of being reissued.
+	wall = wall.Add(-time.Hour)
+	seen := map[string]struct{}{first: {}}
+	previous, err := strconv.ParseInt(first, 10, 64)
+	require.NoError(t, err)
+	for i := 0; i < 16; i++ {
+		id := g.GenerateString()
+		_, dup := seen[id]
+		require.Falsef(t, dup, "duplicate id generated after clock rollback: %s", id)
+		seen[id] = struct{}{}
+		current, parseErr := strconv.ParseInt(id, 10, 64)
+		require.NoError(t, parseErr)
+		require.Greaterf(t, current, previous, "ids must keep increasing across a rollback")
+		previous = current
+	}
+	assert.Equal(t, int64(16), g.clockRollbacks())
+
+	// Once the wall clock catches up, normal progress resumes.
+	wall = time.Now().Add(2 * time.Hour)
+	resumed, err := strconv.ParseInt(g.GenerateString(), 10, 64)
+	require.NoError(t, err)
+	assert.Greater(t, resumed, previous)
+}
+
+func TestSnowflakeGenerator_BorrowsMillisecondsBeyondSequenceCapacity(t *testing.T) {
+	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 2})
+	require.NoError(t, err)
+
+	// Freeze the clock so the 4096 ids/millisecond sequence capacity is the
+	// only source of uniqueness; overflow must borrow the next millisecond.
+	frozen := time.Now()
+	g.now = func() time.Time { return frozen }
+
+	const n = 5000
+	seen := make(map[string]struct{}, n)
+	var previous int64
+	for i := 0; i < n; i++ {
+		id, err := strconv.ParseInt(g.GenerateString(), 10, 64)
+		require.NoError(t, err)
+		require.Greaterf(t, id, previous, "iteration %d must increase", i)
+		previous = id
+		key := strconv.FormatInt(id, 10)
+		_, dup := seen[key]
+		require.Falsef(t, dup, "duplicate id at iteration %d: %s", i, key)
+		seen[key] = struct{}{}
+	}
+	require.Equal(t, int64(0), g.clockRollbacks())
+}
+
 func TestNewSnowflakeIDGenerator_ConfPreferred(t *testing.T) {
 	g, err := NewSnowflakeIDGenerator(&conf.Snowflake{NodeId: 7})
 	require.NoError(t, err)
