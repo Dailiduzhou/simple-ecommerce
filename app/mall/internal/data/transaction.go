@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
@@ -30,6 +31,12 @@ func NewTransaction(pool *pgxpool.Pool, logger log.Logger) biz.TxManager {
 var _ biz.TxManager = (*transaction)(nil)
 
 func (t *transaction) InTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
+	// A nested call would silently open a second, independent transaction whose
+	// writes commit or roll back on their own. Callers inside a transaction must
+	// reuse the context they were handed instead.
+	if inTransaction(ctx) {
+		return fmt.Errorf("transaction already active: reuse the context passed to InTx instead of nesting")
+	}
 	tx, err := t.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -37,17 +44,21 @@ func (t *transaction) InTx(ctx context.Context, fn func(ctx context.Context) err
 	state := &txState{}
 
 	defer func() {
+		// Rollback and commit must survive a client disconnect: the outcome of an
+		// already-started transaction is decided by PostgreSQL, not by whether the
+		// caller is still connected.
+		detached := context.WithoutCancel(ctx)
 		if p := recover(); p != nil {
-			_ = tx.Rollback(ctx)
+			_ = tx.Rollback(detached)
 			panic(p)
 		}
 		if err != nil {
-			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			if rbErr := tx.Rollback(detached); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
 				t.log.WithContext(ctx).Errorf("rollback failed: %v (original error: %v)", rbErr, err)
 			}
 			return
 		}
-		if cerr := tx.Commit(ctx); cerr != nil {
+		if cerr := tx.Commit(detached); cerr != nil {
 			err = cerr
 			return
 		}
