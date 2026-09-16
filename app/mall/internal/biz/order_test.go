@@ -134,3 +134,26 @@ func TestOrderUsecase_ValidatesIdempotencyKey(t *testing.T) {
 	_, err = uc.CreateOrder(context.Background(), &CreateOrderReq{UserID: 1, AddressID: 1, IdempotencyKey: strings.Repeat("k", 65), Items: items})
 	require.ErrorIs(t, err, ErrIdempotencyKeyInvalid)
 }
+
+func TestOrderUsecase_BoundsItemsAndQuantity(t *testing.T) {
+	uc := NewOrderUsecase(&orderUsecaseRepo{}, paymentTestID{}, log.DefaultLogger)
+	base := func(items []OrderItemInput) *CreateOrderReq {
+		return &CreateOrderReq{UserID: 1, AddressID: 1, IdempotencyKey: "checkout-bounds", Items: items}
+	}
+
+	tooMany := make([]OrderItemInput, MaxOrderItems+1)
+	for i := range tooMany {
+		tooMany[i] = OrderItemInput{ProductID: int64(i + 1), Quantity: 1}
+	}
+	_, err := uc.CreateOrder(context.Background(), base(tooMany))
+	require.ErrorIs(t, err, ErrOrderTooManyItems)
+
+	_, err = uc.CreateOrder(context.Background(), base([]OrderItemInput{{ProductID: 1, Quantity: MaxOrderItemQuantity + 1}}))
+	require.ErrorIs(t, err, ErrOrderQuantityInvalid)
+
+	_, err = uc.CreateOrder(context.Background(), base([]OrderItemInput{{ProductID: 1, Quantity: 0}}))
+	require.ErrorIs(t, err, ErrOrderQuantityInvalid)
+
+	_, err = uc.CreateOrder(context.Background(), base([]OrderItemInput{{ProductID: 1, Quantity: MaxOrderItemQuantity}}))
+	require.NoError(t, err, "the documented limits themselves must be accepted")
+}

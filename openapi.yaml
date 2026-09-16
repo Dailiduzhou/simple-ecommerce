@@ -1730,6 +1730,9 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/api.order.v1.OrderItemInput'
+                    description: |-
+                        Bounded because the whole order runs in one transaction that locks every
+                         product row it touches.
                 idempotencyKey:
                     type: string
         api.order.v1.ListOrdersReply:

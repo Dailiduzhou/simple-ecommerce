@@ -7,6 +7,7 @@
 package v1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -224,10 +225,12 @@ func (x *OrderInfo) GetCurrency() string {
 }
 
 type CreateOrderRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	AddressId      int64                  `protobuf:"varint,1,opt,name=address_id,json=addressId,proto3" json:"address_id,omitempty"`
-	Items          []*OrderItemInput      `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	AddressId int64                  `protobuf:"varint,1,opt,name=address_id,json=addressId,proto3" json:"address_id,omitempty"`
+	// Bounded because the whole order runs in one transaction that locks every
+	// product row it touches.
+	Items          []*OrderItemInput `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"`
+	IdempotencyKey string            `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -599,7 +602,7 @@ var File_order_v1_order_proto protoreflect.FileDescriptor
 
 const file_order_v1_order_proto_rawDesc = "" +
 	"\n" +
-	"\x14order/v1/order.proto\x12\fapi.order.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa9\x01\n" +
+	"\x14order/v1/order.proto\x12\fapi.order.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa9\x01\n" +
 	"\tOrderItem\x12\x1d\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\x03R\tproductId\x12!\n" +
@@ -624,16 +627,18 @@ const file_order_v1_order_proto_rawDesc = "" +
 	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x19\n" +
 	"\border_no\x18\n" +
 	" \x01(\tR\aorderNo\x12\x1a\n" +
-	"\bcurrency\x18\v \x01(\tR\bcurrency\"\x90\x01\n" +
+	"\bcurrency\x18\v \x01(\tR\bcurrency\"\xa7\x01\n" +
 	"\x12CreateOrderRequest\x12\x1d\n" +
 	"\n" +
-	"address_id\x18\x01 \x01(\x03R\taddressId\x122\n" +
-	"\x05items\x18\x02 \x03(\v2\x1c.api.order.v1.OrderItemInputR\x05items\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"K\n" +
-	"\x0eOrderItemInput\x12\x1d\n" +
+	"address_id\x18\x01 \x01(\x03R\taddressId\x12>\n" +
+	"\x05items\x18\x02 \x03(\v2\x1c.api.order.v1.OrderItemInputB\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x102R\x05items\x122\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tB\t\xbaH\x06r\x04\x10\b\x18@R\x0eidempotencyKey\"`\n" +
+	"\x0eOrderItemInput\x12&\n" +
 	"\n" +
-	"product_id\x18\x01 \x01(\x03R\tproductId\x12\x1a\n" +
-	"\bquantity\x18\x02 \x01(\x05R\bquantity\":\n" +
+	"product_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\tproductId\x12&\n" +
+	"\bquantity\x18\x02 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe7\a \x00R\bquantity\":\n" +
 	"\x0fGetOrderRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\x03R\x06userId\"w\n" +
