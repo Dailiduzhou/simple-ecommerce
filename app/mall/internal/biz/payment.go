@@ -330,6 +330,10 @@ type CheckPayArgs struct {
 	PollCount           int    `json:"poll_count"`
 	MaxPolls            int    `json:"max_polls"`
 	PollIntervalSeconds int    `json:"poll_interval_seconds"`
+	// OrderExpiresAt bounds poll-triggered close: closing earlier would cancel
+	// an order that is still inside its payment window. Zero means the enqueuer
+	// could not supply the deadline and legacy close-on-exhaustion applies.
+	OrderExpiresAt time.Time `json:"order_expires_at"`
 }
 
 func (CheckPayArgs) Kind() string { return CheckPayJobKind }
@@ -684,6 +688,7 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 			_, err = uc.paymentJobs.EnqueueCheckPayTx(ctx, CheckPayArgs{
 				PaymentID: payment.ID, Provider: method.Provider, Trigger: "prepay",
 				MaxPolls: uc.policy.PollMaxCount, PollIntervalSeconds: int(uc.policy.PollInterval.Seconds()),
+				OrderExpiresAt: order.ExpiresAt,
 			}, uc.policy.PollInitialDelay)
 		}
 		return err

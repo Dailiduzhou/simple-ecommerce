@@ -70,8 +70,9 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		}
 
 		type itemSnapshot struct {
-			input   biz.OrderItemInput
-			product db.Product
+			input     biz.OrderItemInput
+			product   db.Product
+			unitPrice int64
 		}
 		snapshots := make([]itemSnapshot, 0, len(args.Items))
 		var total int64
@@ -86,12 +87,18 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			if product.Status != 1 || product.Stock < item.Quantity {
 				return biz.ErrInsufficientStock
 			}
-			lineTotal, overflow := multiplyMoney(product.PriceMinor, int64(item.Quantity))
+			// Charge the discounted price and snapshot it on the item, so the
+			// list price can never diverge from what the order actually costs.
+			unitPrice, err := biz.EffectivePriceMinor(product.PriceMinor, product.Discount)
+			if err != nil {
+				return err
+			}
+			lineTotal, overflow := multiplyMoney(unitPrice, int64(item.Quantity))
 			if overflow || total > math.MaxInt64-lineTotal {
 				return fmt.Errorf("order total overflow")
 			}
 			total += lineTotal
-			snapshots = append(snapshots, itemSnapshot{input: item, product: product})
+			snapshots = append(snapshots, itemSnapshot{input: item, product: product, unitPrice: unitPrice})
 		}
 		if total <= 0 {
 			return biz.ErrOrderAmountInvalid
@@ -115,12 +122,12 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			}
 			if _, err := q.CreateOrderItem(ctx, db.CreateOrderItemParams{
 				OrderID: order.ID, ProductID: snapshot.input.ProductID, Quantity: snapshot.input.Quantity,
-				UnitPriceMinor: snapshot.product.PriceMinor, ProductNameSnapshot: snapshot.product.Name,
+				UnitPriceMinor: snapshot.unitPrice, ProductNameSnapshot: snapshot.product.Name,
 				CoverImageSnapshot: snapshot.product.CoverImage,
 			}); err != nil {
 				return err
 			}
-			items = append(items, toBizOrderItem(snapshot.input.ProductID, snapshot.product.CategoryID, snapshot.input.Quantity, snapshot.product.PriceMinor, snapshot.product.Name, snapshot.product.CoverImage))
+			items = append(items, toBizOrderItem(snapshot.input.ProductID, snapshot.product.CategoryID, snapshot.input.Quantity, snapshot.unitPrice, snapshot.product.Name, snapshot.product.CoverImage))
 		}
 		result = toBizOrder(order)
 		result.Items = items

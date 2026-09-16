@@ -74,7 +74,8 @@ CREATE TABLE products (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at TIMESTAMPTZ,
   CONSTRAINT fk_product_category
-    FOREIGN KEY (category_id) REFERENCES categories(id)
+    FOREIGN KEY (category_id) REFERENCES categories(id),
+  CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1)
 );
 
 CREATE INDEX idx_products_category_id ON products(category_id);
@@ -104,10 +105,10 @@ CREATE TABLE orders (
     FOREIGN KEY (address_id) REFERENCES shipping_addresses(id),
   CONSTRAINT orders_amount_check CHECK (total_amount_minor > 0),
   CONSTRAINT orders_status_check CHECK (
-    status IN ('pending_payment', 'paid', 'shipped', 'completed', 'cancelling', 'cancelled')
+    status IN ('pending_payment', 'paid', 'shipped', 'completed', 'cancelling', 'cancelled', 'refunded')
   ),
   CONSTRAINT orders_completion_check CHECK (
-    is_completed = (status IN ('completed', 'cancelled'))
+    is_completed = (status IN ('completed', 'cancelled', 'refunded'))
   )
 );
 

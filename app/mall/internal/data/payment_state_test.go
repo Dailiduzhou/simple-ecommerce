@@ -266,6 +266,8 @@ func TestApplyPayQuery_RefundSettlesPendingRefundRecord(t *testing.T) {
 		return settled, nil
 	})
 	q.EXPECT().UpdatePaymentRefunded(gomock.Any(), int64(1)).Return(int64(1), nil)
+	q.EXPECT().MarkOrderRefunded(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusRefunded, IsCompleted: true}, nil)
+	q.EXPECT().RestoreOrderItemStock(gomock.Any(), int64(2)).Return(nil)
 	q.EXPECT().GetOrder(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
 	d := newTestData(t, q, redisServer)
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)

@@ -132,6 +132,10 @@ type Querier interface {
 	MarkOrderCancelling(ctx context.Context, id int64) (Order, error)
 	MarkOrderPaid(ctx context.Context, id int64) (Order, error)
 	MarkOrderRefundSuccess(ctx context.Context, arg MarkOrderRefundSuccessParams) (OrderRefund, error)
+	// A fully refunded paid order reaches its terminal state. The CAS guard keeps
+	// non-paid orders out (e.g. already cancelled), so a refund can never silently
+	// rewrite an order that is not in the refundable state.
+	MarkOrderRefunded(ctx context.Context, id int64) (Order, error)
 	MarkPaymentClosePending(ctx context.Context, id int64) (Payment, error)
 	MarkPaymentClosed(ctx context.Context, id int64) (Payment, error)
 	MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedParams) (Payment, error)
