@@ -33,7 +33,7 @@ func (s *MallService) CreateProduct(ctx context.Context, req *pb.CreateProductRe
 	if err != nil {
 		return nil, err
 	}
-	return toProtoProduct(p), nil
+	return toProtoProduct(p)
 }
 
 func (s *MallService) GetProduct(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
@@ -44,7 +44,7 @@ func (s *MallService) GetProduct(ctx context.Context, req *pb.GetProductRequest)
 	if p == nil {
 		return nil, pb.ErrorProductNotFound("product %d not found", req.Id)
 	}
-	return toProtoProduct(p), nil
+	return toProtoProduct(p)
 }
 
 func (s *MallService) ListProducts(ctx context.Context, req *pb.ListProductsRequest) (*pb.ListProductsReply, error) {
@@ -64,7 +64,11 @@ func (s *MallService) ListProducts(ctx context.Context, req *pb.ListProductsRequ
 
 	var products []*pb.Product
 	for i := range ps {
-		products = append(products, toProtoProduct(&ps[i]))
+		item, err := toProtoProduct(&ps[i])
+		if err != nil {
+			return nil, err
+		}
+		products = append(products, item)
 	}
 
 	return &pb.ListProductsReply{
@@ -86,7 +90,7 @@ func (s *MallService) UpdateProduct(ctx context.Context, req *pb.UpdateProductRe
 	if p == nil {
 		return nil, pb.ErrorProductNotFound("product %d not found", req.Id)
 	}
-	return toProtoProduct(p), nil
+	return toProtoProduct(p)
 }
 
 func (s *MallService) UpdateProductStatus(ctx context.Context, req *pb.UpdateProductStatusRequest) (*pb.UpdateProductStatusReply, error) {
@@ -261,23 +265,34 @@ func (s *MallService) DeleteEvent(ctx context.Context, req *pb.DeleteEventReques
 	return &pb.DeleteEventReply{}, nil
 }
 
-func toProtoProduct(p *biz.Product) *pb.Product {
+func toProtoProduct(p *biz.Product) (*pb.Product, error) {
+	// Compute the charged price with the exact helper the order flow uses so a
+	// rendered product can never disagree with what checkout would charge.
+	priceMinor, err := biz.ProductPriceMinor(p.Price)
+	if err != nil {
+		return nil, err
+	}
+	effectiveMinor, err := biz.EffectivePriceMinor(priceMinor, p.Discount)
+	if err != nil {
+		return nil, err
+	}
 	proto := &pb.Product{
-		Id:          p.ID,
-		CategoryId:  p.CategoryID,
-		Name:        p.Name,
-		Price:       p.Price.String(),
-		Discount:    p.Discount.String(),
-		Stock:       p.Stock,
-		Status:      int32(p.Status),
-		Description: p.Description,
-		CoverImage:  coverImageURL(p.CoverImage),
-		MediaAssets: mediaInfoToProto(p.MediaAssets),
+		Id:                 p.ID,
+		CategoryId:         p.CategoryID,
+		Name:               p.Name,
+		Price:              p.Price.String(),
+		Discount:           p.Discount.String(),
+		EffectivePriceMinor: effectiveMinor,
+		Stock:              p.Stock,
+		Status:             int32(p.Status),
+		Description:        p.Description,
+		CoverImage:         coverImageURL(p.CoverImage),
+		MediaAssets:        mediaInfoToProto(p.MediaAssets),
 	}
 	if !p.CreatedAt.IsZero() {
 		proto.CreatedAt = timestamppb.New(p.CreatedAt)
 	}
-	return proto
+	return proto, nil
 }
 
 func toProtoCategory(c *biz.Category) *pb.Category {

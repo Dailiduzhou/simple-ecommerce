@@ -163,6 +163,9 @@ message Product {
   repeated MediaInfo media_assets = 9;
   string description = 10;
   google.protobuf.Timestamp created_at = 11;
+  // Discounted unit price in minor units computed by the server with the same
+  // rounding the order flow uses; rendering it keeps display equal to charge.
+  int64  effective_price_minor = 12;
 }
 
 message CreateProductRequest {

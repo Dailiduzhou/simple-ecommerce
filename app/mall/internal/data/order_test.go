@@ -14,6 +14,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,7 +49,7 @@ func TestOrderRepo_CreateCalculatesDatabasePriceAndSnapshotsAtomically(t *testin
 	q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 	q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 	q.EXPECT().GetShippingAddress(gomock.Any(), db.GetShippingAddressParams{ID: 9, UserID: 42}).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
-	product := db.Product{ID: 3, CategoryID: 7, Name: "server product", PriceMinor: 5000, Stock: 10, Status: 1, CoverImage: []byte(`[{"OssURL":"cover"}]`)}
+	product := db.Product{ID: 3, Discount: decimal.NewFromInt(1), CategoryID: 7, Name: "server product", PriceMinor: 5000, Stock: 10, Status: 1, CoverImage: []byte(`[{"OssURL":"cover"}]`)}
 	q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(product, nil)
 	q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.CreateOrderParams) (db.Order, error) {
 		require.Equal(t, int64(10000), args.TotalAmountMinor)
@@ -138,7 +139,7 @@ func TestOrderRepo_CreateMapsConcurrentConstraintErrors(t *testing.T) {
 		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
-		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, Discount: decimal.NewFromInt(1), PriceMinor: 5000, Stock: 10, Status: 1}, nil)
 		q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).Return(db.Order{}, &pgconn.PgError{
 			Code: "23505", ConstraintName: "idx_orders_user_idempotency",
 		})
@@ -166,7 +167,7 @@ func TestOrderRepo_CreateMapsConcurrentConstraintErrors(t *testing.T) {
 		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
-		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, Discount: decimal.NewFromInt(1), PriceMinor: 5000, Stock: 10, Status: 1}, nil)
 		q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).Return(db.Order{}, &pgconn.PgError{
 			Code: "23503", ConstraintName: "fk_order_address",
 		})
@@ -190,7 +191,7 @@ func TestOrderRepo_CreateRejectsInvalidAmountAndPropagatesAtomicFailures(t *test
 		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
-		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 0, Stock: 10, Status: 1}, nil)
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, Discount: decimal.NewFromInt(1), PriceMinor: 0, Stock: 10, Status: 1}, nil)
 		d := newTestData(t, q, redisServer)
 		repo := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger)
 
@@ -209,7 +210,7 @@ func TestOrderRepo_CreateRejectsInvalidAmountAndPropagatesAtomicFailures(t *test
 		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
-		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, Discount: decimal.NewFromInt(1), PriceMinor: 5000, Stock: 10, Status: 1}, nil)
 		q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).Return(db.Order{ID: 1}, nil)
 		q.EXPECT().DecrProductStock(gomock.Any(), gomock.Any()).Return(int32(0), pgx.ErrNoRows)
 		d := newTestData(t, q, redisServer)
@@ -230,7 +231,7 @@ func TestOrderRepo_CreateRejectsInvalidAmountAndPropagatesAtomicFailures(t *test
 		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
-		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, CategoryID: 7, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, Discount: decimal.NewFromInt(1), CategoryID: 7, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
 		q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).Return(db.Order{ID: 1, UserID: 42}, nil)
 		q.EXPECT().DecrProductStock(gomock.Any(), gomock.Any()).Return(int32(9), nil)
 		q.EXPECT().CreateOrderItem(gomock.Any(), gomock.Any()).Return(db.OrderItem{}, nil)
@@ -354,4 +355,58 @@ func TestOrderIdempotencyLockPrecedesReplay(t *testing.T) {
 	order, err := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger).CreateOrder(context.Background(), biz.CreateOrderArgs{UserID: 42, IdempotencyKey: "key", RequestHash: "hash"})
 	require.NoError(t, err)
 	require.Equal(t, int64(7), order.ID)
+}
+
+func TestOrderRepo_CreateChargesDiscountedPriceAndSnapshotsEffectiveUnitPrice(t *testing.T) {
+	t.Run("discounted product charges the rounded effective price", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		q := mockdb.NewMockQuerier(ctrl)
+		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
+		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
+		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
+		// 12.34 CNY at 85% must charge 10.49 per unit, not the list price.
+		product := db.Product{ID: 3, CategoryID: 7, Name: "sale item", PriceMinor: 1234, Discount: decimal.RequireFromString("0.85"), Stock: 10, Status: 1}
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(product, nil)
+		q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.CreateOrderParams) (db.Order, error) {
+			require.Equal(t, int64(2098), args.TotalAmountMinor)
+			return db.Order{ID: 1, UserID: args.UserID, TotalAmountMinor: args.TotalAmountMinor, Currency: args.Currency, Status: biz.OrderStatusPendingPayment, OutTradeNo: args.OutTradeNo}, nil
+		})
+		q.EXPECT().DecrProductStock(gomock.Any(), db.DecrProductStockParams{ID: 3, Stock: 2}).Return(int32(8), nil)
+		q.EXPECT().CreateOrderItem(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.CreateOrderItemParams) (db.OrderItem, error) {
+			require.Equal(t, int64(1049), args.UnitPriceMinor)
+			return db.OrderItem{OrderID: 1, ProductID: 3}, nil
+		})
+		d := newTestData(t, q, redisServer)
+		repo := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger)
+		order, err := repo.CreateOrder(context.Background(), biz.CreateOrderArgs{
+			UserID: 42, AddressID: 9, OutTradeNo: "order_1", Currency: "CNY",
+			IdempotencyKey: "checkout-42", RequestHash: "hash", ExpiresAt: time.Now().Add(time.Minute),
+			Items: []biz.OrderItemInput{{ProductID: 3, Quantity: 2}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(2098), order.TotalAmount)
+		require.Equal(t, int64(1049), order.Items[0].UnitPrice)
+	})
+
+	t.Run("product with an out-of-range discount is never chargeable", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		q := mockdb.NewMockQuerier(ctrl)
+		redisServer := miniredis.RunT(t)
+		q.EXPECT().LockOrderIdempotency(gomock.Any(), db.LockOrderIdempotencyParams{UserID: 42, IdempotencyKey: "checkout-42"}).Return(nil)
+		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
+		q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
+		// The schema forbids this row, but pricing still fails closed if one
+		// ever appears: no order may be created from a mispriced product.
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, PriceMinor: 1234, Discount: decimal.RequireFromString("1.20"), Stock: 10, Status: 1}, nil)
+		d := newTestData(t, q, redisServer)
+		repo := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger)
+		_, err := repo.CreateOrder(context.Background(), biz.CreateOrderArgs{
+			UserID: 42, AddressID: 9, OutTradeNo: "order_1", Currency: "CNY",
+			IdempotencyKey: "checkout-42", RequestHash: "hash", ExpiresAt: time.Now().Add(time.Minute),
+			Items: []biz.OrderItemInput{{ProductID: 3, Quantity: 1}},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "PRODUCT_DISCOUNT_INVALID")
+	})
 }

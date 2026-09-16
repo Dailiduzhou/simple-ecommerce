@@ -456,20 +456,23 @@ func (x *MediaInfo) GetSize() int64 {
 }
 
 type Product struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	CategoryId    int64                  `protobuf:"varint,2,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Price         string                 `protobuf:"bytes,4,opt,name=price,proto3" json:"price,omitempty"` // NUMERIC as string to avoid float precision
-	Discount      string                 `protobuf:"bytes,5,opt,name=discount,proto3" json:"discount,omitempty"`
-	Stock         int32                  `protobuf:"varint,6,opt,name=stock,proto3" json:"stock,omitempty"`
-	Status        int32                  `protobuf:"varint,7,opt,name=status,proto3" json:"status,omitempty"`
-	CoverImage    string                 `protobuf:"bytes,8,opt,name=cover_image,json=coverImage,proto3" json:"cover_image,omitempty"`
-	MediaAssets   []*MediaInfo           `protobuf:"bytes,9,rep,name=media_assets,json=mediaAssets,proto3" json:"media_assets,omitempty"`
-	Description   string                 `protobuf:"bytes,10,opt,name=description,proto3" json:"description,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	CategoryId  int64                  `protobuf:"varint,2,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
+	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Price       string                 `protobuf:"bytes,4,opt,name=price,proto3" json:"price,omitempty"` // NUMERIC as string to avoid float precision
+	Discount    string                 `protobuf:"bytes,5,opt,name=discount,proto3" json:"discount,omitempty"`
+	Stock       int32                  `protobuf:"varint,6,opt,name=stock,proto3" json:"stock,omitempty"`
+	Status      int32                  `protobuf:"varint,7,opt,name=status,proto3" json:"status,omitempty"`
+	CoverImage  string                 `protobuf:"bytes,8,opt,name=cover_image,json=coverImage,proto3" json:"cover_image,omitempty"`
+	MediaAssets []*MediaInfo           `protobuf:"bytes,9,rep,name=media_assets,json=mediaAssets,proto3" json:"media_assets,omitempty"`
+	Description string                 `protobuf:"bytes,10,opt,name=description,proto3" json:"description,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Discounted unit price in minor units computed by the server with the same
+	// rounding the order flow uses; rendering it keeps display equal to charge.
+	EffectivePriceMinor int64 `protobuf:"varint,12,opt,name=effective_price_minor,json=effectivePriceMinor,proto3" json:"effective_price_minor,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Product) Reset() {
@@ -577,6 +580,13 @@ func (x *Product) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *Product) GetEffectivePriceMinor() int64 {
+	if x != nil {
+		return x.EffectivePriceMinor
+	}
+	return 0
 }
 
 type CreateProductRequest struct {
@@ -1848,7 +1858,7 @@ const file_mall_v1_mall_proto_rawDesc = "" +
 	"\n" +
 	"object_key\x18\x03 \x01(\tR\tobjectKey\x12!\n" +
 	"\fcontent_type\x18\x04 \x01(\tR\vcontentType\x12\x12\n" +
-	"\x04size\x18\x05 \x01(\x03R\x04size\"\xe7\x02\n" +
+	"\x04size\x18\x05 \x01(\x03R\x04size\"\x9b\x03\n" +
 	"\aProduct\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\vcategory_id\x18\x02 \x01(\x03R\n" +
@@ -1864,7 +1874,8 @@ const file_mall_v1_mall_proto_rawDesc = "" +
 	"\vdescription\x18\n" +
 	" \x01(\tR\vdescription\x129\n" +
 	"\n" +
-	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x91\x02\n" +
+	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x122\n" +
+	"\x15effective_price_minor\x18\f \x01(\x03R\x13effectivePriceMinor\"\x91\x02\n" +
 	"\x14CreateProductRequest\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\x03R\n" +
 	"categoryId\x12\x12\n" +
