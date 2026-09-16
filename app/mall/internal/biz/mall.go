@@ -20,6 +20,32 @@ func ProductPriceMinor(price decimal.Decimal) (int64, error) {
 	return minor.IntPart(), nil
 }
 
+// ProductDiscount validates the discount rate: a rate outside (0, 1] would
+// either raise the charged price above the list price or zero it out, so
+// both are rejected instead of silently mischarging.
+func ProductDiscount(discount decimal.Decimal) error {
+	if !discount.IsPositive() || discount.GreaterThan(decimal.NewFromInt(1)) {
+		return errors.BadRequest("PRODUCT_DISCOUNT_INVALID", "discount must be greater than 0 and at most 1")
+	}
+	return nil
+}
+
+// EffectivePriceMinor applies the discount rate to a minor-unit price with
+// half-up rounding. Order pricing and product responses must both go through
+// this helper so the displayed price can never diverge from the charged one.
+// A result of zero is legal here: order creation already rejects non-positive
+// totals with a domain conflict, and a rendered price of 0 is truthful.
+func EffectivePriceMinor(priceMinor int64, discount decimal.Decimal) (int64, error) {
+	if priceMinor < 0 {
+		return 0, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must be non-negative")
+	}
+	if err := ProductDiscount(discount); err != nil {
+		return 0, err
+	}
+	effective := decimal.NewFromInt(priceMinor).Mul(discount).Round(0)
+	return effective.IntPart(), nil
+}
+
 type Product struct {
 	ID          int64
 	CategoryID  int64
@@ -88,6 +114,9 @@ func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, n
 		uc.log.WithContext(ctx).Errorf("invalid discount: %v", err)
 		return nil, err
 	}
+	if err := ProductDiscount(discount); err != nil {
+		return nil, err
+	}
 	cover := mediaFromCoverURL(coverImage)
 	return uc.repo.CreateProduct(ctx, categoryID, name, price, discount, stock, status, cover, mediaAssets, descrption)
 }
@@ -122,6 +151,9 @@ func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryI
 	discount, err := decimal.NewFromString(discountStr)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("invalid discount: %v", err)
+		return nil, err
+	}
+	if err := ProductDiscount(discount); err != nil {
 		return nil, err
 	}
 	cover := mediaFromCoverURL(coverImage)

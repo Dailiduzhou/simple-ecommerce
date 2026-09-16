@@ -9,6 +9,7 @@ import (
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/go-kratos/kratos/v2/log"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -347,3 +348,17 @@ func TestMallService_DeleteEvent_PropagatesError(t *testing.T) {
 }
 
 func ptrStatus(v int32) *int32 { return &v }
+
+func TestToProtoProductExposesEffectivePrice(t *testing.T) {
+	// 12.34 CNY at 85% renders as 1049 minor units, the exact amount the
+	// order flow would charge, so display can never diverge from charge.
+	p := &biz.Product{ID: 3, Name: "sale item", Price: decimal.RequireFromString("12.34"), Discount: decimal.RequireFromString("0.85")}
+	proto, err := toProtoProduct(p)
+	require.NoError(t, err)
+	require.Equal(t, int64(1049), proto.EffectivePriceMinor)
+	require.Equal(t, "0.85", proto.Discount)
+
+	// A corrupted discount must fail closed instead of rendering a wrong price.
+	_, err = toProtoProduct(&biz.Product{ID: 4, Price: decimal.RequireFromString("12.34"), Discount: decimal.RequireFromString("0")})
+	require.Error(t, err)
+}

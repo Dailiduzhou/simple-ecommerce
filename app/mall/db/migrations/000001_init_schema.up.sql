@@ -74,7 +74,8 @@ CREATE TABLE products (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at TIMESTAMPTZ,
   CONSTRAINT fk_product_category
-    FOREIGN KEY (category_id) REFERENCES categories(id)
+    FOREIGN KEY (category_id) REFERENCES categories(id),
+  CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1)
 );
 
 CREATE INDEX idx_products_category_id ON products(category_id);
