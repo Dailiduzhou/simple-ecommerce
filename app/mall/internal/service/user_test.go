@@ -23,6 +23,7 @@ type fakeUserRepo struct {
 	getUserByID        func(ctx context.Context, id int64) (*biz.User, error)
 	getUserByPhoneHash func(ctx context.Context, phoneHash string) (*biz.User, error)
 	updateUser         func(ctx context.Context, id int64, nickname, realName string) (*biz.User, error)
+	updateUserPassword func(ctx context.Context, id int64, passwordHash string) error
 	deleteUser         func(ctx context.Context, id int64) error
 }
 
@@ -40,6 +41,13 @@ func (r *fakeUserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string)
 
 func (r *fakeUserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*biz.User, error) {
 	return r.updateUser(ctx, id, nickname, realName)
+}
+
+func (r *fakeUserRepo) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	if r.updateUserPassword == nil {
+		return nil
+	}
+	return r.updateUserPassword(ctx, id, passwordHash)
 }
 
 func (r *fakeUserRepo) DeleteUser(ctx context.Context, id int64) error {
@@ -176,6 +184,34 @@ func TestUserService_RejectsCrossUserAccess(t *testing.T) {
 	s := newTestUserService(&fakeUserRepo{})
 	_, err := s.GetUser(authenticatedPaymentContext(3, "user"), &pb.GetUserRequest{Id: 4})
 	require.True(t, kratoserrors.IsForbidden(err))
+}
+
+func TestUserService_ChangePasswordUsesTheAuthenticatedAccount(t *testing.T) {
+	oldHash, err := pwdhash.HashPassword("secret-pass")
+	require.NoError(t, err)
+	var rotated int64
+	repo := &fakeUserRepo{
+		getUserByID: func(_ context.Context, id int64) (*biz.User, error) {
+			return &biz.User{ID: id, PasswordHash: oldHash}, nil
+		},
+		updateUserPassword: func(_ context.Context, id int64, _ string) error {
+			rotated = id
+			return nil
+		},
+	}
+	s := newTestUserService(repo)
+
+	// The handler takes the account from the verified claims, never the body.
+	_, err = s.ChangePassword(authenticatedPaymentContext(9, "user"), &pb.ChangePasswordRequest{OldPassword: "secret-pass", NewPassword: "brand-new-pass"})
+	require.NoError(t, err)
+	require.Equal(t, int64(9), rotated)
+}
+
+func TestUserService_ChangePasswordRequiresAuthentication(t *testing.T) {
+	s := newTestUserService(&fakeUserRepo{})
+	_, err := s.ChangePassword(context.Background(), &pb.ChangePasswordRequest{OldPassword: "secret-pass", NewPassword: "brand-new-pass"})
+	require.Error(t, err)
+	require.True(t, kratoserrors.IsUnauthorized(err))
 }
 
 func TestUserService_DeleteUser(t *testing.T) {

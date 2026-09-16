@@ -157,7 +157,7 @@ func (q *Queries) ListBrowsingHistory(ctx context.Context, arg ListBrowsingHisto
 }
 
 const lockCommunityUser = `-- name: LockCommunityUser :one
-SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, role, created_at, updated_at
+SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, password_changed_at, role, created_at, updated_at
 FROM users
 WHERE id = $1
 FOR UPDATE
@@ -173,6 +173,7 @@ func (q *Queries) LockCommunityUser(ctx context.Context, id int64) (User, error)
 		&i.PhoneHash,
 		&i.PhoneEncrypt,
 		&i.PasswordHash,
+		&i.PasswordChangedAt,
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,

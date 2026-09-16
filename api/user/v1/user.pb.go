@@ -336,6 +336,94 @@ func (x *UpdateUserRequest) GetRealName() string {
 	return ""
 }
 
+type ChangePasswordRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OldPassword   string                 `protobuf:"bytes,1,opt,name=old_password,json=oldPassword,proto3" json:"old_password,omitempty"`
+	NewPassword   string                 `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangePasswordRequest) Reset() {
+	*x = ChangePasswordRequest{}
+	mi := &file_user_v1_user_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordRequest) ProtoMessage() {}
+
+func (x *ChangePasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordRequest.ProtoReflect.Descriptor instead.
+func (*ChangePasswordRequest) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ChangePasswordRequest) GetOldPassword() string {
+	if x != nil {
+		return x.OldPassword
+	}
+	return ""
+}
+
+func (x *ChangePasswordRequest) GetNewPassword() string {
+	if x != nil {
+		return x.NewPassword
+	}
+	return ""
+}
+
+type ChangePasswordReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangePasswordReply) Reset() {
+	*x = ChangePasswordReply{}
+	mi := &file_user_v1_user_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangePasswordReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangePasswordReply) ProtoMessage() {}
+
+func (x *ChangePasswordReply) ProtoReflect() protoreflect.Message {
+	mi := &file_user_v1_user_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangePasswordReply.ProtoReflect.Descriptor instead.
+func (*ChangePasswordReply) Descriptor() ([]byte, []int) {
+	return file_user_v1_user_proto_rawDescGZIP(), []int{7}
+}
+
 type DeleteUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -345,7 +433,7 @@ type DeleteUserRequest struct {
 
 func (x *DeleteUserRequest) Reset() {
 	*x = DeleteUserRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[6]
+	mi := &file_user_v1_user_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -357,7 +445,7 @@ func (x *DeleteUserRequest) String() string {
 func (*DeleteUserRequest) ProtoMessage() {}
 
 func (x *DeleteUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[6]
+	mi := &file_user_v1_user_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -370,7 +458,7 @@ func (x *DeleteUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteUserRequest.ProtoReflect.Descriptor instead.
 func (*DeleteUserRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{6}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DeleteUserRequest) GetId() int64 {
@@ -388,7 +476,7 @@ type DeleteUserReply struct {
 
 func (x *DeleteUserReply) Reset() {
 	*x = DeleteUserReply{}
-	mi := &file_user_v1_user_proto_msgTypes[7]
+	mi := &file_user_v1_user_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -400,7 +488,7 @@ func (x *DeleteUserReply) String() string {
 func (*DeleteUserReply) ProtoMessage() {}
 
 func (x *DeleteUserReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[7]
+	mi := &file_user_v1_user_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -413,7 +501,7 @@ func (x *DeleteUserReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteUserReply.ProtoReflect.Descriptor instead.
 func (*DeleteUserReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{7}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{9}
 }
 
 type UserInfo struct {
@@ -430,7 +518,7 @@ type UserInfo struct {
 
 func (x *UserInfo) Reset() {
 	*x = UserInfo{}
-	mi := &file_user_v1_user_proto_msgTypes[8]
+	mi := &file_user_v1_user_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -442,7 +530,7 @@ func (x *UserInfo) String() string {
 func (*UserInfo) ProtoMessage() {}
 
 func (x *UserInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[8]
+	mi := &file_user_v1_user_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -455,7 +543,7 @@ func (x *UserInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserInfo.ProtoReflect.Descriptor instead.
 func (*UserInfo) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{8}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UserInfo) GetId() int64 {
@@ -518,7 +606,7 @@ type ShippingAddress struct {
 
 func (x *ShippingAddress) Reset() {
 	*x = ShippingAddress{}
-	mi := &file_user_v1_user_proto_msgTypes[9]
+	mi := &file_user_v1_user_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -530,7 +618,7 @@ func (x *ShippingAddress) String() string {
 func (*ShippingAddress) ProtoMessage() {}
 
 func (x *ShippingAddress) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[9]
+	mi := &file_user_v1_user_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -543,7 +631,7 @@ func (x *ShippingAddress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShippingAddress.ProtoReflect.Descriptor instead.
 func (*ShippingAddress) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{9}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ShippingAddress) GetId() int64 {
@@ -633,7 +721,7 @@ type CreateShippingAddressRequest struct {
 
 func (x *CreateShippingAddressRequest) Reset() {
 	*x = CreateShippingAddressRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[10]
+	mi := &file_user_v1_user_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -645,7 +733,7 @@ func (x *CreateShippingAddressRequest) String() string {
 func (*CreateShippingAddressRequest) ProtoMessage() {}
 
 func (x *CreateShippingAddressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[10]
+	mi := &file_user_v1_user_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -658,7 +746,7 @@ func (x *CreateShippingAddressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateShippingAddressRequest.ProtoReflect.Descriptor instead.
 func (*CreateShippingAddressRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{10}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CreateShippingAddressRequest) GetUserId() int64 {
@@ -733,7 +821,7 @@ type ListShippingAddressesRequest struct {
 
 func (x *ListShippingAddressesRequest) Reset() {
 	*x = ListShippingAddressesRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[11]
+	mi := &file_user_v1_user_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -745,7 +833,7 @@ func (x *ListShippingAddressesRequest) String() string {
 func (*ListShippingAddressesRequest) ProtoMessage() {}
 
 func (x *ListShippingAddressesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[11]
+	mi := &file_user_v1_user_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -758,7 +846,7 @@ func (x *ListShippingAddressesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListShippingAddressesRequest.ProtoReflect.Descriptor instead.
 func (*ListShippingAddressesRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{11}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListShippingAddressesRequest) GetUserId() int64 {
@@ -777,7 +865,7 @@ type ListShippingAddressesReply struct {
 
 func (x *ListShippingAddressesReply) Reset() {
 	*x = ListShippingAddressesReply{}
-	mi := &file_user_v1_user_proto_msgTypes[12]
+	mi := &file_user_v1_user_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -789,7 +877,7 @@ func (x *ListShippingAddressesReply) String() string {
 func (*ListShippingAddressesReply) ProtoMessage() {}
 
 func (x *ListShippingAddressesReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[12]
+	mi := &file_user_v1_user_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -802,7 +890,7 @@ func (x *ListShippingAddressesReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListShippingAddressesReply.ProtoReflect.Descriptor instead.
 func (*ListShippingAddressesReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{12}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListShippingAddressesReply) GetAddresses() []*ShippingAddress {
@@ -829,7 +917,7 @@ type UpdateShippingAddressRequest struct {
 
 func (x *UpdateShippingAddressRequest) Reset() {
 	*x = UpdateShippingAddressRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[13]
+	mi := &file_user_v1_user_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -841,7 +929,7 @@ func (x *UpdateShippingAddressRequest) String() string {
 func (*UpdateShippingAddressRequest) ProtoMessage() {}
 
 func (x *UpdateShippingAddressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[13]
+	mi := &file_user_v1_user_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -854,7 +942,7 @@ func (x *UpdateShippingAddressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateShippingAddressRequest.ProtoReflect.Descriptor instead.
 func (*UpdateShippingAddressRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{13}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdateShippingAddressRequest) GetId() int64 {
@@ -930,7 +1018,7 @@ type SetDefaultShippingAddressRequest struct {
 
 func (x *SetDefaultShippingAddressRequest) Reset() {
 	*x = SetDefaultShippingAddressRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[14]
+	mi := &file_user_v1_user_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -942,7 +1030,7 @@ func (x *SetDefaultShippingAddressRequest) String() string {
 func (*SetDefaultShippingAddressRequest) ProtoMessage() {}
 
 func (x *SetDefaultShippingAddressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[14]
+	mi := &file_user_v1_user_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -955,7 +1043,7 @@ func (x *SetDefaultShippingAddressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDefaultShippingAddressRequest.ProtoReflect.Descriptor instead.
 func (*SetDefaultShippingAddressRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{14}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SetDefaultShippingAddressRequest) GetUserId() int64 {
@@ -980,7 +1068,7 @@ type SetDefaultShippingAddressReply struct {
 
 func (x *SetDefaultShippingAddressReply) Reset() {
 	*x = SetDefaultShippingAddressReply{}
-	mi := &file_user_v1_user_proto_msgTypes[15]
+	mi := &file_user_v1_user_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -992,7 +1080,7 @@ func (x *SetDefaultShippingAddressReply) String() string {
 func (*SetDefaultShippingAddressReply) ProtoMessage() {}
 
 func (x *SetDefaultShippingAddressReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[15]
+	mi := &file_user_v1_user_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1005,7 +1093,7 @@ func (x *SetDefaultShippingAddressReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDefaultShippingAddressReply.ProtoReflect.Descriptor instead.
 func (*SetDefaultShippingAddressReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{15}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{17}
 }
 
 type DeleteShippingAddressRequest struct {
@@ -1018,7 +1106,7 @@ type DeleteShippingAddressRequest struct {
 
 func (x *DeleteShippingAddressRequest) Reset() {
 	*x = DeleteShippingAddressRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[16]
+	mi := &file_user_v1_user_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1030,7 +1118,7 @@ func (x *DeleteShippingAddressRequest) String() string {
 func (*DeleteShippingAddressRequest) ProtoMessage() {}
 
 func (x *DeleteShippingAddressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[16]
+	mi := &file_user_v1_user_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1043,7 +1131,7 @@ func (x *DeleteShippingAddressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteShippingAddressRequest.ProtoReflect.Descriptor instead.
 func (*DeleteShippingAddressRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{16}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DeleteShippingAddressRequest) GetUserId() int64 {
@@ -1068,7 +1156,7 @@ type DeleteShippingAddressReply struct {
 
 func (x *DeleteShippingAddressReply) Reset() {
 	*x = DeleteShippingAddressReply{}
-	mi := &file_user_v1_user_proto_msgTypes[17]
+	mi := &file_user_v1_user_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1080,7 +1168,7 @@ func (x *DeleteShippingAddressReply) String() string {
 func (*DeleteShippingAddressReply) ProtoMessage() {}
 
 func (x *DeleteShippingAddressReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[17]
+	mi := &file_user_v1_user_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1093,7 +1181,7 @@ func (x *DeleteShippingAddressReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteShippingAddressReply.ProtoReflect.Descriptor instead.
 func (*DeleteShippingAddressReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{17}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{19}
 }
 
 type RefreshRequest struct {
@@ -1105,7 +1193,7 @@ type RefreshRequest struct {
 
 func (x *RefreshRequest) Reset() {
 	*x = RefreshRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[18]
+	mi := &file_user_v1_user_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1117,7 +1205,7 @@ func (x *RefreshRequest) String() string {
 func (*RefreshRequest) ProtoMessage() {}
 
 func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[18]
+	mi := &file_user_v1_user_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1130,7 +1218,7 @@ func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshRequest.ProtoReflect.Descriptor instead.
 func (*RefreshRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{18}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RefreshRequest) GetRefreshToken() string {
@@ -1150,7 +1238,7 @@ type RefreshReply struct {
 
 func (x *RefreshReply) Reset() {
 	*x = RefreshReply{}
-	mi := &file_user_v1_user_proto_msgTypes[19]
+	mi := &file_user_v1_user_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1162,7 +1250,7 @@ func (x *RefreshReply) String() string {
 func (*RefreshReply) ProtoMessage() {}
 
 func (x *RefreshReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[19]
+	mi := &file_user_v1_user_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1175,7 +1263,7 @@ func (x *RefreshReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshReply.ProtoReflect.Descriptor instead.
 func (*RefreshReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{19}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RefreshReply) GetAccessToken() string {
@@ -1203,7 +1291,7 @@ type LogoutRequest struct {
 
 func (x *LogoutRequest) Reset() {
 	*x = LogoutRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[20]
+	mi := &file_user_v1_user_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1215,7 +1303,7 @@ func (x *LogoutRequest) String() string {
 func (*LogoutRequest) ProtoMessage() {}
 
 func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[20]
+	mi := &file_user_v1_user_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1228,7 +1316,7 @@ func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
 func (*LogoutRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{20}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *LogoutRequest) GetRefreshToken() string {
@@ -1246,7 +1334,7 @@ type LogoutReply struct {
 
 func (x *LogoutReply) Reset() {
 	*x = LogoutReply{}
-	mi := &file_user_v1_user_proto_msgTypes[21]
+	mi := &file_user_v1_user_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1258,7 +1346,7 @@ func (x *LogoutReply) String() string {
 func (*LogoutReply) ProtoMessage() {}
 
 func (x *LogoutReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[21]
+	mi := &file_user_v1_user_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1271,7 +1359,7 @@ func (x *LogoutReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutReply.ProtoReflect.Descriptor instead.
 func (*LogoutReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{21}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{23}
 }
 
 type RecordProductViewRequest struct {
@@ -1283,7 +1371,7 @@ type RecordProductViewRequest struct {
 
 func (x *RecordProductViewRequest) Reset() {
 	*x = RecordProductViewRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[22]
+	mi := &file_user_v1_user_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1295,7 +1383,7 @@ func (x *RecordProductViewRequest) String() string {
 func (*RecordProductViewRequest) ProtoMessage() {}
 
 func (x *RecordProductViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[22]
+	mi := &file_user_v1_user_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1308,7 +1396,7 @@ func (x *RecordProductViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordProductViewRequest.ProtoReflect.Descriptor instead.
 func (*RecordProductViewRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{22}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RecordProductViewRequest) GetProductId() int64 {
@@ -1327,7 +1415,7 @@ type RecordProductViewReply struct {
 
 func (x *RecordProductViewReply) Reset() {
 	*x = RecordProductViewReply{}
-	mi := &file_user_v1_user_proto_msgTypes[23]
+	mi := &file_user_v1_user_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1339,7 +1427,7 @@ func (x *RecordProductViewReply) String() string {
 func (*RecordProductViewReply) ProtoMessage() {}
 
 func (x *RecordProductViewReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[23]
+	mi := &file_user_v1_user_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1352,7 +1440,7 @@ func (x *RecordProductViewReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordProductViewReply.ProtoReflect.Descriptor instead.
 func (*RecordProductViewReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{23}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RecordProductViewReply) GetLastViewedAt() *timestamppb.Timestamp {
@@ -1377,7 +1465,7 @@ type ListBrowsingHistoryRequest struct {
 
 func (x *ListBrowsingHistoryRequest) Reset() {
 	*x = ListBrowsingHistoryRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[24]
+	mi := &file_user_v1_user_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1389,7 +1477,7 @@ func (x *ListBrowsingHistoryRequest) String() string {
 func (*ListBrowsingHistoryRequest) ProtoMessage() {}
 
 func (x *ListBrowsingHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[24]
+	mi := &file_user_v1_user_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1402,7 +1490,7 @@ func (x *ListBrowsingHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBrowsingHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ListBrowsingHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{24}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListBrowsingHistoryRequest) GetCursor() string {
@@ -1448,7 +1536,7 @@ type BrowsingHistoryItem struct {
 
 func (x *BrowsingHistoryItem) Reset() {
 	*x = BrowsingHistoryItem{}
-	mi := &file_user_v1_user_proto_msgTypes[25]
+	mi := &file_user_v1_user_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1460,7 +1548,7 @@ func (x *BrowsingHistoryItem) String() string {
 func (*BrowsingHistoryItem) ProtoMessage() {}
 
 func (x *BrowsingHistoryItem) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[25]
+	mi := &file_user_v1_user_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1473,7 +1561,7 @@ func (x *BrowsingHistoryItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrowsingHistoryItem.ProtoReflect.Descriptor instead.
 func (*BrowsingHistoryItem) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{25}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *BrowsingHistoryItem) GetProductId() int64 {
@@ -1535,7 +1623,7 @@ type ListBrowsingHistoryReply struct {
 
 func (x *ListBrowsingHistoryReply) Reset() {
 	*x = ListBrowsingHistoryReply{}
-	mi := &file_user_v1_user_proto_msgTypes[26]
+	mi := &file_user_v1_user_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1547,7 +1635,7 @@ func (x *ListBrowsingHistoryReply) String() string {
 func (*ListBrowsingHistoryReply) ProtoMessage() {}
 
 func (x *ListBrowsingHistoryReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[26]
+	mi := &file_user_v1_user_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1560,7 +1648,7 @@ func (x *ListBrowsingHistoryReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBrowsingHistoryReply.ProtoReflect.Descriptor instead.
 func (*ListBrowsingHistoryReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{26}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListBrowsingHistoryReply) GetItems() []*BrowsingHistoryItem {
@@ -1586,7 +1674,7 @@ type DeleteBrowsingHistoryItemRequest struct {
 
 func (x *DeleteBrowsingHistoryItemRequest) Reset() {
 	*x = DeleteBrowsingHistoryItemRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[27]
+	mi := &file_user_v1_user_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1598,7 +1686,7 @@ func (x *DeleteBrowsingHistoryItemRequest) String() string {
 func (*DeleteBrowsingHistoryItemRequest) ProtoMessage() {}
 
 func (x *DeleteBrowsingHistoryItemRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[27]
+	mi := &file_user_v1_user_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1611,7 +1699,7 @@ func (x *DeleteBrowsingHistoryItemRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBrowsingHistoryItemRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBrowsingHistoryItemRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{27}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *DeleteBrowsingHistoryItemRequest) GetProductId() int64 {
@@ -1629,7 +1717,7 @@ type DeleteBrowsingHistoryItemReply struct {
 
 func (x *DeleteBrowsingHistoryItemReply) Reset() {
 	*x = DeleteBrowsingHistoryItemReply{}
-	mi := &file_user_v1_user_proto_msgTypes[28]
+	mi := &file_user_v1_user_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1641,7 +1729,7 @@ func (x *DeleteBrowsingHistoryItemReply) String() string {
 func (*DeleteBrowsingHistoryItemReply) ProtoMessage() {}
 
 func (x *DeleteBrowsingHistoryItemReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[28]
+	mi := &file_user_v1_user_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1654,7 +1742,7 @@ func (x *DeleteBrowsingHistoryItemReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBrowsingHistoryItemReply.ProtoReflect.Descriptor instead.
 func (*DeleteBrowsingHistoryItemReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{28}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{30}
 }
 
 type ClearBrowsingHistoryRequest struct {
@@ -1665,7 +1753,7 @@ type ClearBrowsingHistoryRequest struct {
 
 func (x *ClearBrowsingHistoryRequest) Reset() {
 	*x = ClearBrowsingHistoryRequest{}
-	mi := &file_user_v1_user_proto_msgTypes[29]
+	mi := &file_user_v1_user_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1677,7 +1765,7 @@ func (x *ClearBrowsingHistoryRequest) String() string {
 func (*ClearBrowsingHistoryRequest) ProtoMessage() {}
 
 func (x *ClearBrowsingHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[29]
+	mi := &file_user_v1_user_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1690,7 +1778,7 @@ func (x *ClearBrowsingHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearBrowsingHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ClearBrowsingHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{29}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{31}
 }
 
 type ClearBrowsingHistoryReply struct {
@@ -1701,7 +1789,7 @@ type ClearBrowsingHistoryReply struct {
 
 func (x *ClearBrowsingHistoryReply) Reset() {
 	*x = ClearBrowsingHistoryReply{}
-	mi := &file_user_v1_user_proto_msgTypes[30]
+	mi := &file_user_v1_user_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1713,7 +1801,7 @@ func (x *ClearBrowsingHistoryReply) String() string {
 func (*ClearBrowsingHistoryReply) ProtoMessage() {}
 
 func (x *ClearBrowsingHistoryReply) ProtoReflect() protoreflect.Message {
-	mi := &file_user_v1_user_proto_msgTypes[30]
+	mi := &file_user_v1_user_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1726,7 +1814,7 @@ func (x *ClearBrowsingHistoryReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearBrowsingHistoryReply.ProtoReflect.Descriptor instead.
 func (*ClearBrowsingHistoryReply) Descriptor() ([]byte, []int) {
-	return file_user_v1_user_proto_rawDescGZIP(), []int{30}
+	return file_user_v1_user_proto_rawDescGZIP(), []int{32}
 }
 
 var File_user_v1_user_proto protoreflect.FileDescriptor
@@ -1748,11 +1836,15 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12#\n" +
 	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\" \n" +
 	"\x0eGetUserRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"\\\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"n\n" +
 	"\x11UpdateUserRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1a\n" +
-	"\bnickname\x18\x02 \x01(\tR\bnickname\x12\x1b\n" +
-	"\treal_name\x18\x03 \x01(\tR\brealName\"#\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12#\n" +
+	"\bnickname\x18\x02 \x01(\tB\a\xbaH\x04r\x02(2R\bnickname\x12$\n" +
+	"\treal_name\x18\x03 \x01(\tB\a\xbaH\x04r\x02(2R\brealName\"s\n" +
+	"\x15ChangePasswordRequest\x12,\n" +
+	"\fold_password\x18\x01 \x01(\tB\t\xbaH\x06r\x04 \b(HR\voldPassword\x12,\n" +
+	"\fnew_password\x18\x02 \x01(\tB\t\xbaH\x06r\x04 \b(HR\vnewPassword\"\x15\n" +
+	"\x13ChangePasswordReply\"#\n" +
 	"\x11DeleteUserRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"\x11\n" +
 	"\x0fDeleteUserReply\"\xb8\x01\n" +
@@ -1851,7 +1943,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"product_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\tproductId\" \n" +
 	"\x1eDeleteBrowsingHistoryItemReply\"\x1d\n" +
 	"\x1bClearBrowsingHistoryRequest\"\x1b\n" +
-	"\x19ClearBrowsingHistoryReply2\xfc\x0f\n" +
+	"\x19ClearBrowsingHistoryReply2\xf6\x10\n" +
 	"\x04User\x12\x89\x01\n" +
 	"\x11RecordProductView\x12%.api.user.v1.RecordProductViewRequest\x1a#.api.user.v1.RecordProductViewReply\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/users/me/browsing-history\x12\x8c\x01\n" +
 	"\x13ListBrowsingHistory\x12'.api.user.v1.ListBrowsingHistoryRequest\x1a%.api.user.v1.ListBrowsingHistoryReply\"%\x82\xd3\xe4\x93\x02\x1f\x12\x1d/v1/users/me/browsing-history\x12\xab\x01\n" +
@@ -1861,7 +1953,8 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x05Login\x12\x19.api.user.v1.LoginRequest\x1a\x17.api.user.v1.LoginReply\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/users/login\x12U\n" +
 	"\aGetUser\x12\x1b.api.user.v1.GetUserRequest\x1a\x15.api.user.v1.UserInfo\"\x16\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/users/{id}\x12^\n" +
 	"\n" +
-	"UpdateUser\x12\x1e.api.user.v1.UpdateUserRequest\x1a\x15.api.user.v1.UserInfo\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\x1a\x0e/v1/users/{id}\x12b\n" +
+	"UpdateUser\x12\x1e.api.user.v1.UpdateUserRequest\x1a\x15.api.user.v1.UserInfo\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\x1a\x0e/v1/users/{id}\x12x\n" +
+	"\x0eChangePassword\x12\".api.user.v1.ChangePasswordRequest\x1a .api.user.v1.ChangePasswordReply\" \x82\xd3\xe4\x93\x02\x1a:\x01*\x1a\x15/v1/users/me/password\x12b\n" +
 	"\n" +
 	"DeleteUser\x12\x1e.api.user.v1.DeleteUserRequest\x1a\x1c.api.user.v1.DeleteUserReply\"\x16\x82\xd3\xe4\x93\x02\x10*\x0e/v1/users/{id}\x12\x8a\x01\n" +
 	"\x15CreateShippingAddress\x12).api.user.v1.CreateShippingAddressRequest\x1a\x1c.api.user.v1.ShippingAddress\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/users/{user_id}/addresses\x12\x92\x01\n" +
@@ -1885,7 +1978,7 @@ func file_user_v1_user_proto_rawDescGZIP() []byte {
 	return file_user_v1_user_proto_rawDescData
 }
 
-var file_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_user_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_user_v1_user_proto_goTypes = []any{
 	(*RegisterRequest)(nil),                  // 0: api.user.v1.RegisterRequest
 	(*RegisterReply)(nil),                    // 1: api.user.v1.RegisterReply
@@ -1893,75 +1986,79 @@ var file_user_v1_user_proto_goTypes = []any{
 	(*LoginReply)(nil),                       // 3: api.user.v1.LoginReply
 	(*GetUserRequest)(nil),                   // 4: api.user.v1.GetUserRequest
 	(*UpdateUserRequest)(nil),                // 5: api.user.v1.UpdateUserRequest
-	(*DeleteUserRequest)(nil),                // 6: api.user.v1.DeleteUserRequest
-	(*DeleteUserReply)(nil),                  // 7: api.user.v1.DeleteUserReply
-	(*UserInfo)(nil),                         // 8: api.user.v1.UserInfo
-	(*ShippingAddress)(nil),                  // 9: api.user.v1.ShippingAddress
-	(*CreateShippingAddressRequest)(nil),     // 10: api.user.v1.CreateShippingAddressRequest
-	(*ListShippingAddressesRequest)(nil),     // 11: api.user.v1.ListShippingAddressesRequest
-	(*ListShippingAddressesReply)(nil),       // 12: api.user.v1.ListShippingAddressesReply
-	(*UpdateShippingAddressRequest)(nil),     // 13: api.user.v1.UpdateShippingAddressRequest
-	(*SetDefaultShippingAddressRequest)(nil), // 14: api.user.v1.SetDefaultShippingAddressRequest
-	(*SetDefaultShippingAddressReply)(nil),   // 15: api.user.v1.SetDefaultShippingAddressReply
-	(*DeleteShippingAddressRequest)(nil),     // 16: api.user.v1.DeleteShippingAddressRequest
-	(*DeleteShippingAddressReply)(nil),       // 17: api.user.v1.DeleteShippingAddressReply
-	(*RefreshRequest)(nil),                   // 18: api.user.v1.RefreshRequest
-	(*RefreshReply)(nil),                     // 19: api.user.v1.RefreshReply
-	(*LogoutRequest)(nil),                    // 20: api.user.v1.LogoutRequest
-	(*LogoutReply)(nil),                      // 21: api.user.v1.LogoutReply
-	(*RecordProductViewRequest)(nil),         // 22: api.user.v1.RecordProductViewRequest
-	(*RecordProductViewReply)(nil),           // 23: api.user.v1.RecordProductViewReply
-	(*ListBrowsingHistoryRequest)(nil),       // 24: api.user.v1.ListBrowsingHistoryRequest
-	(*BrowsingHistoryItem)(nil),              // 25: api.user.v1.BrowsingHistoryItem
-	(*ListBrowsingHistoryReply)(nil),         // 26: api.user.v1.ListBrowsingHistoryReply
-	(*DeleteBrowsingHistoryItemRequest)(nil), // 27: api.user.v1.DeleteBrowsingHistoryItemRequest
-	(*DeleteBrowsingHistoryItemReply)(nil),   // 28: api.user.v1.DeleteBrowsingHistoryItemReply
-	(*ClearBrowsingHistoryRequest)(nil),      // 29: api.user.v1.ClearBrowsingHistoryRequest
-	(*ClearBrowsingHistoryReply)(nil),        // 30: api.user.v1.ClearBrowsingHistoryReply
-	(*timestamppb.Timestamp)(nil),            // 31: google.protobuf.Timestamp
+	(*ChangePasswordRequest)(nil),            // 6: api.user.v1.ChangePasswordRequest
+	(*ChangePasswordReply)(nil),              // 7: api.user.v1.ChangePasswordReply
+	(*DeleteUserRequest)(nil),                // 8: api.user.v1.DeleteUserRequest
+	(*DeleteUserReply)(nil),                  // 9: api.user.v1.DeleteUserReply
+	(*UserInfo)(nil),                         // 10: api.user.v1.UserInfo
+	(*ShippingAddress)(nil),                  // 11: api.user.v1.ShippingAddress
+	(*CreateShippingAddressRequest)(nil),     // 12: api.user.v1.CreateShippingAddressRequest
+	(*ListShippingAddressesRequest)(nil),     // 13: api.user.v1.ListShippingAddressesRequest
+	(*ListShippingAddressesReply)(nil),       // 14: api.user.v1.ListShippingAddressesReply
+	(*UpdateShippingAddressRequest)(nil),     // 15: api.user.v1.UpdateShippingAddressRequest
+	(*SetDefaultShippingAddressRequest)(nil), // 16: api.user.v1.SetDefaultShippingAddressRequest
+	(*SetDefaultShippingAddressReply)(nil),   // 17: api.user.v1.SetDefaultShippingAddressReply
+	(*DeleteShippingAddressRequest)(nil),     // 18: api.user.v1.DeleteShippingAddressRequest
+	(*DeleteShippingAddressReply)(nil),       // 19: api.user.v1.DeleteShippingAddressReply
+	(*RefreshRequest)(nil),                   // 20: api.user.v1.RefreshRequest
+	(*RefreshReply)(nil),                     // 21: api.user.v1.RefreshReply
+	(*LogoutRequest)(nil),                    // 22: api.user.v1.LogoutRequest
+	(*LogoutReply)(nil),                      // 23: api.user.v1.LogoutReply
+	(*RecordProductViewRequest)(nil),         // 24: api.user.v1.RecordProductViewRequest
+	(*RecordProductViewReply)(nil),           // 25: api.user.v1.RecordProductViewReply
+	(*ListBrowsingHistoryRequest)(nil),       // 26: api.user.v1.ListBrowsingHistoryRequest
+	(*BrowsingHistoryItem)(nil),              // 27: api.user.v1.BrowsingHistoryItem
+	(*ListBrowsingHistoryReply)(nil),         // 28: api.user.v1.ListBrowsingHistoryReply
+	(*DeleteBrowsingHistoryItemRequest)(nil), // 29: api.user.v1.DeleteBrowsingHistoryItemRequest
+	(*DeleteBrowsingHistoryItemReply)(nil),   // 30: api.user.v1.DeleteBrowsingHistoryItemReply
+	(*ClearBrowsingHistoryRequest)(nil),      // 31: api.user.v1.ClearBrowsingHistoryRequest
+	(*ClearBrowsingHistoryReply)(nil),        // 32: api.user.v1.ClearBrowsingHistoryReply
+	(*timestamppb.Timestamp)(nil),            // 33: google.protobuf.Timestamp
 }
 var file_user_v1_user_proto_depIdxs = []int32{
-	31, // 0: api.user.v1.UserInfo.created_at:type_name -> google.protobuf.Timestamp
-	9,  // 1: api.user.v1.ListShippingAddressesReply.addresses:type_name -> api.user.v1.ShippingAddress
-	31, // 2: api.user.v1.RecordProductViewReply.last_viewed_at:type_name -> google.protobuf.Timestamp
-	31, // 3: api.user.v1.ListBrowsingHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
-	31, // 4: api.user.v1.ListBrowsingHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
-	31, // 5: api.user.v1.BrowsingHistoryItem.last_viewed_at:type_name -> google.protobuf.Timestamp
-	25, // 6: api.user.v1.ListBrowsingHistoryReply.items:type_name -> api.user.v1.BrowsingHistoryItem
-	22, // 7: api.user.v1.User.RecordProductView:input_type -> api.user.v1.RecordProductViewRequest
-	24, // 8: api.user.v1.User.ListBrowsingHistory:input_type -> api.user.v1.ListBrowsingHistoryRequest
-	27, // 9: api.user.v1.User.DeleteBrowsingHistoryItem:input_type -> api.user.v1.DeleteBrowsingHistoryItemRequest
-	29, // 10: api.user.v1.User.ClearBrowsingHistory:input_type -> api.user.v1.ClearBrowsingHistoryRequest
+	33, // 0: api.user.v1.UserInfo.created_at:type_name -> google.protobuf.Timestamp
+	11, // 1: api.user.v1.ListShippingAddressesReply.addresses:type_name -> api.user.v1.ShippingAddress
+	33, // 2: api.user.v1.RecordProductViewReply.last_viewed_at:type_name -> google.protobuf.Timestamp
+	33, // 3: api.user.v1.ListBrowsingHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
+	33, // 4: api.user.v1.ListBrowsingHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
+	33, // 5: api.user.v1.BrowsingHistoryItem.last_viewed_at:type_name -> google.protobuf.Timestamp
+	27, // 6: api.user.v1.ListBrowsingHistoryReply.items:type_name -> api.user.v1.BrowsingHistoryItem
+	24, // 7: api.user.v1.User.RecordProductView:input_type -> api.user.v1.RecordProductViewRequest
+	26, // 8: api.user.v1.User.ListBrowsingHistory:input_type -> api.user.v1.ListBrowsingHistoryRequest
+	29, // 9: api.user.v1.User.DeleteBrowsingHistoryItem:input_type -> api.user.v1.DeleteBrowsingHistoryItemRequest
+	31, // 10: api.user.v1.User.ClearBrowsingHistory:input_type -> api.user.v1.ClearBrowsingHistoryRequest
 	0,  // 11: api.user.v1.User.Register:input_type -> api.user.v1.RegisterRequest
 	2,  // 12: api.user.v1.User.Login:input_type -> api.user.v1.LoginRequest
 	4,  // 13: api.user.v1.User.GetUser:input_type -> api.user.v1.GetUserRequest
 	5,  // 14: api.user.v1.User.UpdateUser:input_type -> api.user.v1.UpdateUserRequest
-	6,  // 15: api.user.v1.User.DeleteUser:input_type -> api.user.v1.DeleteUserRequest
-	10, // 16: api.user.v1.User.CreateShippingAddress:input_type -> api.user.v1.CreateShippingAddressRequest
-	11, // 17: api.user.v1.User.ListShippingAddresses:input_type -> api.user.v1.ListShippingAddressesRequest
-	13, // 18: api.user.v1.User.UpdateShippingAddress:input_type -> api.user.v1.UpdateShippingAddressRequest
-	14, // 19: api.user.v1.User.SetDefaultShippingAddress:input_type -> api.user.v1.SetDefaultShippingAddressRequest
-	16, // 20: api.user.v1.User.DeleteShippingAddress:input_type -> api.user.v1.DeleteShippingAddressRequest
-	18, // 21: api.user.v1.User.RefreshToken:input_type -> api.user.v1.RefreshRequest
-	20, // 22: api.user.v1.User.Logout:input_type -> api.user.v1.LogoutRequest
-	23, // 23: api.user.v1.User.RecordProductView:output_type -> api.user.v1.RecordProductViewReply
-	26, // 24: api.user.v1.User.ListBrowsingHistory:output_type -> api.user.v1.ListBrowsingHistoryReply
-	28, // 25: api.user.v1.User.DeleteBrowsingHistoryItem:output_type -> api.user.v1.DeleteBrowsingHistoryItemReply
-	30, // 26: api.user.v1.User.ClearBrowsingHistory:output_type -> api.user.v1.ClearBrowsingHistoryReply
-	1,  // 27: api.user.v1.User.Register:output_type -> api.user.v1.RegisterReply
-	3,  // 28: api.user.v1.User.Login:output_type -> api.user.v1.LoginReply
-	8,  // 29: api.user.v1.User.GetUser:output_type -> api.user.v1.UserInfo
-	8,  // 30: api.user.v1.User.UpdateUser:output_type -> api.user.v1.UserInfo
-	7,  // 31: api.user.v1.User.DeleteUser:output_type -> api.user.v1.DeleteUserReply
-	9,  // 32: api.user.v1.User.CreateShippingAddress:output_type -> api.user.v1.ShippingAddress
-	12, // 33: api.user.v1.User.ListShippingAddresses:output_type -> api.user.v1.ListShippingAddressesReply
-	9,  // 34: api.user.v1.User.UpdateShippingAddress:output_type -> api.user.v1.ShippingAddress
-	15, // 35: api.user.v1.User.SetDefaultShippingAddress:output_type -> api.user.v1.SetDefaultShippingAddressReply
-	17, // 36: api.user.v1.User.DeleteShippingAddress:output_type -> api.user.v1.DeleteShippingAddressReply
-	19, // 37: api.user.v1.User.RefreshToken:output_type -> api.user.v1.RefreshReply
-	21, // 38: api.user.v1.User.Logout:output_type -> api.user.v1.LogoutReply
-	23, // [23:39] is the sub-list for method output_type
-	7,  // [7:23] is the sub-list for method input_type
+	6,  // 15: api.user.v1.User.ChangePassword:input_type -> api.user.v1.ChangePasswordRequest
+	8,  // 16: api.user.v1.User.DeleteUser:input_type -> api.user.v1.DeleteUserRequest
+	12, // 17: api.user.v1.User.CreateShippingAddress:input_type -> api.user.v1.CreateShippingAddressRequest
+	13, // 18: api.user.v1.User.ListShippingAddresses:input_type -> api.user.v1.ListShippingAddressesRequest
+	15, // 19: api.user.v1.User.UpdateShippingAddress:input_type -> api.user.v1.UpdateShippingAddressRequest
+	16, // 20: api.user.v1.User.SetDefaultShippingAddress:input_type -> api.user.v1.SetDefaultShippingAddressRequest
+	18, // 21: api.user.v1.User.DeleteShippingAddress:input_type -> api.user.v1.DeleteShippingAddressRequest
+	20, // 22: api.user.v1.User.RefreshToken:input_type -> api.user.v1.RefreshRequest
+	22, // 23: api.user.v1.User.Logout:input_type -> api.user.v1.LogoutRequest
+	25, // 24: api.user.v1.User.RecordProductView:output_type -> api.user.v1.RecordProductViewReply
+	28, // 25: api.user.v1.User.ListBrowsingHistory:output_type -> api.user.v1.ListBrowsingHistoryReply
+	30, // 26: api.user.v1.User.DeleteBrowsingHistoryItem:output_type -> api.user.v1.DeleteBrowsingHistoryItemReply
+	32, // 27: api.user.v1.User.ClearBrowsingHistory:output_type -> api.user.v1.ClearBrowsingHistoryReply
+	1,  // 28: api.user.v1.User.Register:output_type -> api.user.v1.RegisterReply
+	3,  // 29: api.user.v1.User.Login:output_type -> api.user.v1.LoginReply
+	10, // 30: api.user.v1.User.GetUser:output_type -> api.user.v1.UserInfo
+	10, // 31: api.user.v1.User.UpdateUser:output_type -> api.user.v1.UserInfo
+	7,  // 32: api.user.v1.User.ChangePassword:output_type -> api.user.v1.ChangePasswordReply
+	9,  // 33: api.user.v1.User.DeleteUser:output_type -> api.user.v1.DeleteUserReply
+	11, // 34: api.user.v1.User.CreateShippingAddress:output_type -> api.user.v1.ShippingAddress
+	14, // 35: api.user.v1.User.ListShippingAddresses:output_type -> api.user.v1.ListShippingAddressesReply
+	11, // 36: api.user.v1.User.UpdateShippingAddress:output_type -> api.user.v1.ShippingAddress
+	17, // 37: api.user.v1.User.SetDefaultShippingAddress:output_type -> api.user.v1.SetDefaultShippingAddressReply
+	19, // 38: api.user.v1.User.DeleteShippingAddress:output_type -> api.user.v1.DeleteShippingAddressReply
+	21, // 39: api.user.v1.User.RefreshToken:output_type -> api.user.v1.RefreshReply
+	23, // 40: api.user.v1.User.Logout:output_type -> api.user.v1.LogoutReply
+	24, // [24:41] is the sub-list for method output_type
+	7,  // [7:24] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -1978,7 +2075,7 @@ func file_user_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_user_v1_user_proto_rawDesc), len(file_user_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   31,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

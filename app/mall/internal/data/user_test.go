@@ -320,3 +320,20 @@ func TestUserRepo_DeleteUser_ClearsCaches(t *testing.T) {
 	require.Equal(t, "1", d.rdb.Get(context.Background(), userGenerationKey(6)).Val())
 	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), redisKey("user", 6, "g", 1)).Val())
 }
+
+func TestUserRepo_UpdateUserPasswordAdvancesTheProfileGeneration(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockQ := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+	ctx := context.Background()
+
+	mockQ.EXPECT().
+		UpdateUserPassword(gomock.Any(), db.UpdateUserPasswordParams{ID: 5, PasswordHash: "new-hash"}).
+		Times(1).
+		Return(nil)
+
+	d := newTestData(t, mockQ, mr)
+	repo := NewUserRepo(d, log.DefaultLogger)
+	require.NoError(t, repo.UpdateUserPassword(ctx, 5, "new-hash"))
+	require.Equal(t, "1", d.rdb.Get(ctx, userGenerationKey(5)).Val())
+}

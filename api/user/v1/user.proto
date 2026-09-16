@@ -44,6 +44,14 @@ service User {
       body: "*"
     };
   }
+  // ChangePassword rotates the caller's password and revokes every session
+  // issued before the change (including the caller's own tokens).
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordReply) {
+    option (google.api.http) = {
+      put: "/v1/users/me/password"
+      body: "*"
+    };
+  }
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {
     option (google.api.http) = {delete: "/v1/users/{id}"};
   }
@@ -111,9 +119,15 @@ message GetUserRequest {
 
 message UpdateUserRequest {
   int64 id = 1;
-  string nickname = 2;
-  string real_name = 3;
+  string nickname = 2 [(buf.validate.field).string = {max_bytes: 50}];
+  string real_name = 3 [(buf.validate.field).string = {max_bytes: 50}];
 }
+
+message ChangePasswordRequest {
+  string old_password = 1 [(buf.validate.field).string = {min_bytes: 8, max_bytes: 72}];
+  string new_password = 2 [(buf.validate.field).string = {min_bytes: 8, max_bytes: 72}];
+}
+message ChangePasswordReply {}
 
 message DeleteUserRequest {
   int64 id = 1;

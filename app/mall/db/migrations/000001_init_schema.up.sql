@@ -10,6 +10,7 @@ CREATE TABLE users (
   phone_hash VARCHAR(128) NOT NULL,
   phone_encrypt VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  password_changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   role VARCHAR(10) NOT NULL DEFAULT 'user',
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -22,6 +23,7 @@ COMMENT ON COLUMN users.id IS '用户全局唯一ID';
 COMMENT ON COLUMN users.phone_hash IS '手机号HMAC摘要，用于等值匹配登录';
 COMMENT ON COLUMN users.phone_encrypt IS '手机号AES对称加密密文，用于解密展示';
 COMMENT ON COLUMN users.password_hash IS 'Bcrypt加密后的密码';
+COMMENT ON COLUMN users.password_changed_at IS '密码最近变更时间；早于该时间签发的访问/刷新令牌全部失效';
 
 CREATE TABLE shipping_addresses (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

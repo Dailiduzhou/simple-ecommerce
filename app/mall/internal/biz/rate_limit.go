@@ -28,7 +28,7 @@ func RateLimitCategory(operation string) string {
 	case userv1.OperationUserRecordProductView, userv1.OperationUserDeleteBrowsingHistoryItem, userv1.OperationUserClearBrowsingHistory,
 		communityv1.OperationCommunityLikePost, communityv1.OperationCommunityUnlikePost, communityv1.OperationCommunityDeletePost, communityv1.OperationCommunityDeleteComment:
 		return "interactions"
-	case userv1.OperationUserLogin, userv1.OperationUserRegister, userv1.OperationUserRefreshToken:
+	case userv1.OperationUserLogin, userv1.OperationUserRegister, userv1.OperationUserRefreshToken, userv1.OperationUserChangePassword:
 		return "auth"
 	}
 	return ""

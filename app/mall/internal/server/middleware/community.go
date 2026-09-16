@@ -80,7 +80,11 @@ func CommunityWriteLimit(l biz.WriteLimiter) middleware.Middleware {
 func CommunityBodyLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if strings.HasPrefix(path, "/v1/posts") || strings.HasPrefix(path, "/v1/media/") || strings.HasPrefix(path, "/v1/users/me/browsing-history") {
+		// Every JSON write path the API exposes is capped, including the
+		// /v1/users/* profile and password writes that previously slipped past
+		// this filter (payment callbacks keep their provider-specific bodies).
+		if strings.HasPrefix(path, "/v1/posts") || strings.HasPrefix(path, "/v1/media/") ||
+			strings.HasPrefix(path, "/v1/users") || strings.HasPrefix(path, "/v1/orders") {
 			if r.ContentLength > 64<<10 {
 				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 				return

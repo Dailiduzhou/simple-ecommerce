@@ -126,6 +126,14 @@ func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (r *UserRepo) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	if err := r.data.DB(ctx).UpdateUserPassword(ctx, db.UpdateUserPasswordParams{ID: id, PasswordHash: passwordHash}); err != nil {
+		return err
+	}
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, userGenerationKey(id))
+	return nil
+}
+
 func (r *UserRepo) getCache(ctx context.Context, key string) (*biz.User, error) {
 	return readJSONCache[*biz.User](ctx, r.data, key)
 }
@@ -156,15 +164,16 @@ func userGenerationKey(id int64) string {
 
 func toBizUser(u db.User) *biz.User {
 	return &biz.User{
-		ID:           u.ID,
-		Nickname:     u.Nickname,
-		RealName:     u.RealName,
-		PhoneHash:    u.PhoneHash,
-		PhoneEncrypt: u.PhoneEncrypt,
-		PasswordHash: u.PasswordHash,
-		Role:         u.Role,
-		CreatedAt:    u.CreatedAt.Time,
-		UpdatedAt:    u.UpdatedAt.Time,
+		ID:                u.ID,
+		Nickname:          u.Nickname,
+		RealName:          u.RealName,
+		PhoneHash:         u.PhoneHash,
+		PhoneEncrypt:      u.PhoneEncrypt,
+		PasswordHash:      u.PasswordHash,
+		PasswordChangedAt: u.PasswordChangedAt.Time,
+		Role:              u.Role,
+		CreatedAt:         u.CreatedAt.Time,
+		UpdatedAt:         u.UpdatedAt.Time,
 	}
 }
 
