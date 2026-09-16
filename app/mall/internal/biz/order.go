@@ -21,6 +21,7 @@ const (
 	OrderStatusCompleted      = "completed"
 	OrderStatusCancelling     = "cancelling"
 	OrderStatusCancelled      = "cancelled"
+	OrderStatusRefunded       = "refunded"
 	DefaultCurrency           = "CNY"
 )
 
