@@ -1,14 +1,35 @@
 package data
 
 import (
+	"context"
 	"io/fs"
 	"testing"
 
 	dbmigrations "github.com/Dailiduzhou/simple-ecommerce/app/mall/db"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Without a password Redis is world-readable: anyone who can reach the port can
+// drop the jwt blacklist and limiter keys, so the client must send whatever the
+// configuration provides and select the configured database.
+func TestNewRedisClientHonoursPasswordAndDB(t *testing.T) {
+	mr := miniredis.RunT(t)
+	mr.RequireAuth("s3cret")
+
+	_, err := NewRedisClient(&conf.Data{Redis: &conf.Data_Redis{Addr: mr.Addr()}})
+	require.Error(t, err, "an unauthenticated client must not start against an authenticated Redis")
+
+	client, err := NewRedisClient(&conf.Data{Redis: &conf.Data_Redis{Addr: mr.Addr(), Password: "s3cret", Db: 3}})
+	require.NoError(t, err)
+	defer client.Close()
+
+	require.NoError(t, client.Set(context.Background(), "blacklist:jti", "1", 0).Err())
+	require.True(t, mr.DB(3).Exists("blacklist:jti"))
+	require.False(t, mr.DB(0).Exists("blacklist:jti"))
+}
 
 func TestRunMigrationsRequiresDatabaseSource(t *testing.T) {
 	tests := []struct {

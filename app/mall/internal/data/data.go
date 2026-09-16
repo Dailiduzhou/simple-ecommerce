@@ -131,8 +131,8 @@ func NewRedisClient(c *conf.Data) (*redis.Client, error) {
 	rdb := redis.NewClient(&redis.Options{
 		Network:      network,
 		Addr:         c.Redis.Addr,
-		Password:     "",
-		DB:           0,
+		Password:     c.Redis.Password,
+		DB:           int(c.Redis.Db),
 		DialTimeout:  durationOrDefault(c.Redis.DialTimeout, 5*time.Second),
 		ReadTimeout:  durationOrDefault(c.Redis.ReadTimeout, time.Second),
 		WriteTimeout: durationOrDefault(c.Redis.WriteTimeout, time.Second),

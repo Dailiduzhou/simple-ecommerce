@@ -16,6 +16,11 @@ data:
   redis:
     addr: redis:6379
     network: tcp
+    # Required whenever Redis is reachable from outside a trusted network:
+    # without it the jwt blacklist and limiter keys are readable/writable by
+    # anyone who can reach the port.
+    password: "${REDIS_PASSWORD}"
+    db: 0
     dial_timeout: 5s
     read_timeout: 0.2s
     write_timeout: 0.2s
