@@ -7,6 +7,7 @@
 package v1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -88,21 +89,23 @@ func (TradeState) EnumDescriptor() ([]byte, []int) {
 }
 
 // 统一创建支付请求。
-// - order_no: 商户订单号(对应 orders.out_trade_no)。
-// - method: provider-neutral 的 "provider:product"，例如 "alipay:wap"。
-// - client_ip: 客户端 IP,微信风控必传。
-// - extra_params: 渠道特有的扩展参数抹平字段:
+//   - order_no: 商户订单号(对应 orders.out_trade_no)。
+//   - method: provider-neutral 的 "provider:product"，例如 "alipay:wap"。
+//   - client_ip: 客户端 IP。服务端只使用连接层解析出的地址（受
+//     server.http.trusted_proxies 约束），请求体里的值会被忽略。
+//   - extra_params: 渠道特有的扩展参数抹平字段:
 //   - WECHAT_JSAPI 必须传 "openid"。
 //   - ALIPAY_WAP 可传 "return_url"。
-//
-// - description: 可选;省略时服务端从订单号生成安全描述。
+//   - description: 可选;省略时服务端从订单号生成安全描述。
 type CreatePaymentReq struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrderNo       string                 `protobuf:"bytes,1,opt,name=order_no,json=orderNo,proto3" json:"order_no,omitempty"`
-	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	ClientIp      string                 `protobuf:"bytes,3,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
-	ExtraParams   map[string]string      `protobuf:"bytes,4,rep,name=extra_params,json=extraParams,proto3" json:"extra_params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	OrderNo string                 `protobuf:"bytes,1,opt,name=order_no,json=orderNo,proto3" json:"order_no,omitempty"`
+	Method  string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
+	// Ignored: the server derives the address from the connection.
+	ClientIp    string            `protobuf:"bytes,3,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	ExtraParams map[string]string `protobuf:"bytes,4,rep,name=extra_params,json=extraParams,proto3" json:"extra_params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Optional; 127 bytes is the strictest channel limit (Wechat).
+	Description   string `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1095,13 +1098,13 @@ var File_payment_v1_payment_proto protoreflect.FileDescriptor
 
 const file_payment_v1_payment_proto_rawDesc = "" +
 	"\n" +
-	"\x18payment/v1/payment.proto\x12\x0eapi.payment.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9a\x02\n" +
-	"\x10CreatePaymentReq\x12\x19\n" +
-	"\border_no\x18\x01 \x01(\tR\aorderNo\x12\x16\n" +
-	"\x06method\x18\x02 \x01(\tR\x06method\x12\x1b\n" +
-	"\tclient_ip\x18\x03 \x01(\tR\bclientIp\x12T\n" +
-	"\fextra_params\x18\x04 \x03(\v21.api.payment.v1.CreatePaymentReq.ExtraParamsEntryR\vextraParams\x12 \n" +
-	"\vdescription\x18\x05 \x01(\tR\vdescription\x1a>\n" +
+	"\x18payment/v1/payment.proto\x12\x0eapi.payment.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc2\x02\n" +
+	"\x10CreatePaymentReq\x12$\n" +
+	"\border_no\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\aorderNo\x12!\n" +
+	"\x06method\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18@R\x06method\x12$\n" +
+	"\tclient_ip\x18\x03 \x01(\tB\a\xbaH\x04r\x02(-R\bclientIp\x12T\n" +
+	"\fextra_params\x18\x04 \x03(\v21.api.payment.v1.CreatePaymentReq.ExtraParamsEntryR\vextraParams\x12)\n" +
+	"\vdescription\x18\x05 \x01(\tB\a\xbaH\x04r\x02(\x7fR\vdescription\x1a>\n" +
 	"\x10ExtraParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x90\x01\n" +

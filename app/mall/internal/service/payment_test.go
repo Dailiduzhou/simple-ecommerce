@@ -8,6 +8,7 @@ import (
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	custommid "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server/middleware"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/stretchr/testify/require"
@@ -99,4 +100,20 @@ func TestProviderCallbackLimiterIsScopedAndBounded(t *testing.T) {
 
 func TestCallbackLimiterKeyUsesRemoteHost(t *testing.T) {
 	require.Equal(t, "alipay|192.0.2.1", callbackLimiterKey("alipay", "192.0.2.1:1234"))
+}
+
+func TestPaymentService_CreatePaymentUsesTheResolvedClientIP(t *testing.T) {
+	uc := &servicePaymentUsecase{payment: &biz.PaymentDO{ID: 1, UserID: 42}}
+	service := NewPaymentService(uc, nil, log.DefaultLogger)
+
+	// The middleware-resolved address wins over the request body.
+	ctx := custommid.WithClientIP(authenticatedPaymentContext(42, "user"), "203.0.113.7")
+	_, err := service.CreatePayment(ctx, &pb.CreatePaymentReq{OrderNo: "order_1", Method: "wechat:native", ClientIp: "10.0.0.1"})
+	require.NoError(t, err)
+	require.Equal(t, "203.0.113.7", uc.prepayArgs.ClientIP, "a spoofed client_ip must not reach the channel")
+
+	// Without the middleware there is no address to trust.
+	_, err = service.CreatePayment(authenticatedPaymentContext(42, "user"), &pb.CreatePaymentReq{OrderNo: "order_1", Method: "wechat:native", ClientIp: "10.0.0.1"})
+	require.NoError(t, err)
+	require.Empty(t, uc.prepayArgs.ClientIP)
 }

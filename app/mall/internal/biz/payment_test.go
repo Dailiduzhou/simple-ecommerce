@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -522,3 +523,19 @@ type gatewayTestAdapter struct {
 
 func (a *gatewayTestAdapter) Provider() string                   { return a.provider }
 func (a *gatewayTestAdapter) Supports(method PaymentMethod) bool { return method.Product == "wap" }
+
+// An over-long description is refused before a payment row is created, because
+// Wechat rejects >127 bytes and Alipay >256 bytes instead of truncating.
+func TestPrepayForOrder_RejectsOverlongDescription(t *testing.T) {
+	gateway := &paymentTestGateway{}
+	repo := &paymentTestRepo{}
+	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 100, Currency: "CNY", Status: OrderStatusPendingPayment, OutTradeNo: "order_5", ExpiresAt: time.Now().Add(time.Minute)}}
+	uc := NewPaymentUsecase(gateway, repo, nil, orders, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+
+	_, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{
+		OrderNo: "order_5", UserID: 42, Method: PaymentMethod{Provider: "wechat", Product: "native"},
+		Description: strings.Repeat("x", MaxPaymentDescriptionBytes+1),
+	})
+	require.ErrorIs(t, err, ErrPaymentDescriptionTooLong)
+	require.Nil(t, repo.payment, "no payment may be created for a rejected description")
+}

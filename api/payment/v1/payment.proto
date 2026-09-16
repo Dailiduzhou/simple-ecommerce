@@ -3,6 +3,7 @@ syntax = "proto3";
 package api.payment.v1;
 
 import "google/api/annotations.proto";
+import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1;v1";
@@ -65,17 +66,20 @@ service Payment {
 // 统一创建支付请求。
 // - order_no: 商户订单号(对应 orders.out_trade_no)。
 // - method: provider-neutral 的 "provider:product"，例如 "alipay:wap"。
-// - client_ip: 客户端 IP,微信风控必传。
+// - client_ip: 客户端 IP。服务端只使用连接层解析出的地址（受
+//   server.http.trusted_proxies 约束），请求体里的值会被忽略。
 // - extra_params: 渠道特有的扩展参数抹平字段:
 //     * WECHAT_JSAPI 必须传 "openid"。
 //     * ALIPAY_WAP 可传 "return_url"。
 // - description: 可选;省略时服务端从订单号生成安全描述。
 message CreatePaymentReq {
-  string order_no = 1;
-  string method = 2;
-  string client_ip = 3;
+  string order_no = 1 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+  string method = 2 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+  // Ignored: the server derives the address from the connection.
+  string client_ip = 3 [(buf.validate.field).string = {max_bytes: 45}];
   map<string, string> extra_params = 4;
-  string description = 5;
+  // Optional; 127 bytes is the strictest channel limit (Wechat).
+  string description = 5 [(buf.validate.field).string = {max_bytes: 127}];
 }
 
 // 统一创建支付响应。

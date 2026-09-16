@@ -42,21 +42,29 @@ func CommunityWriteLimit(l biz.WriteLimiter, clientIP *ClientIPResolver) middlew
 			if c, ok := biz.ClaimsFromContext(ctx); ok && c != nil {
 				actorID = c.UserID
 			}
+			// The caller address is resolved for every operation (not only
+			// rate-limited writes) because handlers forward it to channel risk
+			// control. Forwarded headers are only trusted when the immediate peer
+			// is a configured trusted proxy (server.http.trusted_proxies);
+			// otherwise the peer address is used and a spoofed
+			// X-Forwarded-For is ignored.
+			clientAddr := ""
+			if r, ok := kratoshttp.RequestFromServerContext(ctx); ok {
+				clientAddr = clientIP.ClientIP(r.RemoteAddr, r.Header)
+			} else if p, ok := peer.FromContext(ctx); ok {
+				clientAddr = clientIP.ClientIP(p.Addr.String(), nil)
+			}
+			ctx = WithClientIP(ctx, clientAddr)
 			// Reads never touch the limiter: a missing or failing Redis must not take
 			// down history, feed or detail endpoints.
 			if biz.RateLimitCategory(op) != "" {
 				if l == nil {
 					return nil, errors.ServiceUnavailable("RATE_LIMIT_UNAVAILABLE", "write limiter is not configured")
 				}
-				address := "unknown"
-				if r, ok := kratoshttp.RequestFromServerContext(ctx); ok {
-					address = clientIP.ClientIP(r.RemoteAddr, r.Header)
-				} else if p, ok := peer.FromContext(ctx); ok {
-					address = clientIP.ClientIP(p.Addr.String(), nil)
+				address := clientAddr
+				if address == "" {
+					address = "unknown"
 				}
-				// Forwarded headers are only trusted when the immediate peer is a
-				// configured trusted proxy (server.http.trusted_proxies); otherwise
-				// the peer address is used and a spoofed X-Forwarded-For is ignored.
 				if e := l.Allow(ctx, actorID, address, op); e != nil {
 					return nil, e
 				}
