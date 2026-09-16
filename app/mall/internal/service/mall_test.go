@@ -310,9 +310,12 @@ func TestMallService_UpdateEvent_NotFound(t *testing.T) {
 		},
 	})
 
+	startAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
 	got, err := s.UpdateEvent(authenticatedPaymentContext(1, "admin"), &pb.UpdateEventRequest{
-		Id:   99,
-		Name: "missing",
+		Id:      99,
+		Name:    "missing",
+		StartAt: timestamppb.New(startAt),
+		EndAt:   timestamppb.New(startAt.Add(2 * time.Hour)),
 	})
 	require.Error(t, err)
 	assert.Nil(t, got)

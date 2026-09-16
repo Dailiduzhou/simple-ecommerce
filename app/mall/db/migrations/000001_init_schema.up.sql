@@ -77,7 +77,10 @@ CREATE TABLE products (
   deleted_at TIMESTAMPTZ,
   CONSTRAINT fk_product_category
     FOREIGN KEY (category_id) REFERENCES categories(id),
-  CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1)
+  CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1),
+  -- 库存与价格不允许为负：扣减/回补逻辑一旦出错，这里直接拒绝而不是让脏数据落库。
+  CONSTRAINT products_stock_check CHECK (stock >= 0),
+  CONSTRAINT products_price_minor_check CHECK (price_minor >= 0)
 );
 
 CREATE INDEX idx_products_category_id ON products(category_id);
@@ -215,7 +218,10 @@ CREATE TABLE order_refunds (
   CONSTRAINT fk_order_refund_user
     FOREIGN KEY (user_id) REFERENCES users(id),
   CONSTRAINT fk_order_refund_payment
-    FOREIGN KEY (payment_id) REFERENCES payments(id)
+    FOREIGN KEY (payment_id) REFERENCES payments(id),
+  -- 退款金额必须是正数且不超过对应的应付总额，避免超退。
+  CONSTRAINT order_refunds_total_amount_check CHECK (total_amount_minor > 0),
+  CONSTRAINT order_refunds_amount_check CHECK (refund_amount_minor > 0 AND refund_amount_minor <= total_amount_minor)
 );
 
 CREATE UNIQUE INDEX idx_order_refunds_out_refund_no ON order_refunds(out_refund_no);
@@ -283,7 +289,9 @@ CREATE TABLE events (
   description TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  deleted_at TIMESTAMPTZ
+  deleted_at TIMESTAMPTZ,
+  -- 活动结束必须晚于开始，否则窗口判定（DB 时钟）会退化成永久有效/永久过期。
+  CONSTRAINT events_window_check CHECK (end_at > start_at)
 );
 
 CREATE INDEX idx_events_status ON events(status) WHERE deleted_at IS NULL;

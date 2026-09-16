@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/shopspring/decimal"
@@ -275,8 +276,20 @@ func NewEventUsecase(repo EventRepo, logger log.Logger) EventUsecase {
 }
 
 func (uc *eventUsecase) CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+	if err := validateEventWindow(startAt, endAt); err != nil {
+		return nil, err
+	}
 	cover := mediaFromCoverURL(coverImage)
 	return uc.repo.CreateEvent(ctx, name, status, cover, mediaAssets, description, startAt, endAt)
+}
+
+// validateEventWindow mirrors the events_window_check constraint so an invalid
+// window is a 400 instead of a 500 from the check violation.
+func validateEventWindow(startAt, endAt time.Time) error {
+	if startAt.IsZero() || endAt.IsZero() || !endAt.After(startAt) {
+		return mallv1.ErrorEventInvalidWindow("event end must be after its start")
+	}
+	return nil
 }
 
 func (uc *eventUsecase) GetEvent(ctx context.Context, id int64) (*Event, error) {
@@ -289,6 +302,9 @@ func (uc *eventUsecase) ListEvents(ctx context.Context, status *int32, pageSize 
 }
 
 func (uc *eventUsecase) UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+	if err := validateEventWindow(startAt, endAt); err != nil {
+		return nil, err
+	}
 	cover := mediaFromCoverURL(coverImage)
 	return uc.repo.UpdateEvent(ctx, id, name, cover, mediaAssets, description, startAt, endAt)
 }

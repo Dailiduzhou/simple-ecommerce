@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -305,4 +306,31 @@ func TestEffectivePriceMinorHalfUpRounding(t *testing.T) {
 	require.Error(t, err)
 	_, err = EffectivePriceMinor(-1, decimal.RequireFromString("1"))
 	require.Error(t, err)
+}
+
+// The events_window_check constraint must surface as a 400 from the usecase
+// instead of a 500 from PostgreSQL.
+func TestEventUsecase_RejectsInvalidWindow(t *testing.T) {
+	uc := NewEventUsecase(&fakeEventRepo{}, log.DefaultLogger)
+	start := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+
+	for _, tt := range []struct {
+		name           string
+		startAt, endAt time.Time
+	}{
+		{"equal", start, start},
+		{"reversed", start, start.Add(-time.Minute)},
+		{"zero end", start, time.Time{}},
+		{"zero start", time.Time{}, start},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := uc.CreateEvent(context.Background(), "launch", 0, "", nil, "", tt.startAt, tt.endAt)
+			require.Error(t, err)
+			require.Equal(t, int32(400), kratoserrors.FromError(err).Code)
+
+			_, err = uc.UpdateEvent(context.Background(), 1, "launch", "", nil, "", tt.startAt, tt.endAt)
+			require.Error(t, err)
+			require.Equal(t, int32(400), kratoserrors.FromError(err).Code)
+		})
+	}
 }
