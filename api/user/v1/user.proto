@@ -222,6 +222,7 @@ message BrowsingHistoryItem {
   bool available = 4;
   google.protobuf.Timestamp last_viewed_at = 5;
   string cover_image_json = 6;
+  int64 effective_price_minor = 7;
 }
 message ListBrowsingHistoryReply {
   repeated BrowsingHistoryItem items = 1;

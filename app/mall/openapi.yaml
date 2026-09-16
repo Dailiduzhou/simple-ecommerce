@@ -1962,6 +1962,8 @@ components:
                     format: date-time
                 coverImageJson:
                     type: string
+                effectivePriceMinor:
+                    type: string
         api.user.v1.ClearBrowsingHistoryReply:
             type: object
             properties: {}

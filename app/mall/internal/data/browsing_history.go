@@ -56,9 +56,14 @@ func (r *BrowsingHistoryRepo) List(ctx context.Context, uid int64, p biz.Page, f
 	}
 	out := make([]biz.BrowsingHistoryItem, 0, len(rows))
 	for _, h := range rows {
-		item := biz.BrowsingHistoryItem{ProductID: h.ProductID, Name: h.Name, PriceMinor: h.PriceMinor, CoverImageJSON: string(h.CoverImage), Available: h.Available, LastViewedAt: h.LastViewedAt.Time}
+		effective, e := biz.EffectivePriceMinor(h.PriceMinor, h.Discount)
+		if e != nil {
+			return nil, "", e
+		}
+		item := biz.BrowsingHistoryItem{ProductID: h.ProductID, Name: h.Name, PriceMinor: h.PriceMinor, EffectivePriceMinor: effective, CoverImageJSON: string(h.CoverImage), Available: h.Available, LastViewedAt: h.LastViewedAt.Time}
 		if !item.Available {
 			item.PriceMinor = 0
+			item.EffectivePriceMinor = 0
 		}
 		out = append(out, item)
 	}

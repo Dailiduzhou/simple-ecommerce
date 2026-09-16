@@ -265,6 +265,37 @@ func (q *Queries) GetOrderForUpdate(ctx context.Context, id int64) (Order, error
 	return i, err
 }
 
+const getOrderForUpdateByPaymentID = `-- name: GetOrderForUpdateByPaymentID :one
+SELECT o.id, o.user_id, o.address_id, o.total_amount_minor, o.currency, o.status, o.is_completed, o.out_trade_no, o.idempotency_key, o.request_hash, o.expires_at, o.created_at, o.updated_at
+FROM orders o
+JOIN payments p ON p.id = $1 AND o.id = p.order_id
+FOR UPDATE OF o
+`
+
+// Refund settlement locks the order row before the payment row, matching
+// every other order-payment transaction (ApplyPayQuery, ExpireOrder,
+// CancelOrderByUser); the inverted order would deadlock against them.
+func (q *Queries) GetOrderForUpdateByPaymentID(ctx context.Context, id int64) (Order, error) {
+	row := q.db.QueryRow(ctx, getOrderForUpdateByPaymentID, id)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AddressID,
+		&i.TotalAmountMinor,
+		&i.Currency,
+		&i.Status,
+		&i.IsCompleted,
+		&i.OutTradeNo,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const hasOngoingOrders = `-- name: HasOngoingOrders :one
 SELECT EXISTS (
   SELECT 1

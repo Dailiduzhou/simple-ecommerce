@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
 
 const cleanupBrowsingHistory = `-- name: CleanupBrowsingHistory :execrows
@@ -71,6 +72,7 @@ SELECT
   h.user_id, h.product_id, h.first_viewed_at, h.last_viewed_at,
   p.name,
   p.price_minor,
+  p.discount,
   p.cover_image,
   (p.status = 1 AND p.deleted_at IS NULL)::boolean AS available
 FROM product_browsing_history h
@@ -108,6 +110,7 @@ type ListBrowsingHistoryRow struct {
 	LastViewedAt  pgtype.Timestamptz
 	Name          string
 	PriceMinor    int64
+	Discount      decimal.Decimal
 	CoverImage    []byte
 	Available     bool
 }
@@ -139,6 +142,7 @@ func (q *Queries) ListBrowsingHistory(ctx context.Context, arg ListBrowsingHisto
 			&i.LastViewedAt,
 			&i.Name,
 			&i.PriceMinor,
+			&i.Discount,
 			&i.CoverImage,
 			&i.Available,
 		); err != nil {

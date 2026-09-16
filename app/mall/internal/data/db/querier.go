@@ -72,6 +72,10 @@ type Querier interface {
 	// enqueue site could not embed the deadline (callback/admin triggered jobs).
 	GetOrderExpiryByPaymentID(ctx context.Context, id int64) (pgtype.Timestamptz, error)
 	GetOrderForUpdate(ctx context.Context, id int64) (Order, error)
+	// Refund settlement locks the order row before the payment row, matching
+	// every other order-payment transaction (ApplyPayQuery, ExpireOrder,
+	// CancelOrderByUser); the inverted order would deadlock against them.
+	GetOrderForUpdateByPaymentID(ctx context.Context, id int64) (Order, error)
 	GetOrderRefundByPaymentID(ctx context.Context, paymentID pgtype.Int8) (OrderRefund, error)
 	GetPayment(ctx context.Context, id int64) (Payment, error)
 	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (Payment, error)

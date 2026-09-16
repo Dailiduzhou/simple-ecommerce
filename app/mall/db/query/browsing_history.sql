@@ -24,6 +24,7 @@ SELECT
   h.*,
   p.name,
   p.price_minor,
+  p.discount,
   p.cover_image,
   (p.status = 1 AND p.deleted_at IS NULL)::boolean AS available
 FROM product_browsing_history h

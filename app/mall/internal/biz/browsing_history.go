@@ -8,12 +8,13 @@ import (
 )
 
 type BrowsingHistoryItem struct {
-	ProductID      int64
-	Name           string
-	PriceMinor     int64
-	CoverImageJSON string
-	Available      bool
-	LastViewedAt   time.Time
+	ProductID          int64
+	Name               string
+	PriceMinor         int64
+	EffectivePriceMinor int64
+	CoverImageJSON     string
+	Available          bool
+	LastViewedAt       time.Time
 }
 
 // HistoryFilter is the optional half-open window [Start, End) applied to

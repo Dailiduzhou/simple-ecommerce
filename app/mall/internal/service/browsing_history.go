@@ -38,7 +38,7 @@ func (s *UserService) ListBrowsingHistory(ctx context.Context, r *pb.ListBrowsin
 	}
 	out := &pb.ListBrowsingHistoryReply{NextCursor: next}
 	for _, h := range items {
-		out.Items = append(out.Items, &pb.BrowsingHistoryItem{ProductId: h.ProductID, Name: h.Name, PriceMinor: h.PriceMinor, Available: h.Available, LastViewedAt: timestamppb.New(h.LastViewedAt), CoverImageJson: h.CoverImageJSON})
+		out.Items = append(out.Items, &pb.BrowsingHistoryItem{ProductId: h.ProductID, Name: h.Name, PriceMinor: h.PriceMinor, EffectivePriceMinor: h.EffectivePriceMinor, Available: h.Available, LastViewedAt: timestamppb.New(h.LastViewedAt), CoverImageJson: h.CoverImageJSON})
 	}
 	return out, nil
 }

@@ -136,3 +136,12 @@ LIMIT sqlc.arg(limit_rows);
 -- Lock the request identity BEFORE reading stock or checking for a replay.
 SELECT pg_advisory_xact_lock(hashtextextended(
   'order-idempotency:' || sqlc.arg(user_id)::bigint::text || ':' || sqlc.arg(idempotency_key)::text, 0));
+
+-- name: GetOrderForUpdateByPaymentID :one
+-- Refund settlement locks the order row before the payment row, matching
+-- every other order-payment transaction (ApplyPayQuery, ExpireOrder,
+-- CancelOrderByUser); the inverted order would deadlock against them.
+SELECT o.*
+FROM orders o
+JOIN payments p ON p.id = $1 AND o.id = p.order_id
+FOR UPDATE OF o;

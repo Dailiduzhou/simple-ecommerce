@@ -1434,15 +1434,16 @@ func (x *ListBrowsingHistoryRequest) GetEndTime() *timestamppb.Timestamp {
 }
 
 type BrowsingHistoryItem struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ProductId      int64                  `protobuf:"varint,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
-	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	PriceMinor     int64                  `protobuf:"varint,3,opt,name=price_minor,json=priceMinor,proto3" json:"price_minor,omitempty"`
-	Available      bool                   `protobuf:"varint,4,opt,name=available,proto3" json:"available,omitempty"`
-	LastViewedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_viewed_at,json=lastViewedAt,proto3" json:"last_viewed_at,omitempty"`
-	CoverImageJson string                 `protobuf:"bytes,6,opt,name=cover_image_json,json=coverImageJson,proto3" json:"cover_image_json,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ProductId           int64                  `protobuf:"varint,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	Name                string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	PriceMinor          int64                  `protobuf:"varint,3,opt,name=price_minor,json=priceMinor,proto3" json:"price_minor,omitempty"`
+	Available           bool                   `protobuf:"varint,4,opt,name=available,proto3" json:"available,omitempty"`
+	LastViewedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_viewed_at,json=lastViewedAt,proto3" json:"last_viewed_at,omitempty"`
+	CoverImageJson      string                 `protobuf:"bytes,6,opt,name=cover_image_json,json=coverImageJson,proto3" json:"cover_image_json,omitempty"`
+	EffectivePriceMinor int64                  `protobuf:"varint,7,opt,name=effective_price_minor,json=effectivePriceMinor,proto3" json:"effective_price_minor,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *BrowsingHistoryItem) Reset() {
@@ -1515,6 +1516,13 @@ func (x *BrowsingHistoryItem) GetCoverImageJson() string {
 		return x.CoverImageJson
 	}
 	return ""
+}
+
+func (x *BrowsingHistoryItem) GetEffectivePriceMinor() int64 {
+	if x != nil {
+		return x.EffectivePriceMinor
+	}
+	return 0
 }
 
 type ListBrowsingHistoryReply struct {
@@ -1823,7 +1831,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x182(\x00R\bpageSize\x129\n" +
 	"\n" +
 	"start_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x125\n" +
-	"\bend_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\"\xf3\x01\n" +
+	"\bend_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\"\xa7\x02\n" +
 	"\x13BrowsingHistoryItem\x12\x1d\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\x03R\tproductId\x12\x12\n" +
@@ -1832,7 +1840,8 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"priceMinor\x12\x1c\n" +
 	"\tavailable\x18\x04 \x01(\bR\tavailable\x12@\n" +
 	"\x0elast_viewed_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\flastViewedAt\x12(\n" +
-	"\x10cover_image_json\x18\x06 \x01(\tR\x0ecoverImageJson\"s\n" +
+	"\x10cover_image_json\x18\x06 \x01(\tR\x0ecoverImageJson\x122\n" +
+	"\x15effective_price_minor\x18\a \x01(\x03R\x13effectivePriceMinor\"s\n" +
 	"\x18ListBrowsingHistoryReply\x126\n" +
 	"\x05items\x18\x01 \x03(\v2 .api.user.v1.BrowsingHistoryItemR\x05items\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +

@@ -373,3 +373,27 @@ func (m *reaperMQ) EnqueueExpireOrder(_ context.Context, args biz.ExpireOrderArg
 	m.enqueued = append(m.enqueued, args)
 	return &biz.MQJob{ID: 1}, nil
 }
+
+func TestApplyPayQuery_RefundConflictOutsidePaidOrderRollsBack(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	redisServer := miniredis.RunT(t)
+	payment := statePayment(biz.PaymentStatusSuccess)
+	result := stateResult(10000)
+	result.TradeState = biz.TradeStateRefund
+	refund := db.OrderRefund{ID: 11, OrderID: 2, UserID: 3, OutRefundNo: "rfnd_11", Status: biz.PaymentRefundStatusPending}
+	q.EXPECT().GetPayment(gomock.Any(), int64(1)).Return(payment, nil)
+	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPendingPayment}, nil)
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{payment}, nil)
+	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), gomock.Any()).Return(refund, nil)
+	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), gomock.Any()).Return(refund, nil)
+	q.EXPECT().UpdatePaymentRefunded(gomock.Any(), int64(1)).Return(int64(1), nil)
+	// The order is not in 'paid' (for example it was already cancelled), so
+	// the whole refund settlement rolls back for a visible conflict instead
+	// of half-settling the story.
+	q.EXPECT().MarkOrderRefunded(gomock.Any(), int64(2)).Return(db.Order{}, pgx.ErrNoRows)
+	d := newTestData(t, q, redisServer)
+	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, result)
+	require.ErrorIs(t, err, biz.ErrPaymentStateConflict)
+}
