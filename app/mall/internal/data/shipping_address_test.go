@@ -27,7 +27,7 @@ func TestShippingAddressCacheCannotCrossOwners(t *testing.T) {
 	redisServer := miniredis.RunT(t)
 	d := newTestData(t, q, redisServer)
 	repo := NewShippingAddressRepo(d, testTxManager{q: q}, log.DefaultLogger)
-	repo.setCache(context.Background(), shippingAddressCacheKey(2, 9), &biz.ShippingAddress{ID: 9, UserID: 1})
+	repo.setCache(context.Background(), redisKey(shippingAddressCacheKey(2, 9), "g", 0), &biz.ShippingAddress{ID: 9, UserID: 1})
 	address, err := repo.GetShippingAddress(context.Background(), 9, 2)
 	require.True(t, mallv1.IsShippingAddressNotFound(err))
 	require.Nil(t, address)
@@ -55,8 +55,12 @@ func TestSetDefaultShippingAddressIsAtomicAndInvalidatesBothDetails(t *testing.T
 	q.EXPECT().SetDefaultShippingAddress(gomock.Any(), db.SetDefaultShippingAddressParams{ID: 9, UserID: 2}).Return(nil)
 	d := newTestData(t, q, redisServer)
 	repo := NewShippingAddressRepo(d, testTxManager{q: q}, log.DefaultLogger)
-	repo.setCache(context.Background(), shippingAddressCacheKey(2, 8), &biz.ShippingAddress{ID: 8, UserID: 2})
-	repo.setCache(context.Background(), shippingAddressCacheKey(2, 9), &biz.ShippingAddress{ID: 9, UserID: 2})
+	repo.setCache(context.Background(), redisKey(shippingAddressCacheKey(2, 8), "g", 0), &biz.ShippingAddress{ID: 8, UserID: 2})
+	repo.setCache(context.Background(), redisKey(shippingAddressCacheKey(2, 9), "g", 0), &biz.ShippingAddress{ID: 9, UserID: 2})
 	require.NoError(t, repo.SetDefaultShippingAddress(context.Background(), 9, 2))
-	require.Equal(t, int64(0), d.rdb.Exists(context.Background(), shippingAddressCacheKey(2, 8), shippingAddressCacheKey(2, 9)).Val())
+	// Both details and the list moved to a new generation, so the previously
+	// cached values can no longer be served.
+	require.Equal(t, "1", d.rdb.Get(context.Background(), shippingAddressGenerationKey(2, 8)).Val())
+	require.Equal(t, "1", d.rdb.Get(context.Background(), shippingAddressGenerationKey(2, 9)).Val())
+	require.Equal(t, "1", d.rdb.Get(context.Background(), shippingAddressListGenerationKey(2)).Val())
 }

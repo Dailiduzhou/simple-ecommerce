@@ -83,7 +83,7 @@ func (r *AuthRepo) LoginFailures(ctx context.Context, phoneHash string) (int64, 
 
 func (r *AuthRepo) ClearLoginFailures(ctx context.Context, phoneHash string) error {
 	key := redisKey("auth", "login", "fail", phoneHash)
-	if err := r.rdb.Del(ctx, key).Err(); err != nil {
+	if err := r.rdb.Unlink(ctx, key).Err(); err != nil {
 		r.log.Errorf("clear login failures failed: %v", err)
 		return err
 	}

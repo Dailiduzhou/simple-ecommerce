@@ -173,6 +173,7 @@ func TestUserRepo_CreateUser_CachesByIDAndPhoneHash(t *testing.T) {
 		Times(1).
 		Return(mockUser, nil)
 	mockQ.EXPECT().GetUserByPhoneHash(gomock.Any(), "hash3").Times(1).Return(mockUser, nil)
+	mockQ.EXPECT().GetUserByID(gomock.Any(), int64(3)).Times(1).Return(mockUser, nil)
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewUserRepo(d, log.DefaultLogger)
@@ -188,6 +189,13 @@ func TestUserRepo_CreateUser_CachesByIDAndPhoneHash(t *testing.T) {
 	byPhone, err := repo.GetUserByPhoneHash(context.Background(), "hash3")
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), byPhone.ID)
+
+	// The create advanced the generation and the read repopulated the profile
+	// cache under it, without credentials.
+	require.Equal(t, "1", d.rdb.Get(context.Background(), userGenerationKey(3)).Val())
+	profile := d.rdb.Get(context.Background(), redisKey("user", 3, "g", 1)).Val()
+	require.NotContains(t, profile, "pwd3")
+	require.NotContains(t, profile, "PasswordHash")
 }
 
 func TestUserRepo_GetUserByPhoneHash_CacheHit(t *testing.T) {
@@ -246,13 +254,7 @@ func TestUserRepo_UpdateUser_RefreshesCaches(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewUserRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), "user:5", &biz.User{
-		ID:        5,
-		Nickname:  "old",
-		PhoneHash: "hash5",
-		Role:      "user",
-	})
-	repo.setCache(context.Background(), "user:phone:hash5", &biz.User{
+	repo.setCache(context.Background(), redisKey("user", 5, "g", 0), &biz.User{
 		ID:        5,
 		Nickname:  "old",
 		PhoneHash: "hash5",
@@ -274,6 +276,7 @@ func TestUserRepo_UpdateUser_RefreshesCaches(t *testing.T) {
 			Role:      "user",
 		}, nil)
 	mockQ.EXPECT().GetUserByPhoneHash(gomock.Any(), "hash5").Times(1).Return(db.User{ID: 5, Nickname: "new", RealName: "real", PhoneHash: "hash5", Role: "user"}, nil)
+	mockQ.EXPECT().GetUserByID(gomock.Any(), int64(5)).Times(1).Return(db.User{ID: 5, Nickname: "new", RealName: "real", PhoneHash: "hash5", Role: "user"}, nil)
 
 	u, err := repo.UpdateUser(context.Background(), 5, "new", "real")
 	require.NoError(t, err)
@@ -297,23 +300,13 @@ func TestUserRepo_DeleteUser_ClearsCaches(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewUserRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), "user:6", &biz.User{
-		ID:        6,
-		Nickname:  "delete_me",
-		PhoneHash: "hash6",
-		Role:      "user",
-	})
-	repo.setCache(context.Background(), "user:phone:hash6", &biz.User{
+	repo.setCache(context.Background(), redisKey("user", 6, "g", 0), &biz.User{
 		ID:        6,
 		Nickname:  "delete_me",
 		PhoneHash: "hash6",
 		Role:      "user",
 	})
 
-	mockQ.EXPECT().
-		GetUserByID(gomock.Any(), int64(6)).
-		Times(1).
-		Return(db.User{ID: 6, PhoneHash: "hash6"}, nil)
 	mockQ.EXPECT().
 		DeleteUser(gomock.Any(), int64(6)).
 		Times(1).
@@ -322,6 +315,8 @@ func TestUserRepo_DeleteUser_ClearsCaches(t *testing.T) {
 	err := repo.DeleteUser(context.Background(), 6)
 	require.NoError(t, err)
 
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), "user:6").Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), "user:phone:hash6").Val())
+	// The delete advanced the generation: the cached profile below it is no
+	// longer reachable even though its key survives until the TTL expires.
+	require.Equal(t, "1", d.rdb.Get(context.Background(), userGenerationKey(6)).Val())
+	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), redisKey("user", 6, "g", 1)).Val())
 }

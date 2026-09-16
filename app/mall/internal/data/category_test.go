@@ -73,7 +73,7 @@ func TestCategoryRepo_CreateCategory_InvalidatesListCache(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewCategoryRepo(d, log.DefaultLogger)
-	repo.setListCache(context.Background(), categoryListCacheKey(0), []biz.Category{
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(0), "g", 0), []biz.Category{
 		{ID: 99, Name: "stale"},
 	})
 
@@ -115,7 +115,7 @@ func TestCategoryRepo_ListSubCategories_CacheHit(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewCategoryRepo(d, log.DefaultLogger)
-	repo.setListCache(context.Background(), categoryListCacheKey(2), []biz.Category{
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2), "g", 0), []biz.Category{
 		{ID: 3, ParentID: 2, Name: "cases", SortOrder: 1},
 	})
 
@@ -134,13 +134,13 @@ func TestCategoryRepo_UpdateCategory_InvalidatesParentListCache(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewCategoryRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), "category:3", &biz.Category{
+	repo.setCache(context.Background(), redisKey("category", 3, "g", 0), &biz.Category{
 		ID:        3,
 		ParentID:  2,
 		Name:      "old",
 		SortOrder: 1,
 	})
-	repo.setListCache(context.Background(), categoryListCacheKey(2), []biz.Category{
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2), "g", 0), []biz.Category{
 		{ID: 99, ParentID: 2, Name: "stale"},
 	})
 
@@ -150,6 +150,16 @@ func TestCategoryRepo_UpdateCategory_InvalidatesParentListCache(t *testing.T) {
 			Name:      "new",
 			SortOrder: 4,
 		}).
+		Times(1).
+		Return(db.Category{
+			ID:        3,
+			ParentID:  pgtype.Int8{Int64: 2, Valid: true},
+			Name:      "new",
+			SortOrder: 4,
+		}, nil)
+
+	mockQ.EXPECT().
+		GetCategory(gomock.Any(), int64(3)).
 		Times(1).
 		Return(db.Category{
 			ID:        3,
@@ -192,19 +202,19 @@ func TestCategoryRepo_DeleteCategory_ClearsRelatedCaches(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewCategoryRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), "category:3", &biz.Category{
+	repo.setCache(context.Background(), redisKey("category", 3, "g", 0), &biz.Category{
 		ID:       3,
 		ParentID: 2,
 		Name:     "parent",
 	})
-	repo.setCache(context.Background(), "category:4", &biz.Category{
+	repo.setCache(context.Background(), redisKey("category", 4, "g", 0), &biz.Category{
 		ID:       4,
 		ParentID: 3,
 		Name:     "child",
 	})
-	repo.setListCache(context.Background(), categoryListCacheKey(0), []biz.Category{{ID: 99, Name: "stale top"}})
-	repo.setListCache(context.Background(), categoryListCacheKey(2), []biz.Category{{ID: 3, ParentID: 2, Name: "stale parent list"}})
-	repo.setListCache(context.Background(), categoryListCacheKey(3), []biz.Category{{ID: 4, ParentID: 3, Name: "child"}})
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(0), "g", 0), []biz.Category{{ID: 99, Name: "stale top"}})
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2), "g", 0), []biz.Category{{ID: 3, ParentID: 2, Name: "stale parent list"}})
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(3), "g", 0), []biz.Category{{ID: 4, ParentID: 3, Name: "child"}})
 
 	mockQ.EXPECT().
 		DeleteCategory(gomock.Any(), int64(3)).
@@ -214,9 +224,11 @@ func TestCategoryRepo_DeleteCategory_ClearsRelatedCaches(t *testing.T) {
 	err := repo.DeleteCategory(context.Background(), 3)
 	require.NoError(t, err)
 
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), "category:3").Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), "category:4").Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), categoryListCacheKey(0)).Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), categoryListCacheKey(2)).Val())
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), categoryListCacheKey(3)).Val())
+	// Superseded generations stay in Redis until their TTL expires, but every
+	// generation a reader consults has advanced past them.
+	ctx := context.Background()
+	for _, key := range []string{categoryGenerationKey(3), categoryGenerationKey(4), categoryListGenerationKey} {
+		assert.Equal(t, "1", d.rdb.Get(ctx, key).Val(), key)
+	}
+	assert.Equal(t, int64(0), d.rdb.Exists(ctx, redisKey("category", 3, "g", 1)).Val())
 }
