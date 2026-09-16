@@ -7,7 +7,9 @@ import (
 
 	dbmigrations "github.com/Dailiduzhou/simple-ecommerce/app/mall/db"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
+	mockdb "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db/mock"
 	"github.com/alicebob/miniredis/v2"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -85,4 +87,20 @@ func TestEmbeddedMigrationsAvailable(t *testing.T) {
 	assert.Contains(t, string(initSchema), "payment_id BIGINT")
 	assert.Contains(t, string(initSchema), "last_error TEXT NOT NULL DEFAULT ''")
 	assert.Contains(t, string(initSchema), "CREATE UNIQUE INDEX idx_order_refunds_payment_id")
+}
+
+// A nested InTx must fail loudly instead of quietly opening a second
+// transaction whose writes commit independently of the outer one.
+func TestInTxRejectsNestedTransactions(t *testing.T) {
+	tx := &transaction{}
+	outer := context.WithValue(context.Background(), txStateKey{}, &txState{})
+	err := tx.InTx(outer, func(context.Context) error {
+		t.Fatal("a nested call must not run the body")
+		return nil
+	})
+	require.ErrorContains(t, err, "transaction already active")
+
+	// A context that only carries the transaction querier is equally nested.
+	injected := WithQuerier(context.Background(), mockdb.NewMockQuerier(gomock.NewController(t)), nil)
+	require.ErrorContains(t, tx.InTx(injected, func(context.Context) error { return nil }), "transaction already active")
 }
