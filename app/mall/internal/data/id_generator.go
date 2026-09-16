@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -144,7 +145,10 @@ func (g *snowflakeGenerator) GenerateOrderNo32(prefix string) string {
 }
 
 // GenerateOrderNo64 生成严格 64 位的订单号
-// 格式: 业务前缀(4位) + 时间戳(14位) + 用户ID补齐(8位) + 雪花ID补齐(19位) + 随机串(19位) = 64位
+// 格式: 业务前缀(4位) + 时间戳(14位) + 用户ID base36 补齐(8位) + 雪花ID补齐(19位) + 随机串(19位) = 64位
+//
+// 用户ID 使用 base36 而不是 %08d：十进制补零在用户量达到 10^8 时会占满
+// 8 位并撑破 VARCHAR(64) 列（base36 的 8 位可容纳 36^8 ≈ 2.8×10^12 个用户）。
 func (g *snowflakeGenerator) GenerateOrderNo64(prefix string, userID int64) string {
 	if len(prefix) > 4 {
 		prefix = prefix[:4]
@@ -160,7 +164,22 @@ func (g *snowflakeGenerator) GenerateOrderNo64(prefix string, userID int64) stri
 	// 生成 19 位安全随机串 (包含大小写字母和数字)
 	randomStr := generateSecureRandomString(19)
 
-	return fmt.Sprintf("%s%s%08d%019d%s", prefix, timestamp, userID, snowInt64, randomStr)
+	return fmt.Sprintf("%s%s%s%019d%s", prefix, timestamp, base36UserID(userID), snowInt64, randomStr)
+}
+
+// base36UserID renders a user id as exactly 8 zero-padded base-36 characters.
+// Ids wider than the field keep their low-order digits; the snowflake and
+// random suffixes keep the full order number unique either way.
+func base36UserID(userID int64) string {
+	const width = 8
+	encoded := "0"
+	if userID > 0 {
+		encoded = strings.ToUpper(strconv.FormatInt(userID, 36))
+	}
+	if len(encoded) > width {
+		encoded = encoded[len(encoded)-width:]
+	}
+	return strings.Repeat("0", width-len(encoded)) + encoded
 }
 
 // generateSecureRandomString 生成指定长度的密码学安全随机字符串

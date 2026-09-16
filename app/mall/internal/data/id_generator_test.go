@@ -212,7 +212,7 @@ func TestGenerateOrderNo64_FormatAndLength(t *testing.T) {
 
 	wantStamp := time.Now().Format("20060102150405")
 	assert.Equal(t, wantStamp, no[4:18])
-	assert.Equal(t, "12345678", no[18:26])
+	assert.Equal(t, base36UserID(userID), no[18:26])
 	assert.Regexp(t, regexp.MustCompile(`^\d{19}$`), no[26:45])
 	assert.Regexp(t, regexp.MustCompile(`^[A-Z0-9]{19}$`), no[45:])
 }
@@ -236,7 +236,13 @@ func TestGenerateOrderNo64_PadsUserID(t *testing.T) {
 
 	no := g.GenerateOrderNo64("PAY", 42)
 	assert.Len(t, no, 64)
-	assert.Equal(t, "00000042", no[18:26])
+	assert.Equal(t, "00000016", no[18:26], "42 in base36, zero padded to 8")
+
+	// A user id beyond the decimal 8-digit field must not widen the number.
+	wide := g.GenerateOrderNo64("PAY", 123_456_789_012)
+	assert.Len(t, wide, 64)
+	assert.Equal(t, base36UserID(123_456_789_012), wide[18:26])
+	assert.Len(t, base36UserID(1<<62), 8)
 }
 
 func TestGenerateOrderNo64_Unique(t *testing.T) {
