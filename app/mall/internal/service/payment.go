@@ -9,8 +9,8 @@ import (
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
-	custommid "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server/middleware"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
+	custommid "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server/middleware"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
