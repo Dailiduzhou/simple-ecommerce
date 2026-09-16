@@ -100,9 +100,40 @@ func TestApplyPaymentRefundUpdatesRefundAndPaymentAtomically(t *testing.T) {
 		ID: refund.ID, PaymentID: pgtype.Int8{Int64: payment.ID, Valid: true},
 	}).Return(refund, nil)
 	q.EXPECT().ConfirmPaymentRefunded(gomock.Any(), payment.ID).Return(refundedPayment, nil)
+	// A settled refund must also settle the order: terminal refunded state
+	// plus restored stock, in the same transaction.
+	refundedOrder := db.Order{ID: payment.OrderID, UserID: payment.UserID, Status: biz.OrderStatusRefunded, IsCompleted: true}
+	q.EXPECT().MarkOrderRefunded(gomock.Any(), payment.OrderID).Return(refundedOrder, nil)
+	q.EXPECT().RestoreOrderItemStock(gomock.Any(), payment.OrderID).Return(nil)
 
 	d := refundTestData(q)
 	t.Cleanup(func() { _ = d.rdb.Close() })
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
 	require.NoError(t, repo.ApplyPaymentRefund(context.Background(), payment.ID, refund.ID))
+}
+
+func TestApplyPaymentRefundRejectsOrderOutsidePaidState(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	payment := statePayment(biz.PaymentStatusSuccess)
+	refund := db.OrderRefund{
+		ID: 11, PaymentID: pgtype.Int8{Int64: payment.ID, Valid: true},
+		OrderID: payment.OrderID, UserID: payment.UserID, OutRefundNo: "refund_1",
+		TotalAmountMinor: payment.AmountMinor, RefundAmountMinor: payment.AmountMinor,
+		Currency: payment.Currency, Status: biz.PaymentRefundStatusPending,
+	}
+	q.EXPECT().GetPaymentForUpdate(gomock.Any(), payment.ID).Return(payment, nil)
+	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), pgtype.Int8{Int64: payment.ID, Valid: true}).Return(refund, nil)
+	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), gomock.Any()).Return(refund, nil)
+	q.EXPECT().ConfirmPaymentRefunded(gomock.Any(), payment.ID).Return(payment, nil)
+	// The order is not in 'paid' (for example it was already cancelled), so
+	// the whole refund application rolls back for a visible retry instead of
+	// settling half of the story.
+	q.EXPECT().MarkOrderRefunded(gomock.Any(), payment.OrderID).Return(db.Order{}, pgx.ErrNoRows)
+
+	d := refundTestData(q)
+	t.Cleanup(func() { _ = d.rdb.Close() })
+	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	err := repo.ApplyPaymentRefund(context.Background(), payment.ID, refund.ID)
+	require.ErrorIs(t, err, biz.ErrPaymentStateConflict)
 }

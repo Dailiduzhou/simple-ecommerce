@@ -18,10 +18,16 @@ type CheckPayWorker struct {
 	paymentGateway biz.PaymentGateway
 	paymentRepo    biz.PaymentRepo
 	log            *log.Helper
+	// recordOutput is river.RecordOutput in production. Tests stub it because
+	// RecordOutput requires a live River work context.
+	recordOutput func(ctx context.Context, output pollOutput) error
 }
 
 func NewCheckPayWorker(gateway biz.PaymentGateway, repo biz.PaymentRepo, logger log.Logger) *CheckPayWorker {
-	return &CheckPayWorker{paymentGateway: gateway, paymentRepo: repo, log: log.NewHelper(logger)}
+	return &CheckPayWorker{
+		paymentGateway: gateway, paymentRepo: repo, log: log.NewHelper(logger),
+		recordOutput: func(ctx context.Context, output pollOutput) error { return river.RecordOutput(ctx, output) },
+	}
 }
 
 type pollOutput struct {
@@ -91,12 +97,23 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	}
 	state.PollCount++
 	args.PollCount = state.PollCount
-	if err := river.RecordOutput(ctx, state); err != nil {
+	if err := w.recordOutput(ctx, state); err != nil {
 		return w.retryable(ctx, args, err)
 	}
 	if state.PollCount < args.MaxPolls {
 		observability.PaymentReconcileJob(ctx, args.Provider, "pending")
 		return river.JobSnooze(time.Duration(args.PollIntervalSeconds) * time.Second)
+	}
+
+	// Closing earlier would cancel an order that is still inside its payment
+	// window; expire_order (authoritative via the database clock) settles the
+	// order at expiry. This poll path only acts as a backstop at/after the
+	// deadline. A zero deadline keeps the legacy close-on-exhaustion behavior.
+	if !args.OrderExpiresAt.IsZero() {
+		if wait := time.Until(args.OrderExpiresAt.Add(biz.PaymentExpirySafetyMargin)); wait > 0 {
+			observability.PaymentReconcileJob(ctx, args.Provider, "pending")
+			return river.JobSnooze(max(time.Second, wait))
+		}
 	}
 
 	if err := w.paymentRepo.MarkPayClosePending(ctx, args); err != nil {

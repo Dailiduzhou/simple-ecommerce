@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-kratos/kratos/v2/log"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -259,3 +260,49 @@ func TestEventUsecase_DeleteEvent_PropagatesError(t *testing.T) {
 }
 
 func ptrStatus(v int32) *int32 { return &v }
+
+func TestProductDiscountValidation(t *testing.T) {
+	for _, tc := range []struct {
+		discount string
+		valid    bool
+	}{
+		{"1", true}, {"1.00", true}, {"0.85", true}, {"0.01", true},
+		{"0", false}, {"0.00", false}, {"-0.5", false}, {"1.01", false}, {"2", false},
+	} {
+		d, err := decimal.NewFromString(tc.discount)
+		require.NoError(t, err)
+		err = ProductDiscount(d)
+		if tc.valid {
+			require.NoError(t, err, tc.discount)
+		} else {
+			require.Error(t, err, tc.discount)
+		}
+	}
+}
+
+func TestEffectivePriceMinorHalfUpRounding(t *testing.T) {
+	// 12.34 CNY at 85% = 10.489 -> half-up -> 10.49 (1049 minor units).
+	e, err := EffectivePriceMinor(1234, decimal.RequireFromString("0.85"))
+	require.NoError(t, err)
+	require.Equal(t, int64(1049), e)
+	// No discount is the identity.
+	e, err = EffectivePriceMinor(1234, decimal.RequireFromString("1.00"))
+	require.NoError(t, err)
+	require.Equal(t, int64(1234), e)
+	// Half a minor unit rounds away from zero: 5 * 0.1 = 0.5 -> 1.
+	e, err = EffectivePriceMinor(5, decimal.RequireFromString("0.1"))
+	require.NoError(t, err)
+	require.Equal(t, int64(1), e)
+	// A discount that rounds to zero stays zero; order creation rejects
+	// non-positive totals with its own domain conflict.
+	e, err = EffectivePriceMinor(1, decimal.RequireFromString("0.4"))
+	require.NoError(t, err)
+	require.Equal(t, int64(0), e)
+	// Invalid inputs fail closed instead of guessing an amount.
+	_, err = EffectivePriceMinor(1234, decimal.RequireFromString("0"))
+	require.Error(t, err)
+	_, err = EffectivePriceMinor(1234, decimal.RequireFromString("1.5"))
+	require.Error(t, err)
+	_, err = EffectivePriceMinor(-1, decimal.RequireFromString("1"))
+	require.Error(t, err)
+}

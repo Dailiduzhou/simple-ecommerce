@@ -885,7 +885,20 @@ func (r *PaymentRepo) ApplyPaymentRefund(ctx context.Context, paymentID, refundI
 			return err
 		}
 		changed, err = q.ConfirmPaymentRefunded(ctx, paymentID)
-		return err
+		if err != nil {
+			return err
+		}
+		// The order settles with the refund: it leaves the ongoing set and its
+		// stock comes back, because nothing was ever shipped. An order outside
+		// 'paid' rolls the whole refund application back so the retry path
+		// surfaces the conflict instead of settling half of the story.
+		if _, err := q.MarkOrderRefunded(ctx, current.OrderID); err != nil {
+			if stderrors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrPaymentStateConflict
+			}
+			return err
+		}
+		return q.RestoreOrderItemStock(ctx, current.OrderID)
 	})
 	if err != nil {
 		return err
@@ -1207,6 +1220,18 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 			} else {
 				changed = payment
 				changed.Status = biz.PaymentStatusRefunded
+			}
+			// Settle the order exactly like the initiated-refund path so both
+			// refund settlements agree: terminal refunded order plus restored
+			// stock, or a conflict that rolls back for visible retries.
+			if _, err := q.MarkOrderRefunded(ctx, payment.OrderID); err != nil {
+				if stderrors.Is(err, pgx.ErrNoRows) {
+					return biz.ErrPaymentStateConflict
+				}
+				return err
+			}
+			if err := q.RestoreOrderItemStock(ctx, payment.OrderID); err != nil {
+				return err
 			}
 		default:
 			provider, fromStatus, event = method.Provider, payment.Status, "unknown_provider_state"

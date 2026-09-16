@@ -1551,6 +1551,11 @@ components:
                 createdAt:
                     type: string
                     format: date-time
+                effectivePriceMinor:
+                    type: string
+                    description: |-
+                        Discounted unit price in minor units computed by the server with the same
+                         rounding the order flow uses; rendering it keeps display equal to charge.
         api.mall.v1.TodayWellnessReply:
             type: object
             properties:
