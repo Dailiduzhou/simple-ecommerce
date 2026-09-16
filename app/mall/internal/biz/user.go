@@ -14,6 +14,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/pwdhash"
 
+	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -276,7 +277,9 @@ func (uc *authUsecase) Logout(ctx context.Context, claims *EcommerceClaims, refr
 		return userv1.ErrorUnauthorized("invalid token claims")
 	}
 	if err := uc.BlacklistToken(ctx, claims.ID, claims.ExpiresAt.Time); err != nil {
-		return userv1.ErrorUnauthorized("logout failed")
+		// Fail closed: the token was NOT revoked, so the session stays
+		// active; surface it as infrastructure trouble, not auth trouble.
+		return errors.ServiceUnavailable("LOGOUT_UNAVAILABLE", "logout failed; the access token was not revoked")
 	}
 	if refreshToken != "" {
 		if refreshClaims, err := uc.ParseRefreshToken(refreshToken); err == nil && refreshClaims.ID != "" && refreshClaims.ExpiresAt != nil {
