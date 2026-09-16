@@ -433,3 +433,38 @@ func TestOrderRepo_CreateChargesDiscountedPriceAndSnapshotsEffectiveUnitPrice(t 
 		require.Contains(t, err.Error(), "PRODUCT_DISCOUNT_INVALID")
 	})
 }
+
+// Lock ordering must not depend on the caller: even when asked for products in
+// descending ID order the repository locks them in ascending order.
+func TestOrderRepo_CreateSortsItemsBeforeLockingProducts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	redisServer := miniredis.RunT(t)
+	q.EXPECT().LockOrderIdempotency(gomock.Any(), gomock.Any()).Return(nil)
+	q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
+	q.EXPECT().GetShippingAddress(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
+	for _, id := range []int64{3, 5, 9} {
+		q.EXPECT().GetProductForOrder(gomock.Any(), id).Return(db.Product{ID: id, Discount: decimal.NewFromInt(1), PriceMinor: 100, Stock: 10, Status: 1}, nil)
+	}
+	q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.CreateOrderParams) (db.Order, error) {
+		return db.Order{ID: 1, UserID: args.UserID, AddressID: args.AddressID, Currency: args.Currency, OutTradeNo: args.OutTradeNo}, nil
+	})
+	var locked []int64
+	q.EXPECT().DecrProductStock(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.DecrProductStockParams) (int32, error) {
+		locked = append(locked, args.ID)
+		return 9, nil
+	}).Times(3)
+	q.EXPECT().CreateOrderItem(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.CreateOrderItemParams) (db.OrderItem, error) {
+		return db.OrderItem{OrderID: 1, ProductID: args.ProductID}, nil
+	}).Times(3)
+	d := newTestData(t, q, redisServer)
+	repo := NewOrderRepoWithJobs(d, testTxManager{q: q}, &orderTestMQ{}, log.DefaultLogger)
+
+	_, err := repo.CreateOrder(context.Background(), biz.CreateOrderArgs{
+		UserID: 42, AddressID: 9, OutTradeNo: "order_sorted", Currency: "CNY",
+		IdempotencyKey: "checkout-sorted", RequestHash: "hash", ExpiresAt: time.Now().Add(time.Minute),
+		Items: []biz.OrderItemInput{{ProductID: 9, Quantity: 1}, {ProductID: 3, Quantity: 1}, {ProductID: 5, Quantity: 1}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{3, 5, 9}, locked, "products must be locked in ascending ID order")
+}
