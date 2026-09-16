@@ -389,16 +389,16 @@ func (uc *userUsecase) Login(ctx context.Context, phone string, password string)
 	secret := []byte(uc.phoneSecret)
 	phoneHash := phonecrypto.HashPhone(phone, secret)
 
-	// Account lockout: reject before any credential work once the recent
-	// failure count for this phone hash reached the configured maximum. The
-	// lookup is fail-open on store errors: the transport limiter already fails
-	// closed for auth operations, so a Redis outage keeps login unavailable
-	// and a second fail-closed layer would add no protection.
+	// Account lockout state is read before the credential check so a wrong guess
+	// can be answered with 429, but it never short-circuits a correct password:
+	// otherwise anyone who knows a phone number could lock its owner out for the
+	// whole lockout window. Throttling brute force therefore stays with the
+	// fail-closed per-IP limiter on the auth bucket, and the counter only adds
+	// the per-account signal (plus 429s for honest clients).
 	failures, err := uc.authRepo.LoginFailures(ctx, phoneHash)
+	locked := err == nil && failures >= uc.loginMaxAttempts
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("get login failures failed: %v", err)
-	} else if failures >= uc.loginMaxAttempts {
-		return nil, userv1.ErrorUserLoginLocked("too many failed attempts, try again later")
 	}
 
 	u, err := uc.userRepo.GetUserByPhoneHash(ctx, phoneHash)
@@ -412,17 +412,26 @@ func (uc *userUsecase) Login(ctx context.Context, phone string, password string)
 		// from a wrong password in both the response and the lockout state.
 		_ = pwdhash.ComparePassword(dummyPasswordHash, password)
 		uc.recordLoginFailure(ctx, phoneHash)
-		return nil, userv1.ErrorInvalidCredentials("invalid credentials")
+		return nil, lockedOrInvalidCredentials(locked)
 	}
 
 	if err := pwdhash.ComparePassword(u.PasswordHash, password); err != nil {
 		uc.recordLoginFailure(ctx, phoneHash)
-		return nil, userv1.ErrorInvalidCredentials("invalid credentials")
+		return nil, lockedOrInvalidCredentials(locked)
 	}
 
 	// Best effort: a stale failure counter must never block a valid login.
 	uc.clearLoginFailures(ctx, phoneHash)
 	return u, nil
+}
+
+// lockedOrInvalidCredentials keeps the throttled response indistinguishable
+// from bad credentials for unregistered phones.
+func lockedOrInvalidCredentials(locked bool) error {
+	if locked {
+		return userv1.ErrorUserLoginLocked("too many failed attempts, try again later")
+	}
+	return userv1.ErrorInvalidCredentials("invalid credentials")
 }
 
 func (uc *userUsecase) recordLoginFailure(ctx context.Context, phoneHash string) {

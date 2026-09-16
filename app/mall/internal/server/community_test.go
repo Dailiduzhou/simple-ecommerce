@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
 	"github.com/go-kratos/kratos/v2/log"
+	kratoshttp "github.com/go-kratos/kratos/v2/transport/http"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -36,11 +38,28 @@ func (*communityAuth) IsTokenBlacklisted(ctx context.Context, id string) (bool, 
 	return id == "revoked", nil
 }
 
-type communityLimiter struct{ calls atomic.Int32 }
+type communityLimiter struct {
+	calls     atomic.Int32
+	mu        sync.Mutex
+	addresses []string
+}
 
-func (l *communityLimiter) Allow(context.Context, int64, string, string) error {
+func (l *communityLimiter) Allow(_ context.Context, _ int64, address, _ string) error {
 	l.calls.Add(1)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.addresses = append(l.addresses, address)
 	return nil
+}
+
+// lastAddress returns the identity the limiter most recently bucketed.
+func (l *communityLimiter) lastAddress() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.addresses) == 0 {
+		return ""
+	}
+	return l.addresses[len(l.addresses)-1]
 }
 
 type transportHistory struct {
@@ -233,4 +252,45 @@ func TestCommunityGRPCAuthenticationAndErrorMappings(t *testing.T) {
 
 func (*communityAuth) ValidateAccount(ctx context.Context, claims *biz.EcommerceClaims) error {
 	return nil
+}
+
+// A spoofed X-Forwarded-For must not move a caller into another quota bucket
+// unless the immediate peer is an explicitly trusted proxy.
+func TestRateLimitIdentityHonoursTrustedProxiesOnly(t *testing.T) {
+	user, community, media, _ := communityServices()
+	newServer := func(trusted []string) (*kratoshttp.Server, *communityLimiter) {
+		limiter := &communityLimiter{}
+		srv := NewHTTPServer(
+			&conf.Server{Http: &conf.Server_HTTP{TrustedProxies: trusted}},
+			&conf.Auth{AccessTokenSecret: strings.Repeat("a", 32)},
+			&communityAuth{},
+			service.NewMallService(nil, nil, nil, nil, log.DefaultLogger),
+			user, service.NewOrderService(nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger),
+			community, media, limiter, log.DefaultLogger,
+		)
+		return srv, limiter
+	}
+	post := func(srv *kratoshttp.Server, remote, forwarded string) {
+		r := httptest.NewRequest("POST", "/v1/users/me/browsing-history", strings.NewReader(`{"product_id":"99"}`))
+		r.RemoteAddr = remote
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Bearer "+communityToken(t, 7, "user", "live"))
+		if forwarded != "" {
+			r.Header.Set("X-Forwarded-For", forwarded)
+		}
+		srv.ServeHTTP(httptest.NewRecorder(), r)
+	}
+
+	srv, limiter := newServer(nil)
+	post(srv, "198.51.100.9:5555", "203.0.113.7")
+	require.Equal(t, "198.51.100.9", limiter.lastAddress(), "an untrusted peer cannot choose its bucket")
+
+	srv, limiter = newServer([]string{"10.0.0.0/8"})
+	post(srv, "10.1.2.3:5555", "203.0.113.7")
+	require.Equal(t, "203.0.113.7", limiter.lastAddress(), "a trusted proxy forwards the real client")
+
+	// An invalid configuration must fail closed: no hop is trusted.
+	srv, limiter = newServer([]string{"not-a-cidr"})
+	post(srv, "10.1.2.3:5555", "203.0.113.7")
+	require.Equal(t, "10.1.2.3", limiter.lastAddress())
 }
