@@ -27,6 +27,10 @@ func (t paymentCommitHookTx) InTx(ctx context.Context, fn func(context.Context) 
 	return nil
 }
 
+func (t paymentCommitHookTx) InTxSnapshot(ctx context.Context, fn func(context.Context) error) error {
+	return fn(WithQuerier(ctx, t.q, nil))
+}
+
 func TestReviewPaymentMutationDoesNotPublishOldSnapshot(t *testing.T) {
 	q := mockdb.NewMockQuerier(gomock.NewController(t))
 	mr := miniredis.RunT(t)

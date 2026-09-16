@@ -44,7 +44,9 @@ func (r *BrowsingHistoryRepo) Record(ctx context.Context, uid, id int64) (t time
 }
 
 func (r *BrowsingHistoryRepo) List(ctx context.Context, uid int64, p biz.Page, f biz.HistoryFilter) ([]biz.BrowsingHistoryItem, string, error) {
-	rows, e := r.data.DB(ctx).ListBrowsingHistory(ctx, db.ListBrowsingHistoryParams{UserID: uid, Cutoff: communityTime(time.Now().Add(-r.policy.HistoryRetention)), HasStart: f.HasStart, StartTime: communityTime(f.Start), HasEnd: f.HasEnd, EndTime: communityTime(f.End), HasCursor: p.HasCursor, CursorTime: communityTime(p.Time), CursorID: p.ID, PageLimit: p.Limit + 1})
+	// The retention boundary is computed by PostgreSQL (NOW()) so every instance
+	// agrees on it; only the configured window travels over the wire.
+	rows, e := r.data.DB(ctx).ListBrowsingHistory(ctx, db.ListBrowsingHistoryParams{UserID: uid, RetentionSeconds: r.policy.HistoryRetention.Seconds(), HasStart: f.HasStart, StartTime: communityTime(f.Start), HasEnd: f.HasEnd, EndTime: communityTime(f.End), HasCursor: p.HasCursor, CursorTime: communityTime(p.Time), CursorID: p.ID, PageLimit: p.Limit + 1})
 	if e != nil {
 		return nil, "", e
 	}
@@ -81,5 +83,5 @@ func (r *BrowsingHistoryRepo) Clear(ctx context.Context, uid int64) error {
 }
 
 func (r *BrowsingHistoryRepo) Cleanup(ctx context.Context) (int64, error) {
-	return r.data.DB(ctx).CleanupBrowsingHistory(ctx, db.CleanupBrowsingHistoryParams{Cutoff: communityTime(time.Now().Add(-r.policy.HistoryRetention)), BatchSize: r.policy.CleanupBatch})
+	return r.data.DB(ctx).CleanupBrowsingHistory(ctx, db.CleanupBrowsingHistoryParams{RetentionSeconds: r.policy.HistoryRetention.Seconds(), BatchSize: r.policy.CleanupBatch})
 }

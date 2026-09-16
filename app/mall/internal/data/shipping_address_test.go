@@ -21,6 +21,11 @@ func (t testTxManager) InTx(ctx context.Context, fn func(context.Context) error)
 	return fn(context.WithValue(ctx, ctxTxKey{}, t.q))
 }
 
+// InTxSnapshot mirrors InTx: unit tests inject the querier directly.
+func (t testTxManager) InTxSnapshot(ctx context.Context, fn func(context.Context) error) error {
+	return t.InTx(ctx, fn)
+}
+
 func TestShippingAddressCacheCannotCrossOwners(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	q := mockdb.NewMockQuerier(ctrl)

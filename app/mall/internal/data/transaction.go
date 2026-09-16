@@ -30,14 +30,24 @@ func NewTransaction(pool *pgxpool.Pool, logger log.Logger) biz.TxManager {
 
 var _ biz.TxManager = (*transaction)(nil)
 
-func (t *transaction) InTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
+func (t *transaction) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return t.run(ctx, pgx.TxOptions{}, fn)
+}
+
+// InTxSnapshot provides the read-only, single-snapshot view used by paginated
+// reads that would otherwise mix several points in time.
+func (t *transaction) InTxSnapshot(ctx context.Context, fn func(ctx context.Context) error) error {
+	return t.run(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, fn)
+}
+
+func (t *transaction) run(ctx context.Context, opts pgx.TxOptions, fn func(ctx context.Context) error) (err error) {
 	// A nested call would silently open a second, independent transaction whose
 	// writes commit or roll back on their own. Callers inside a transaction must
 	// reuse the context they were handed instead.
 	if inTransaction(ctx) {
 		return fmt.Errorf("transaction already active: reuse the context passed to InTx instead of nesting")
 	}
-	tx, err := t.pool.Begin(ctx)
+	tx, err := t.pool.BeginTx(ctx, opts)
 	if err != nil {
 		return err
 	}

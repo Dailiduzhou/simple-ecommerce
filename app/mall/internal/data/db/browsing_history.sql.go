@@ -16,7 +16,8 @@ const cleanupBrowsingHistory = `-- name: CleanupBrowsingHistory :execrows
 WITH expired AS (
   SELECT user_id, product_id
   FROM product_browsing_history
-  WHERE last_viewed_at <= $1::timestamptz
+  -- 与列表页共用数据库时钟计算过期边界。
+  WHERE last_viewed_at <= NOW() - make_interval(secs => $1::double precision)
   ORDER BY last_viewed_at, user_id, product_id
   LIMIT $2
   FOR UPDATE SKIP LOCKED
@@ -25,16 +26,16 @@ DELETE FROM product_browsing_history h
 USING expired e
 WHERE h.user_id = e.user_id
   AND h.product_id = e.product_id
-  AND h.last_viewed_at <= $1::timestamptz
+  AND h.last_viewed_at <= NOW() - make_interval(secs => $1::double precision)
 `
 
 type CleanupBrowsingHistoryParams struct {
-	Cutoff    pgtype.Timestamptz
-	BatchSize int32
+	RetentionSeconds float64
+	BatchSize        int32
 }
 
 func (q *Queries) CleanupBrowsingHistory(ctx context.Context, arg CleanupBrowsingHistoryParams) (int64, error) {
-	result, err := q.db.Exec(ctx, cleanupBrowsingHistory, arg.Cutoff, arg.BatchSize)
+	result, err := q.db.Exec(ctx, cleanupBrowsingHistory, arg.RetentionSeconds, arg.BatchSize)
 	if err != nil {
 		return 0, err
 	}
@@ -78,7 +79,8 @@ SELECT
 FROM product_browsing_history h
 JOIN products p ON p.id = h.product_id
 WHERE h.user_id = $1
-  AND h.last_viewed_at > $2::timestamptz
+  -- 过期判定使用数据库时钟，避免多实例应用时钟漂移导致边界不一致。
+  AND h.last_viewed_at > NOW() - make_interval(secs => $2::double precision)
   AND (NOT $3::boolean OR h.last_viewed_at >= $4::timestamptz)
   AND (NOT $5::boolean OR h.last_viewed_at < $6::timestamptz)
   AND (
@@ -91,16 +93,16 @@ LIMIT $10
 `
 
 type ListBrowsingHistoryParams struct {
-	UserID     int64
-	Cutoff     pgtype.Timestamptz
-	HasStart   bool
-	StartTime  pgtype.Timestamptz
-	HasEnd     bool
-	EndTime    pgtype.Timestamptz
-	HasCursor  bool
-	CursorTime pgtype.Timestamptz
-	CursorID   int64
-	PageLimit  int32
+	UserID           int64
+	RetentionSeconds float64
+	HasStart         bool
+	StartTime        pgtype.Timestamptz
+	HasEnd           bool
+	EndTime          pgtype.Timestamptz
+	HasCursor        bool
+	CursorTime       pgtype.Timestamptz
+	CursorID         int64
+	PageLimit        int32
 }
 
 type ListBrowsingHistoryRow struct {
@@ -118,7 +120,7 @@ type ListBrowsingHistoryRow struct {
 func (q *Queries) ListBrowsingHistory(ctx context.Context, arg ListBrowsingHistoryParams) ([]ListBrowsingHistoryRow, error) {
 	rows, err := q.db.Query(ctx, listBrowsingHistory,
 		arg.UserID,
-		arg.Cutoff,
+		arg.RetentionSeconds,
 		arg.HasStart,
 		arg.StartTime,
 		arg.HasEnd,

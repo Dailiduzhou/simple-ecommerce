@@ -69,7 +69,29 @@ func (r *CommentRepo) Create(ctx context.Context, a biz.Actor, postID int64, tex
 	return
 }
 
+// List reads a page inside one REPEATABLE READ snapshot: the visibility check
+// and the page query (or the root lookup and its replies) then describe the
+// same instant instead of two adjacent ones.
 func (r *CommentRepo) List(ctx context.Context, postID, rootID int64, p biz.Page) ([]biz.Comment, string, error) {
+	if inTransaction(ctx) {
+		return r.list(ctx, postID, rootID, p)
+	}
+	var (
+		out  []biz.Comment
+		next string
+	)
+	err := r.tx.InTxSnapshot(ctx, func(ctx context.Context) error {
+		var e error
+		out, next, e = r.list(ctx, postID, rootID, p)
+		return e
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return out, next, nil
+}
+
+func (r *CommentRepo) list(ctx context.Context, postID, rootID int64, p biz.Page) ([]biz.Comment, string, error) {
 	q := r.data.DB(ctx)
 	if _, e := q.GetVisiblePost(ctx, postID); e != nil {
 		if errors.Is(e, pgx.ErrNoRows) {

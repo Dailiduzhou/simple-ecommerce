@@ -221,7 +221,9 @@ message RecordProductViewRequest {
 }
 message RecordProductViewReply { google.protobuf.Timestamp last_viewed_at = 1; }
 message ListBrowsingHistoryRequest {
-  string cursor = 1 [(buf.validate.field).string.max_len = 1024];
+  // 512 matches the shared cursor parser in biz (ParsePage), so an oversized
+  // cursor is rejected by both layers with the same bound.
+  string cursor = 1 [(buf.validate.field).string.max_len = 512];
   int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0, lte: 50}];
   // Optional inclusive lower bound and exclusive upper bound on last_viewed_at.
   // Both are instants on the server timeline; clients derive local day boundaries
