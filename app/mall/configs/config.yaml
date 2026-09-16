@@ -80,6 +80,9 @@ storage:
   secret_key_env: STORAGE_SECRET_KEY
   use_tls: "${STORAGE_USE_TLS}"
   public_use_tls: "${STORAGE_PUBLIC_USE_TLS}"
+  # Local development only: permits plaintext MinIO endpoints. With it false,
+  # use_tls/public_use_tls must be true or startup fails.
+  allow_insecure: "${STORAGE_ALLOW_INSECURE}"
   upload_ttl_seconds: 600
   read_ttl_seconds: 300
   unused_retention_hours: 24

@@ -30,7 +30,9 @@ func integrationS3(t *testing.T) *S3Storage {
 	}
 	bucket := os.Getenv("ECOMMERCE_INTEGRATION_S3_BUCKET")
 	require.Contains(t, strings.ToLower(bucket), "integration", "only a dedicated integration bucket is allowed")
-	s, e := NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, AccessKeyEnv: "ECOMMERCE_INTEGRATION_S3_ACCESS_KEY", SecretKeyEnv: "ECOMMERCE_INTEGRATION_S3_SECRET_KEY"})
+	// The integration MinIO runs plaintext on the CI network, which needs the
+	// explicit insecure opt-out.
+	s, e := NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: endpoint, Region: "us-east-1", Bucket: bucket, AllowInsecure: true, AccessKeyEnv: "ECOMMERCE_INTEGRATION_S3_ACCESS_KEY", SecretKeyEnv: "ECOMMERCE_INTEGRATION_S3_SECRET_KEY"})
 	require.NoError(t, e)
 	storage := s.(*S3Storage)
 	ok, e := storage.client.BucketExists(context.Background(), bucket)

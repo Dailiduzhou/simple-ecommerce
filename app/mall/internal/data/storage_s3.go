@@ -40,6 +40,14 @@ func NewObjectStorage(c *conf.Storage) (biz.ObjectStorage, error) {
 	if c.Endpoint == "" || c.Bucket == "" || access == "" || secret == "" {
 		return nil, fmt.Errorf("S3 endpoint, private bucket and credential environment variables are required")
 	}
+	// Plaintext endpoints leak the static credentials on every request, so they
+	// require an explicit local-development opt-out instead of a silent default.
+	if !c.GetUseTls() && !c.GetAllowInsecure() {
+		return nil, fmt.Errorf("storage.use_tls is disabled: static S3 credentials would travel in cleartext; enable TLS or set storage.allow_insecure=true for local development only")
+	}
+	if c.PublicEndpoint != "" && !c.GetPublicUseTls() && !c.GetAllowInsecure() {
+		return nil, fmt.Errorf("storage.public_use_tls is disabled: presigned read URLs would travel in cleartext; enable TLS or set storage.allow_insecure=true for local development only")
+	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 15 * time.Second
 	region := c.Region

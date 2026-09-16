@@ -794,8 +794,13 @@ type Storage struct {
 	UploadTtlSeconds     int32                  `protobuf:"varint,10,opt,name=upload_ttl_seconds,json=uploadTtlSeconds,proto3" json:"upload_ttl_seconds,omitempty"`
 	ReadTtlSeconds       int32                  `protobuf:"varint,11,opt,name=read_ttl_seconds,json=readTtlSeconds,proto3" json:"read_ttl_seconds,omitempty"`
 	UnusedRetentionHours int32                  `protobuf:"varint,12,opt,name=unused_retention_hours,json=unusedRetentionHours,proto3" json:"unused_retention_hours,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Explicit opt-out of the TLS requirement. Only for local development with
+	// a plaintext MinIO: with it false, use_tls/public_use_tls must be true or
+	// startup fails, because static credentials and presigned URLs would travel
+	// in cleartext.
+	AllowInsecure bool `protobuf:"varint,13,opt,name=allow_insecure,json=allowInsecure,proto3" json:"allow_insecure,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Storage) Reset() {
@@ -910,6 +915,13 @@ func (x *Storage) GetUnusedRetentionHours() int32 {
 		return x.UnusedRetentionHours
 	}
 	return 0
+}
+
+func (x *Storage) GetAllowInsecure() bool {
+	if x != nil {
+		return x.AllowInsecure
+	}
+	return false
 }
 
 type Server_HTTP struct {
@@ -1253,7 +1265,7 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\x13comments_per_minute\x18\x06 \x01(\x05R\x11commentsPerMinute\x12,\n" +
 	"\x12uploads_per_minute\x18\a \x01(\x05R\x10uploadsPerMinute\x126\n" +
 	"\x17interactions_per_minute\x18\b \x01(\x05R\x15interactionsPerMinute\x12/\n" +
-	"\x14rate_limit_fail_open\x18\t \x01(\bR\x11rateLimitFailOpen\"\xb3\x03\n" +
+	"\x14rate_limit_fail_open\x18\t \x01(\bR\x11rateLimitFailOpen\"\xda\x03\n" +
 	"\aStorage\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x1a\n" +
 	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12'\n" +
@@ -1267,7 +1279,8 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\x12upload_ttl_seconds\x18\n" +
 	" \x01(\x05R\x10uploadTtlSeconds\x12(\n" +
 	"\x10read_ttl_seconds\x18\v \x01(\x05R\x0ereadTtlSeconds\x124\n" +
-	"\x16unused_retention_hours\x18\f \x01(\x05R\x14unusedRetentionHoursBEZCgithub.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf;confb\x06proto3"
+	"\x16unused_retention_hours\x18\f \x01(\x05R\x14unusedRetentionHours\x12%\n" +
+	"\x0eallow_insecure\x18\r \x01(\bR\rallowInsecureBEZCgithub.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf;confb\x06proto3"
 
 var (
 	file_conf_conf_proto_rawDescOnce sync.Once
