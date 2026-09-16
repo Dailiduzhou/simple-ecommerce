@@ -30,18 +30,18 @@ const (
 )
 
 var (
-	ErrOrderNotFound          = errors.NotFound("ORDER_NOT_FOUND", "order not found")
-	ErrAddressNotFound        = errors.NotFound("ADDRESS_NOT_FOUND", "shipping address not found")
-	ErrProductNotFound        = errors.NotFound("PRODUCT_NOT_FOUND", "product not found")
-	ErrInsufficientStock      = errors.Conflict("INSUFFICIENT_STOCK", "insufficient product stock")
-	ErrOrderCannotCancel      = errors.Conflict("ORDER_CANNOT_CANCEL", "order cannot be cancelled in its current state")
-	ErrOrderHasActivePayment  = errors.Conflict("ORDER_HAS_ACTIVE_PAYMENT", "close the active payment before cancelling the order")
-	ErrOrderAlreadyPaid       = errors.Conflict("ORDER_ALREADY_PAID", "paid order must use the refund flow")
+	ErrOrderNotFound         = errors.NotFound("ORDER_NOT_FOUND", "order not found")
+	ErrAddressNotFound       = errors.NotFound("ADDRESS_NOT_FOUND", "shipping address not found")
+	ErrProductNotFound       = errors.NotFound("PRODUCT_NOT_FOUND", "product not found")
+	ErrInsufficientStock     = errors.Conflict("INSUFFICIENT_STOCK", "insufficient product stock")
+	ErrOrderCannotCancel     = errors.Conflict("ORDER_CANNOT_CANCEL", "order cannot be cancelled in its current state")
+	ErrOrderHasActivePayment = errors.Conflict("ORDER_HAS_ACTIVE_PAYMENT", "close the active payment before cancelling the order")
+	ErrOrderAlreadyPaid      = errors.Conflict("ORDER_ALREADY_PAID", "paid order must use the refund flow")
 	// ErrOrderNoCollision is a retryable collision on the unique
 	// orders.out_trade_no index. A rollback-safe id generator makes it
 	// practically unreachable, but a duplicate must be retried with a fresh
 	// number instead of surfacing a 500 to the client.
-	ErrOrderNoCollision = errors.InternalServer("ORDER_NO_COLLISION", "order number already exists")
+	ErrOrderNoCollision       = errors.InternalServer("ORDER_NO_COLLISION", "order number already exists")
 	ErrOrderInputInvalid      = errors.BadRequest("ORDER_INPUT_INVALID", "order items are invalid")
 	ErrOrderAmountInvalid     = errors.Conflict("ORDER_AMOUNT_INVALID", "order total must be greater than zero")
 	ErrOrderNotExpired        = errors.Conflict("ORDER_NOT_EXPIRED", "order payment window has not expired")

@@ -375,7 +375,8 @@ func (uc *userUsecase) Register(ctx context.Context, phone string, password stri
 
 // dummyPasswordHash only exists so the unregistered-phone path performs the
 // same bcrypt work as the wrong-password path; the compare result is discarded.
-const dummyPasswordHash = "$2a$10$97/qsqxly3VJ7Ki3hFWBmeeIycSA27wKnnuXExTTum6GY9L4cOGCa"
+// It is hashed at the current pwdhash.Cost so both paths cost the same.
+const dummyPasswordHash = "$2a$12$TvxjCNzidttpnrGKGqHDce40Y2TrV3./JnQmzFdrGqMJgkW9uB/gW"
 
 func (uc *userUsecase) Login(ctx context.Context, phone string, password string) (*User, error) {
 	if len(password) < 8 || len(password) > 72 {
