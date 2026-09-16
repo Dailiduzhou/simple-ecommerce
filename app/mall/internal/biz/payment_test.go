@@ -113,6 +113,9 @@ func (r *paymentTestRepo) GetActivePaymentByOrderMethod(context.Context, int64, 
 func (r *paymentTestRepo) GetPaymentByOutTradeNo(context.Context, string) (*PaymentDO, error) {
 	return r.payment, nil
 }
+func (r *paymentTestRepo) GetOrderExpiry(context.Context, int64) (time.Time, error) {
+	return time.Time{}, nil
+}
 func (r *paymentTestRepo) BeginPaymentNotificationProcessing(context.Context, int64, string, string) (bool, error) {
 	return true, nil
 }

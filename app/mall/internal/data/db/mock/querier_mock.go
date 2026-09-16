@@ -777,6 +777,21 @@ func (mr *MockQuerierMockRecorder) GetOrderByUserIdempotency(ctx, arg interface{
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderByUserIdempotency", reflect.TypeOf((*MockQuerier)(nil).GetOrderByUserIdempotency), ctx, arg)
 }
 
+// GetOrderExpiryByPaymentID mocks base method.
+func (m *MockQuerier) GetOrderExpiryByPaymentID(ctx context.Context, id int64) (pgtype.Timestamptz, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOrderExpiryByPaymentID", ctx, id)
+	ret0, _ := ret[0].(pgtype.Timestamptz)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderExpiryByPaymentID indicates an expected call of GetOrderExpiryByPaymentID.
+func (mr *MockQuerierMockRecorder) GetOrderExpiryByPaymentID(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderExpiryByPaymentID", reflect.TypeOf((*MockQuerier)(nil).GetOrderExpiryByPaymentID), ctx, id)
+}
+
 // GetOrderForUpdate mocks base method.
 func (m *MockQuerier) GetOrderForUpdate(ctx context.Context, id int64) (db.Order, error) {
 	m.ctrl.T.Helper()

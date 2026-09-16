@@ -184,3 +184,10 @@ SET status = 'success',
 WHERE id = $1
   AND status NOT IN ('success', 'refunded')
 RETURNING *;
+
+-- name: GetOrderExpiryByPaymentID :one
+-- Poll-triggered close must respect the order payment window even when the
+-- enqueue site could not embed the deadline (callback/admin triggered jobs).
+SELECT o.expires_at
+FROM orders o
+JOIN payments p ON p.id = $1 AND o.id = p.order_id;
