@@ -54,7 +54,16 @@ message Server {
 message Data {
   message Database {
     string driver = 1;
+    // Runtime application DSN. Grant it only the privileges the application
+    // uses; schema changes should run under migration_source instead.
     string source = 2;
+    // Optional DSN used only for schema migrations (a migration account or a
+    // DBA pipeline). Empty reuses source.
+    string migration_source = 3;
+    // Disable switch: set true to never run migrations at startup and let
+    // CI/a DBA own them. Unset/false keeps the migrate-on-boot behaviour, so a
+    // missing environment variable can never silently skip schema changes.
+    bool disable_migrations = 4;
   }
   message Redis {
     string network = 1;

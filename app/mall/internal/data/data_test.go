@@ -50,6 +50,17 @@ func TestRunMigrationsRequiresDatabaseSource(t *testing.T) {
 	}
 }
 
+// Production must be able to hand migrations to CI/a DBA: the disable switch
+// skips them entirely, even when a DSN is present.
+func TestRunMigrationsHonoursTheDisableSwitch(t *testing.T) {
+	c := &conf.Data{Database: &conf.Data_Database{
+		Source:            "postgres://unreachable.invalid/ecommerce",
+		MigrationSource:   "postgres://migration.invalid/ecommerce",
+		DisableMigrations: true,
+	}}
+	require.NoError(t, RunMigrations(c), "a disabled migrator must not contact the database")
+}
+
 func TestEmbeddedMigrationsAvailable(t *testing.T) {
 	entries, err := fs.ReadDir(dbmigrations.FS, "migrations")
 	require.NoError(t, err)

@@ -208,7 +208,17 @@ func NewConfiguredRiverClient(pool *pgxpool.Pool, workers *river.Workers, period
 }
 
 func RunMigrations(c *conf.Data) error {
-	if c == nil || c.Database == nil || c.Database.Source == "" {
+	// Explicit opt-out: production lets CI or a DBA own schema changes instead
+	// of every pod racing to migrate with the application DSN.
+	if c.GetDatabase().GetDisableMigrations() {
+		log.Info("database migrations are disabled by configuration")
+		return nil
+	}
+	source := c.GetDatabase().GetMigrationSource()
+	if source == "" {
+		source = c.GetDatabase().GetSource()
+	}
+	if source == "" {
 		return fmt.Errorf("database source is required for migrations")
 	}
 
@@ -217,7 +227,7 @@ func RunMigrations(c *conf.Data) error {
 		return fmt.Errorf("create migration source: %w", err)
 	}
 
-	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, c.Database.Source)
+	m, err := migrate.NewWithSourceInstance("iofs", sourceDriver, source)
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
 	}

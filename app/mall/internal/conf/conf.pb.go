@@ -1055,11 +1055,20 @@ func (x *Server_GRPC) GetTimeout() *durationpb.Duration {
 }
 
 type Data_Database struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Driver        string                 `protobuf:"bytes,1,opt,name=driver,proto3" json:"driver,omitempty"`
-	Source        string                 `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Driver string                 `protobuf:"bytes,1,opt,name=driver,proto3" json:"driver,omitempty"`
+	// Runtime application DSN. Grant it only the privileges the application
+	// uses; schema changes should run under migration_source instead.
+	Source string `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	// Optional DSN used only for schema migrations (a migration account or a
+	// DBA pipeline). Empty reuses source.
+	MigrationSource string `protobuf:"bytes,3,opt,name=migration_source,json=migrationSource,proto3" json:"migration_source,omitempty"`
+	// Disable switch: set true to never run migrations at startup and let
+	// CI/a DBA own them. Unset/false keeps the migrate-on-boot behaviour, so a
+	// missing environment variable can never silently skip schema changes.
+	DisableMigrations bool `protobuf:"varint,4,opt,name=disable_migrations,json=disableMigrations,proto3" json:"disable_migrations,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Data_Database) Reset() {
@@ -1104,6 +1113,20 @@ func (x *Data_Database) GetSource() string {
 		return x.Source
 	}
 	return ""
+}
+
+func (x *Data_Database) GetMigrationSource() string {
+	if x != nil {
+		return x.MigrationSource
+	}
+	return ""
+}
+
+func (x *Data_Database) GetDisableMigrations() bool {
+	if x != nil {
+		return x.DisableMigrations
+	}
+	return false
 }
 
 type Data_Redis struct {
@@ -1237,13 +1260,15 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\x04GRPC\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +
-	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\xc7\x03\n" +
+	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\xa2\x04\n" +
 	"\x04Data\x125\n" +
 	"\bdatabase\x18\x01 \x01(\v2\x19.kratos.api.Data.DatabaseR\bdatabase\x12,\n" +
-	"\x05redis\x18\x02 \x01(\v2\x16.kratos.api.Data.RedisR\x05redis\x1a:\n" +
+	"\x05redis\x18\x02 \x01(\v2\x16.kratos.api.Data.RedisR\x05redis\x1a\x94\x01\n" +
 	"\bDatabase\x12\x16\n" +
 	"\x06driver\x18\x01 \x01(\tR\x06driver\x12\x16\n" +
-	"\x06source\x18\x02 \x01(\tR\x06source\x1a\x9d\x02\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\x12)\n" +
+	"\x10migration_source\x18\x03 \x01(\tR\x0fmigrationSource\x12-\n" +
+	"\x12disable_migrations\x18\x04 \x01(\bR\x11disableMigrations\x1a\x9d\x02\n" +
 	"\x05Redis\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x12<\n" +

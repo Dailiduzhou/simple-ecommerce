@@ -12,7 +12,12 @@ server:
 data:
   database:
     driver: postgres
+    # Runtime DSN: grant only the privileges the application needs.
     source: postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable
+    # Optional migration-only DSN; empty reuses source.
+    migration_source: "${DATABASE_MIGRATION_SOURCE}"
+    # true lets CI/a DBA own migrations; false keeps migrate-on-boot.
+    disable_migrations: "${DATABASE_DISABLE_MIGRATIONS}"
   redis:
     addr: redis:6379
     network: tcp
