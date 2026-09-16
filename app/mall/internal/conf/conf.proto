@@ -38,6 +38,9 @@ message Server {
     string network = 1;
     string addr = 2;
     google.protobuf.Duration timeout = 3;
+    // CIDRs of reverse proxies whose X-Forwarded-For may be trusted. Empty
+    // means no proxy is trusted and the transport peer address is used.
+    repeated string trusted_proxies = 4;
   }
   message GRPC {
     string network = 1;

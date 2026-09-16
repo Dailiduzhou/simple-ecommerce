@@ -239,24 +239,51 @@ func TestUserUsecase_Login_FailuresAreIndistinguishable(t *testing.T) {
 	assert.Equal(t, wrongPassword.Error(), unknownPhone.Error())
 }
 
-func TestUserUsecase_Login_LockoutBlocksBeforeCredentialWork(t *testing.T) {
+// A third party who knows a phone number must not be able to lock its owner
+// out: the throttled path only answers wrong guesses with 429, while the
+// correct password still signs in and clears the counter.
+func TestUserUsecase_Login_LockoutNeverBlocksTheCorrectPassword(t *testing.T) {
+	passwordHash, err := pwdhash.HashPassword("secret-pass")
+	require.NoError(t, err)
+	locked := int64(5)
 	repo := &fakeUserRepo{
 		getUserByPhoneHash: func(ctx context.Context, phoneHash string) (*User, error) {
-			t.Fatal("locked login must not touch the user repository")
-			return nil, nil
+			return &User{ID: 2, PasswordHash: passwordHash}, nil
 		},
 	}
 	auth := &fakeAuthRepo{
 		loginFailures: func(ctx context.Context, phoneHash string) (int64, error) {
-			return 5, nil
+			return locked, nil
 		},
 	}
 	uc := NewUserUsecase(repo, auth, testUserAuth(), log.DefaultLogger)
 
+	_, wrong := uc.Login(context.Background(), "13800138000", "wrong-pass")
+	require.True(t, userv1.IsUserLoginLocked(wrong), "a throttled account reports 429 for wrong guesses")
+
 	u, err := uc.Login(context.Background(), "13800138000", "secret-pass")
-	require.Error(t, err)
-	assert.Nil(t, u)
-	assert.True(t, userv1.IsUserLoginLocked(err))
+	require.NoError(t, err, "the legitimate owner must still be able to sign in")
+	require.Equal(t, int64(2), u.ID)
+	auth.mu.Lock()
+	require.Len(t, auth.cleared, 1, "a successful login clears the failure window")
+	auth.mu.Unlock()
+}
+
+// Locking an unregistered phone must stay indistinguishable from locking a
+// registered one, otherwise the response leaks account existence.
+func TestUserUsecase_Login_LockoutHidesAccountExistence(t *testing.T) {
+	auth := &fakeAuthRepo{
+		loginFailures: func(ctx context.Context, phoneHash string) (int64, error) {
+			return 9, nil
+		},
+	}
+	unknown := &fakeUserRepo{
+		getUserByPhoneHash: func(ctx context.Context, phoneHash string) (*User, error) { return nil, nil },
+	}
+	uc := NewUserUsecase(unknown, auth, testUserAuth(), log.DefaultLogger)
+
+	_, err := uc.Login(context.Background(), "13800138000", "secret-pass")
+	require.True(t, userv1.IsUserLoginLocked(err))
 }
 
 func TestUserUsecase_Login_LockoutCheckFailsOpen(t *testing.T) {

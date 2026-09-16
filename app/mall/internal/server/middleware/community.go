@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"strings"
 
@@ -21,7 +20,7 @@ func observedOperation(op string) bool {
 		strings.Contains(op, "BrowsingHistory") || strings.HasSuffix(op, "/RecordProductView")
 }
 
-func CommunityWriteLimit(l biz.WriteLimiter) middleware.Middleware {
+func CommunityWriteLimit(l biz.WriteLimiter, clientIP *ClientIPResolver) middleware.Middleware {
 	return func(next middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (any, error) {
 			op := ""
@@ -51,15 +50,13 @@ func CommunityWriteLimit(l biz.WriteLimiter) middleware.Middleware {
 				}
 				address := "unknown"
 				if r, ok := kratoshttp.RequestFromServerContext(ctx); ok {
-					address = r.RemoteAddr
+					address = clientIP.ClientIP(r.RemoteAddr, r.Header)
 				} else if p, ok := peer.FromContext(ctx); ok {
-					address = p.Addr.String()
+					address = clientIP.ClientIP(p.Addr.String(), nil)
 				}
-				if host, _, e := net.SplitHostPort(address); e == nil {
-					address = host
-				}
-				// Forwarded headers are untrusted. A proxy must enforce its own IP quota or
-				// supply a separately configured trusted-proxy policy, not arbitrary XFF.
+				// Forwarded headers are only trusted when the immediate peer is a
+				// configured trusted proxy (server.http.trusted_proxies); otherwise
+				// the peer address is used and a spoofed X-Forwarded-For is ignored.
 				if e := l.Allow(ctx, actorID, address, op); e != nil {
 					return nil, e
 				}

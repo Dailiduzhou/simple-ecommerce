@@ -913,12 +913,15 @@ func (x *Storage) GetUnusedRetentionHours() int32 {
 }
 
 type Server_HTTP struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Network       string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
-	Addr          string                 `protobuf:"bytes,2,opt,name=addr,proto3" json:"addr,omitempty"`
-	Timeout       *durationpb.Duration   `protobuf:"bytes,3,opt,name=timeout,proto3" json:"timeout,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Network string                 `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	Addr    string                 `protobuf:"bytes,2,opt,name=addr,proto3" json:"addr,omitempty"`
+	Timeout *durationpb.Duration   `protobuf:"bytes,3,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	// CIDRs of reverse proxies whose X-Forwarded-For may be trusted. Empty
+	// means no proxy is trusted and the transport peer address is used.
+	TrustedProxies []string `protobuf:"bytes,4,rep,name=trusted_proxies,json=trustedProxies,proto3" json:"trusted_proxies,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Server_HTTP) Reset() {
@@ -968,6 +971,13 @@ func (x *Server_HTTP) GetAddr() string {
 func (x *Server_HTTP) GetTimeout() *durationpb.Duration {
 	if x != nil {
 		return x.Timeout
+	}
+	return nil
+}
+
+func (x *Server_HTTP) GetTrustedProxies() []string {
+	if x != nil {
+		return x.TrustedProxies
 	}
 	return nil
 }
@@ -1184,14 +1194,15 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\fphone_secret\x18\x05 \x01(\tR\vphoneSecret\x127\n" +
 	"\x18auth_requests_per_minute\x18\x06 \x01(\x05R\x15authRequestsPerMinute\x12,\n" +
 	"\x12login_max_attempts\x18\a \x01(\x05R\x10loginMaxAttempts\x12O\n" +
-	"\x16login_lockout_duration\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginLockoutDuration\"\xb8\x02\n" +
+	"\x16login_lockout_duration\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginLockoutDuration\"\xe2\x02\n" +
 	"\x06Server\x12+\n" +
 	"\x04http\x18\x01 \x01(\v2\x17.kratos.api.Server.HTTPR\x04http\x12+\n" +
-	"\x04grpc\x18\x02 \x01(\v2\x17.kratos.api.Server.GRPCR\x04grpc\x1ai\n" +
+	"\x04grpc\x18\x02 \x01(\v2\x17.kratos.api.Server.GRPCR\x04grpc\x1a\x92\x01\n" +
 	"\x04HTTP\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +
-	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x1ai\n" +
+	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x12'\n" +
+	"\x0ftrusted_proxies\x18\x04 \x03(\tR\x0etrustedProxies\x1ai\n" +
 	"\x04GRPC\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +

@@ -2,6 +2,10 @@ server:
   http:
     addr: 0.0.0.0:8000
     timeout: 10s
+    # CIDRs of reverse proxies whose X-Forwarded-For may be trusted for rate
+    # limiting. Leave empty when the service is exposed directly; every entry
+    # lets that hop decide the client address.
+    trusted_proxies: []
   grpc:
     addr: 0.0.0.0:9000
     timeout: 10s

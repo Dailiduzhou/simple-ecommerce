@@ -45,6 +45,14 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 		}),
 	)
 
+	// Forwarded headers are trusted only for explicitly configured proxies; a
+	// broken list falls back to trusting nobody rather than to trusting everyone.
+	clientIP, err := custommid.NewClientIPResolver(c.Http.GetTrustedProxies())
+	if err != nil {
+		log.NewHelper(logger).Errorf("invalid server.http.trusted_proxies: %v; X-Forwarded-For stays untrusted", err)
+		clientIP = nil
+	}
+
 	opts := []http.ServerOption{
 		http.Filter(custommid.CommunityBodyLimit),
 		http.Middleware(
@@ -59,7 +67,7 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 			).
 				Match(newWhiteListMatcher()).
 				Build(),
-			custommid.CommunityWriteLimit(limiter),
+			custommid.CommunityWriteLimit(limiter, clientIP),
 		),
 	}
 	if c.Http.Network != "" {

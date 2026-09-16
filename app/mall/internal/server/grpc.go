@@ -50,7 +50,8 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 			).
 				Match(grpcWhiteListMatcher()).
 				Build(),
-			custommid.CommunityWriteLimit(limiter),
+			// gRPC has no forwarded headers: the resolver always uses the peer.
+			custommid.CommunityWriteLimit(limiter, nil),
 		),
 	}
 	if c.Grpc.Network != "" {
