@@ -419,6 +419,21 @@ func (q *Queries) GetLatestPaymentByOrder(ctx context.Context, orderID int64) (P
 	return i, err
 }
 
+const getOrderExpiryByPaymentID = `-- name: GetOrderExpiryByPaymentID :one
+SELECT o.expires_at
+FROM orders o
+JOIN payments p ON p.id = $1 AND o.id = p.order_id
+`
+
+// Poll-triggered close must respect the order payment window even when the
+// enqueue site could not embed the deadline (callback/admin triggered jobs).
+func (q *Queries) GetOrderExpiryByPaymentID(ctx context.Context, id int64) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getOrderExpiryByPaymentID, id)
+	var expires_at pgtype.Timestamptz
+	err := row.Scan(&expires_at)
+	return expires_at, err
+}
+
 const getPayment = `-- name: GetPayment :one
 SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments

@@ -108,9 +108,18 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	// Closing earlier would cancel an order that is still inside its payment
 	// window; expire_order (authoritative via the database clock) settles the
 	// order at expiry. This poll path only acts as a backstop at/after the
-	// deadline. A zero deadline keeps the legacy close-on-exhaustion behavior.
-	if !args.OrderExpiresAt.IsZero() {
-		if wait := time.Until(args.OrderExpiresAt.Add(biz.PaymentExpirySafetyMargin)); wait > 0 {
+	// deadline. Jobs whose enqueuer could not embed the deadline (callback-
+	// and admin-triggered checks) resolve it from the order row.
+	deadline := args.OrderExpiresAt
+	if deadline.IsZero() {
+		expiry, err := w.paymentRepo.GetOrderExpiry(ctx, args.PaymentID)
+		if err != nil {
+			return w.retryable(ctx, args, err)
+		}
+		deadline = expiry
+	}
+	if !deadline.IsZero() {
+		if wait := time.Until(deadline.Add(biz.PaymentExpirySafetyMargin)); wait > 0 {
 			observability.PaymentReconcileJob(ctx, args.Provider, "pending")
 			return river.JobSnooze(max(time.Second, wait))
 		}

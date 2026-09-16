@@ -68,6 +68,9 @@ type Querier interface {
 	GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) (Order, error)
 	GetOrderByUserForUpdate(ctx context.Context, arg GetOrderByUserForUpdateParams) (Order, error)
 	GetOrderByUserIdempotency(ctx context.Context, arg GetOrderByUserIdempotencyParams) (Order, error)
+	// Poll-triggered close must respect the order payment window even when the
+	// enqueue site could not embed the deadline (callback/admin triggered jobs).
+	GetOrderExpiryByPaymentID(ctx context.Context, id int64) (pgtype.Timestamptz, error)
 	GetOrderForUpdate(ctx context.Context, id int64) (Order, error)
 	GetOrderRefundByPaymentID(ctx context.Context, paymentID pgtype.Int8) (OrderRefund, error)
 	GetPayment(ctx context.Context, id int64) (Payment, error)

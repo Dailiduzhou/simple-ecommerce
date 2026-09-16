@@ -768,6 +768,21 @@ func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo str
 	})
 }
 
+// GetOrderExpiry resolves the authoritative payment window for a payment even
+// when the enqueue site could not embed the deadline (callback- and
+// admin-triggered check jobs). A missing order maps to the zero time so the
+// caller falls back to the legacy close-on-exhaustion behavior.
+func (r *PaymentRepo) GetOrderExpiry(ctx context.Context, paymentID int64) (time.Time, error) {
+	ts, err := querierFromContext(ctx, r.data.q).GetOrderExpiryByPaymentID(ctx, paymentID)
+	if err != nil {
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return time.Time{}, nil
+		}
+		return time.Time{}, err
+	}
+	return ts.Time, nil
+}
+
 func (r *PaymentRepo) PreparePaymentRefund(ctx context.Context, paymentID int64, outRefundNo string) (*biz.PaymentDO, *biz.PaymentRefund, error) {
 	var payment db.Payment
 	var refund db.OrderRefund

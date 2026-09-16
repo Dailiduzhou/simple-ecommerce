@@ -413,6 +413,7 @@ type PaymentRepo interface {
 	GetLatestPaymentByOrder(context.Context, int64) (*PaymentDO, error)
 	GetActivePaymentByOrderMethod(context.Context, int64, string) (*PaymentDO, error)
 	GetPaymentByOutTradeNo(context.Context, string) (*PaymentDO, error)
+	GetOrderExpiry(context.Context, int64) (time.Time, error)
 	BeginPaymentNotificationProcessing(context.Context, int64, string, string) (bool, error)
 	RecordPaymentNotificationError(context.Context, int64, string) error
 	MarkPaymentNotificationFailed(context.Context, int64, string) error

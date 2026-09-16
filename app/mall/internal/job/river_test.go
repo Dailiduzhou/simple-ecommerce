@@ -71,6 +71,8 @@ type workerRepo struct {
 	reconciled           *biz.ReconciliationFailure
 	closePendingCalls    int
 	closePendingArgs     biz.CheckPayArgs
+	orderExpiry          time.Time
+	orderExpiryErr       error
 }
 
 func (r *workerRepo) CreatePayment(context.Context, biz.CreatePaymentArgs) (*biz.PaymentDO, error) {
@@ -99,6 +101,9 @@ func (r *workerRepo) GetActivePaymentByOrderMethod(context.Context, int64, strin
 
 func (r *workerRepo) GetPaymentByOutTradeNo(context.Context, string) (*biz.PaymentDO, error) {
 	return r.payment, nil
+}
+func (r *workerRepo) GetOrderExpiry(context.Context, int64) (time.Time, error) {
+	return r.orderExpiry, r.orderExpiryErr
 }
 
 func (r *workerRepo) BeginPaymentNotificationProcessing(_ context.Context, id int64, _, _ string) (bool, error) {
@@ -259,14 +264,64 @@ func TestCheckPayWorker_ExhaustionWithoutDeadlineKeepsLegacyClose(t *testing.T) 
 	repo := &workerRepo{payment: payment}
 	worker := NewCheckPayWorker(gateway, repo, log.DefaultLogger)
 	worker.recordOutput = func(context.Context, pollOutput) error { return nil }
-	// Zero deadline: enqueues without expiry (legacy jobs) still close on
-	// exhaustion, so the worker never wedges on old args.
+	// Zero deadline and no order row behind the lookup: legacy close-on-
+	// exhaustion still applies so the worker never wedges on old args.
 	job := &river.Job[biz.CheckPayArgs]{
 		JobRow: &rivertype.JobRow{Attempt: 1},
 		Args:   biz.CheckPayArgs{PaymentID: 8, Provider: "wechat", NotificationID: 17, Trigger: "prepay", MaxPolls: 1, PollIntervalSeconds: 10},
 	}
 	require.NoError(t, worker.Work(context.Background(), job))
 	require.Equal(t, 1, repo.closePendingCalls)
+}
+
+func TestCheckPayWorker_ExhaustionResolvesMissingDeadlineFromOrder(t *testing.T) {
+	method := biz.PaymentMethod{Provider: "alipay", Product: "wap"}
+	payment := &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusPending, Method: method.String(), OutTradeNo: "pay_8"}
+	gateway := &workerGateway{result: &biz.PaymentQueryResult{Method: method, OutTradeNo: "pay_8", TradeState: biz.TradeStateNotPay}}
+	// Callback- and admin-triggered jobs enqueue without an embedded
+	// deadline; the worker resolves the order window instead of closing
+	// early on poll exhaustion.
+	repo := &workerRepo{payment: payment, orderExpiry: time.Now().Add(25 * time.Minute)}
+	worker := NewCheckPayWorker(gateway, repo, log.DefaultLogger)
+	worker.recordOutput = func(context.Context, pollOutput) error { return nil }
+	job := &river.Job[biz.CheckPayArgs]{
+		JobRow: &rivertype.JobRow{Attempt: 1},
+		Args:   biz.CheckPayArgs{PaymentID: 8, Provider: "alipay", NotificationID: 17, Trigger: "callback", MaxPolls: 1, PollIntervalSeconds: 10},
+	}
+	err := worker.Work(context.Background(), job)
+	var snooze *river.JobSnoozeError
+	require.True(t, errors.As(err, &snooze))
+	require.Zero(t, repo.closePendingCalls)
+}
+
+func TestCheckPayWorker_ExhaustionWithResolvedExpiredOrderCloses(t *testing.T) {
+	method := biz.PaymentMethod{Provider: "alipay", Product: "wap"}
+	payment := &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusPending, Method: method.String(), OutTradeNo: "pay_8"}
+	gateway := &workerGateway{result: &biz.PaymentQueryResult{Method: method, OutTradeNo: "pay_8", TradeState: biz.TradeStateNotPay}}
+	repo := &workerRepo{payment: payment, orderExpiry: time.Now().Add(-2 * biz.PaymentExpirySafetyMargin)}
+	worker := NewCheckPayWorker(gateway, repo, log.DefaultLogger)
+	worker.recordOutput = func(context.Context, pollOutput) error { return nil }
+	job := &river.Job[biz.CheckPayArgs]{
+		JobRow: &rivertype.JobRow{Attempt: 1},
+		Args:   biz.CheckPayArgs{PaymentID: 8, Provider: "alipay", NotificationID: 17, Trigger: "callback", MaxPolls: 1, PollIntervalSeconds: 10},
+	}
+	require.NoError(t, worker.Work(context.Background(), job))
+	require.Equal(t, 1, repo.closePendingCalls)
+}
+
+func TestCheckPayWorker_ExhaustionExpiryLookupErrorRetries(t *testing.T) {
+	method := biz.PaymentMethod{Provider: "alipay", Product: "wap"}
+	payment := &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusPending, Method: method.String(), OutTradeNo: "pay_8"}
+	gateway := &workerGateway{result: &biz.PaymentQueryResult{Method: method, OutTradeNo: "pay_8", TradeState: biz.TradeStateNotPay}}
+	repo := &workerRepo{payment: payment, orderExpiryErr: fmt.Errorf("db unavailable")}
+	worker := NewCheckPayWorker(gateway, repo, log.DefaultLogger)
+	worker.recordOutput = func(context.Context, pollOutput) error { return nil }
+	job := &river.Job[biz.CheckPayArgs]{
+		JobRow: &rivertype.JobRow{Attempt: 1},
+		Args:   biz.CheckPayArgs{PaymentID: 8, Provider: "alipay", NotificationID: 17, Trigger: "callback", MaxPolls: 1, PollIntervalSeconds: 10},
+	}
+	require.Error(t, worker.Work(context.Background(), job))
+	require.Zero(t, repo.closePendingCalls)
 }
 
 func TestClosePayWorker_AppliesAuthoritativeTerminalState(t *testing.T) {
