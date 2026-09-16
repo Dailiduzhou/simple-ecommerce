@@ -18,7 +18,8 @@ services:
     environment:
       POSTGRES_DB: ecommerce
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Local development only; the production compose file requires a real value.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
       interval: 5s
@@ -31,8 +32,12 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Optional local password: set REDIS_PASSWORD to exercise the authenticated path.
+    command: ["sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then exec redis-server --requirepass \"$$REDIS_PASSWORD\"; else exec redis-server; fi"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG; else redis-cli ping | grep -q PONG; fi"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -117,6 +122,7 @@ services:
         condition: service_started
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DATABASE_SOURCE: ${DATABASE_SOURCE:-postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       DATABASE_MIGRATION_SOURCE: ${DATABASE_MIGRATION_SOURCE:-}
       DATABASE_DISABLE_MIGRATIONS: ${DATABASE_DISABLE_MIGRATIONS:-false}
