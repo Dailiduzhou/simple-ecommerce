@@ -249,6 +249,24 @@ func TestPrepayForOrder_UsesDatabaseAmountAndCallsProviderOutsideTransaction(t *
 	require.Equal(t, PaymentActionRedirect, result.Prepay.Action.Type)
 }
 
+func TestPrepayForOrder_EnqueuesCheckPayWithOrderExpiry(t *testing.T) {
+	tx := &paymentTestTx{}
+	actionPayload := json.RawMessage(`{"url":"https://pay.example"}`)
+	gateway := &paymentTestGateway{txActive: &tx.active, capabilities: PaymentCapabilities{RequiresPoll: true}, prepayResult: &PaymentPrepayResult{Action: PaymentAction{Type: PaymentActionRedirect, Payload: actionPayload}}}
+	repo := &paymentTestRepo{}
+	expiry := time.Now().Add(25 * time.Minute)
+	orders := &orderTestRepo{order: Order{ID: 5, UserID: 42, TotalAmount: 10000, Currency: "CNY", Status: OrderStatusPendingPayment, OutTradeNo: "order_5", ExpiresAt: expiry}}
+	jobs := &paymentTestJobs{tx: tx}
+	uc := NewPaymentUsecase(gateway, repo, nil, orders, jobs, tx, paymentTestID{}, log.DefaultLogger)
+
+	_, err := uc.PrepayForOrder(context.Background(), PrepayForOrderArgs{OrderNo: "order_5", UserID: 42, Method: PaymentMethod{Provider: "wechat", Product: "native"}})
+	require.NoError(t, err)
+	require.True(t, jobs.enqueued)
+	require.Equal(t, "prepay", jobs.args.Trigger)
+	// The poll worker must not close a payment before the order window ends.
+	require.Equal(t, expiry, jobs.args.OrderExpiresAt)
+}
+
 func TestClosePayment_PersistsIntentAndJobBeforeProviderCall(t *testing.T) {
 	tx := &paymentTestTx{}
 	payment := &PaymentDO{ID: 7, OrderID: 5, UserID: 42, Amount: 10000, Currency: "CNY", Method: "newpay:app", OutTradeNo: "payment_7", Status: PaymentStatusPending}
