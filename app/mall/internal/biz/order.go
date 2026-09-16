@@ -23,6 +23,10 @@ const (
 	OrderStatusCancelled      = "cancelled"
 	OrderStatusRefunded       = "refunded"
 	DefaultCurrency           = "CNY"
+
+	// orderNoAttempts bounds how often CreateOrder retries after an
+	// out_trade_no unique-violation before giving up.
+	orderNoAttempts = 3
 )
 
 var (
@@ -33,6 +37,11 @@ var (
 	ErrOrderCannotCancel      = errors.Conflict("ORDER_CANNOT_CANCEL", "order cannot be cancelled in its current state")
 	ErrOrderHasActivePayment  = errors.Conflict("ORDER_HAS_ACTIVE_PAYMENT", "close the active payment before cancelling the order")
 	ErrOrderAlreadyPaid       = errors.Conflict("ORDER_ALREADY_PAID", "paid order must use the refund flow")
+	// ErrOrderNoCollision is a retryable collision on the unique
+	// orders.out_trade_no index. A rollback-safe id generator makes it
+	// practically unreachable, but a duplicate must be retried with a fresh
+	// number instead of surfacing a 500 to the client.
+	ErrOrderNoCollision = errors.InternalServer("ORDER_NO_COLLISION", "order number already exists")
 	ErrOrderInputInvalid      = errors.BadRequest("ORDER_INPUT_INVALID", "order items are invalid")
 	ErrOrderAmountInvalid     = errors.Conflict("ORDER_AMOUNT_INVALID", "order total must be greater than zero")
 	ErrOrderNotExpired        = errors.Conflict("ORDER_NOT_EXPIRED", "order payment window has not expired")
@@ -194,13 +203,24 @@ func (uc *orderUsecase) CreateOrder(ctx context.Context, req *CreateOrderReq) (*
 		return nil, errors.InternalServer("ORDER_REQUEST_HASH_FAILED", "failed to hash order request")
 	}
 	orderNo := uc.idGen.GenerateString()
-	order, err := uc.repo.CreateOrder(ctx, CreateOrderArgs{
-		UserID: req.UserID, AddressID: req.AddressID, OutTradeNo: orderNo,
-		Currency: DefaultCurrency, Items: items, IdempotencyKey: req.IdempotencyKey,
-		RequestHash: requestHash, ExpiresAt: time.Now().UTC().Add(uc.policy.PaymentTimeout),
-	})
-	if err != nil {
-		return nil, err
+	var order Order
+	// Bounded retry on the unique orders.out_trade_no index: the whole
+	// transaction rolls back, so re-running it with a fresh number is safe.
+	var createErr error
+	for attempt := 1; attempt <= orderNoAttempts; attempt++ {
+		order, createErr = uc.repo.CreateOrder(ctx, CreateOrderArgs{
+			UserID: req.UserID, AddressID: req.AddressID, OutTradeNo: orderNo,
+			Currency: DefaultCurrency, Items: items, IdempotencyKey: req.IdempotencyKey,
+			RequestHash: requestHash, ExpiresAt: time.Now().UTC().Add(uc.policy.PaymentTimeout),
+		})
+		if createErr == nil || !errors.Is(createErr, ErrOrderNoCollision) {
+			break
+		}
+		uc.log.WithContext(ctx).Warnw("msg", "order number collision, retrying", "attempt", attempt, "order_no", orderNo)
+		orderNo = uc.idGen.GenerateString()
+	}
+	if createErr != nil {
+		return nil, createErr
 	}
 	return &order, nil
 }

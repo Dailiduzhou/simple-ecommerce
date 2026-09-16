@@ -145,6 +145,11 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		if stderrors.As(err, &pgErr) && pgErr.Code == "23503" && pgErr.ConstraintName == "fk_order_address" {
 			return biz.Order{}, biz.ErrAddressNotFound
 		}
+		if stderrors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_orders_out_trade_no" {
+			// The caller mints a fresh out_trade_no and retries; the transaction
+			// above has already rolled back, so nothing was persisted.
+			return biz.Order{}, biz.ErrOrderNoCollision
+		}
 		if stderrors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_orders_user_idempotency" {
 			existing, loadErr := r.data.q.GetOrderByUserIdempotency(ctx, db.GetOrderByUserIdempotencyParams{
 				UserID: args.UserID, IdempotencyKey: args.IdempotencyKey,

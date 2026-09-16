@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,50 @@ import (
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/stretchr/testify/require"
 )
+
+type sequentialIDGen struct{ n int }
+
+func (g *sequentialIDGen) GenerateString() string {
+	g.n++
+	return fmt.Sprintf("order-%d", g.n)
+}
+func (g *sequentialIDGen) GenerateOrderNo32(string) string        { return g.GenerateString() }
+func (g *sequentialIDGen) GenerateOrderNo64(string, int64) string { return g.GenerateString() }
+
+// retryOrderNoRepo fails the first len(errs) creates with the given errors.
+type retryOrderNoRepo struct {
+	orderUsecaseRepo
+	attempts int
+	errs     []error
+}
+
+func (r *retryOrderNoRepo) CreateOrder(_ context.Context, args CreateOrderArgs) (Order, error) {
+	r.attempts++
+	r.created = args
+	if r.attempts <= len(r.errs) {
+		return Order{}, r.errs[r.attempts-1]
+	}
+	return Order{ID: 1, UserID: args.UserID, AddressID: args.AddressID, OutTradeNo: args.OutTradeNo, Currency: args.Currency}, nil
+}
+
+func TestOrderUsecase_RetriesOnOrderNumberCollision(t *testing.T) {
+	repo := &retryOrderNoRepo{errs: []error{ErrOrderNoCollision, ErrOrderNoCollision}}
+	uc := NewOrderUsecase(repo, &sequentialIDGen{}, log.DefaultLogger)
+	req := &CreateOrderReq{UserID: 7, AddressID: 3, IdempotencyKey: "checkout-retry", Items: []OrderItemInput{{ProductID: 1, Quantity: 1}}}
+
+	order, err := uc.CreateOrder(context.Background(), req)
+	require.NoError(t, err)
+	require.Equal(t, 3, repo.attempts, "two collisions must trigger two retries")
+	require.Equal(t, "order-3", order.OutTradeNo, "each retry must mint a fresh number")
+
+	// Once the attempts are exhausted the collision is surfaced instead of
+	// looping forever.
+	exhausted := &retryOrderNoRepo{errs: []error{ErrOrderNoCollision, ErrOrderNoCollision, ErrOrderNoCollision}}
+	uc = NewOrderUsecase(exhausted, &sequentialIDGen{}, log.DefaultLogger)
+	_, err = uc.CreateOrder(context.Background(), req)
+	require.ErrorIs(t, err, ErrOrderNoCollision)
+	require.Equal(t, 3, exhausted.attempts)
+}
 
 type orderUsecaseRepo struct {
 	created    CreateOrderArgs

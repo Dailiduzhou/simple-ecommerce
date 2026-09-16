@@ -7,7 +7,6 @@ require (
 	buf.build/go/protovalidate v0.14.0
 	github.com/6tail/lunar-go v1.4.6
 	github.com/alicebob/miniredis/v2 v2.37.0
-	github.com/bwmarrin/snowflake v0.3.0
 	github.com/go-kratos/kratos/contrib/log/zap/v2 v2.0.0-20260404020628-f149714c1d54
 	github.com/go-kratos/kratos/contrib/middleware/validate/v2 v2.0.0-20260404020628-f149714c1d54
 	github.com/go-kratos/kratos/v2 v2.9.2

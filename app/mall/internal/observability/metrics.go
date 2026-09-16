@@ -21,6 +21,7 @@ var (
 	riverJobDiscarded             = counter("river_job_discarded_total")
 	cacheOperationFailure         = counter("cache_operation_failure_total")
 	authorizationDenied           = counter("authorization_denied_total")
+	idGeneratorClockRollback      = counter("id_generator_clock_rollback_total")
 )
 
 func counter(name string) metric.Int64Counter { value, _ := meter.Int64Counter(name); return value }
@@ -57,6 +58,13 @@ func CacheFailure(ctx context.Context, operation, entity string) {
 }
 func AuthorizationDenied(ctx context.Context, operation, reason string) {
 	add(ctx, authorizationDenied, attribute.String("operation", operation), attribute.String("reason", reason))
+}
+
+// IDGeneratorClockRollback counts backwards wall-clock steps absorbed by the
+// snowflake generator. Generated ids stay unique; the counter signals that the
+// host clock (NTP step) needs attention.
+func IDGeneratorClockRollback() {
+	add(context.Background(), idGeneratorClockRollback)
 }
 
 // CommunityEvent uses only bounded operation/result labels, never content or IDs.
