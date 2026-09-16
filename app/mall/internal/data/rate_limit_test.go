@@ -14,6 +14,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 func TestWriteRateLimitIsAtomicAndExpires(t *testing.T) {
@@ -85,7 +86,11 @@ func TestWriteRateLimitAuthAnonymousIPDimension(t *testing.T) {
 }
 
 // A signed-in caller on an auth operation keeps the dual user+IP windows.
-func TestWriteRateLimitAuthAuthenticatedKeepsUserDimension(t *testing.T) {
+// Transport layer note: login/register/refresh are JWT-whitelisted, so the
+// selector skips InjectClaims and real requests always arrive with uid==0;
+// this covers direct limiter callers only and documents the defensive dual
+// dimension.
+func TestWriteRateLimitAuthWithDirectActorKeepsUserDimension(t *testing.T) {
 	m := miniredis.RunT(t)
 	r := redis.NewClient(&redis.Options{Addr: m.Addr()})
 	defer r.Close()
@@ -121,4 +126,13 @@ func TestWriteRateLimitAuthFailClosedAndConfigBounds(t *testing.T) {
 	require.Error(t, e)
 	_, e = NewWriteLimiter(r, nil, &conf.Auth{LoginMaxAttempts: -1})
 	require.Error(t, e)
+	_, e = NewWriteLimiter(r, nil, &conf.Auth{LoginLockoutDuration: durationpb.New(25 * time.Hour)})
+	require.Error(t, e)
+	_, e = NewWriteLimiter(r, nil, &conf.Auth{LoginLockoutDuration: durationpb.New(24 * time.Hour)})
+	require.NoError(t, e)
+	// The auth bucket stays fail-closed even when community writes fail open.
+	l, e = NewWriteLimiter(r, &conf.Community{RateLimitFailOpen: true}, &conf.Auth{})
+	require.NoError(t, e)
+	require.Error(t, l.Allow(context.Background(), 0, "1.2.3.4", userv1.OperationUserLogin))
+	require.NoError(t, l.Allow(context.Background(), 1, "1.2.3.4", mediav1.OperationMediaCreateImageUpload))
 }

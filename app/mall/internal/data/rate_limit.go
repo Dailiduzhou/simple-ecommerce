@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	mediav1 "github.com/Dailiduzhou/simple-ecommerce/api/media/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
@@ -50,6 +51,9 @@ func validateAuthLimits(a *conf.Auth) error {
 	if v := a.GetLoginMaxAttempts(); v < 0 || v > 100 {
 		return fmt.Errorf("auth.login_max_attempts must be between 0 (default) and 100")
 	}
+	if d := a.GetLoginLockoutDuration().AsDuration(); d < 0 || d > 24*time.Hour {
+		return fmt.Errorf("auth.login_lockout_duration must be between 0 (default) and 24h")
+	}
 	return nil
 }
 
@@ -87,10 +91,14 @@ func (r *RedisWriteLimiter) Allow(ctx context.Context, uid int64, ip, op string)
 	if uid <= 0 {
 		n, e = anonLimitScript.Run(ctx, r.rdb, []string{ipKey}, limit).Int()
 	} else {
+		// Defensive only: at the transport layer the auth operations are
+		// JWT-whitelisted, so the selector skips InjectClaims and requests
+		// always arrive without claims. Direct callers keep the dual
+		// user+IP dimension.
 		n, e = writeLimitScript.Run(ctx, r.rdb, []string{redisKey("community", "limit", category, "user", uid), ipKey}, limit, limit*5).Int()
 	}
 	if e != nil {
-		return r.unavailable(ctx)
+		return r.unavailable(ctx, category)
 	}
 	if n == 0 {
 		observability.CommunityEvent(ctx, "rate_limit", "denied")
@@ -99,8 +107,14 @@ func (r *RedisWriteLimiter) Allow(ctx context.Context, uid int64, ip, op string)
 	return nil
 }
 
-func (r *RedisWriteLimiter) unavailable(ctx context.Context) error {
+func (r *RedisWriteLimiter) unavailable(ctx context.Context, category string) error {
 	observability.CommunityEvent(ctx, "rate_limit", "unavailable")
+	// The auth bucket stays fail-closed like the JWT blacklist chain:
+	// community.rate_limit_fail_open is an availability knob for social
+	// writes and must never unthrottle login/register/refresh.
+	if category == "auth" {
+		return errors.ServiceUnavailable("RATE_LIMIT_UNAVAILABLE", "write limiter is unavailable")
+	}
 	if r.failOpen {
 		return nil
 	}

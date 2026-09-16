@@ -55,7 +55,7 @@ if n == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
 return n`)
 
 // RecordLoginFailure counts one failed login attempt for a phone hash (an
-// HMAC hex string, no PII). The window is fixed from the first failure.
+// HMAC-SHA256 digest in base64 encoding, no PII). The window is fixed from the first failure.
 func (r *AuthRepo) RecordLoginFailure(ctx context.Context, phoneHash string, window time.Duration) error {
 	if window <= 0 {
 		return errors.New("login lockout window must be positive")
