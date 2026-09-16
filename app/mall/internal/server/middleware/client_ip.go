@@ -1,11 +1,27 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
 )
+
+type clientIPKey struct{}
+
+// WithClientIP records the resolved caller address so handlers can forward it
+// to channel risk control instead of trusting a request field.
+func WithClientIP(ctx context.Context, ip string) context.Context {
+	return context.WithValue(ctx, clientIPKey{}, ip)
+}
+
+// ClientIPFromContext returns the address resolved by the transport middleware,
+// or "" when the request did not pass through it.
+func ClientIPFromContext(ctx context.Context) string {
+	ip, _ := ctx.Value(clientIPKey{}).(string)
+	return ip
+}
 
 // ClientIPResolver maps a transport peer to the rate-limiting identity of the
 // caller.

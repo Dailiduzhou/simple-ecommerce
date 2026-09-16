@@ -1850,17 +1850,20 @@ components:
                     type: string
                 clientIp:
                     type: string
+                    description: 'Ignored: the server derives the address from the connection.'
                 extraParams:
                     type: object
                     additionalProperties:
                         type: string
                 description:
                     type: string
+                    description: Optional; 127 bytes is the strictest channel limit (Wechat).
             description: |-
                 统一创建支付请求。
                  - order_no: 商户订单号(对应 orders.out_trade_no)。
                  - method: provider-neutral 的 "provider:product"，例如 "alipay:wap"。
-                 - client_ip: 客户端 IP,微信风控必传。
+                 - client_ip: 客户端 IP。服务端只使用连接层解析出的地址（受
+                   server.http.trusted_proxies 约束），请求体里的值会被忽略。
                  - extra_params: 渠道特有的扩展参数抹平字段:
                      * WECHAT_JSAPI 必须传 "openid"。
                      * ALIPAY_WAP 可传 "return_url"。

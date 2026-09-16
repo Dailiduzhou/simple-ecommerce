@@ -41,7 +41,14 @@ var (
 	// the prepay never reached the provider or the order was purged. This alone
 	// does not prove it is safe to release stock or invalidate signed links.
 	ErrProviderOrderNotExist = errors.NotFound("PAYMENT_PROVIDER_ORDER_NOT_EXIST", "provider has no record of this trade")
+	// ErrPaymentDescriptionTooLong: channels reject an over-long description
+	// outright instead of truncating it.
+	ErrPaymentDescriptionTooLong = errors.BadRequest("PAYMENT_DESCRIPTION_TOO_LONG", "payment description exceeds the channel limit")
 )
+
+// MaxPaymentDescriptionBytes is the strictest description length across the
+// supported channels (Wechat 127 bytes; Alipay allows 256).
+const MaxPaymentDescriptionBytes = 127
 
 type PaymentMethod struct {
 	Provider string
@@ -625,6 +632,16 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 	if !order.ExpiresAt.IsZero() && !time.Now().UTC().Before(order.ExpiresAt) {
 		return nil, ErrOrderExpired
 	}
+	// Validate the channel description before any payment row exists: Wechat
+	// caps it at 127 bytes and Alipay at 256, and both reject instead of
+	// truncating.
+	description := strings.TrimSpace(args.Description)
+	if description == "" {
+		description = fmt.Sprintf("Order %s", order.OutTradeNo)
+	}
+	if len(description) > MaxPaymentDescriptionBytes {
+		return nil, ErrPaymentDescriptionTooLong
+	}
 	outTradeNo := uc.idGen.GenerateString()
 	if err := validateOutTradeNo(outTradeNo); err != nil {
 		return nil, err
@@ -656,10 +673,6 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 			Payment: payment,
 			Prepay:  &PaymentPrepayResult{ProviderReference: payment.ThirdPartyTxID, Action: payment.Action},
 		}, nil
-	}
-	description := strings.TrimSpace(args.Description)
-	if description == "" {
-		description = fmt.Sprintf("Order %s", order.OutTradeNo)
 	}
 	prepay, err := uc.gateway.Prepay(ctx, PaymentPrepayRequest{
 		Method: method, OutTradeNo: payment.OutTradeNo, Description: description,

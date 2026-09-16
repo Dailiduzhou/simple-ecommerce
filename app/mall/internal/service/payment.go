@@ -9,6 +9,7 @@ import (
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/payment/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	custommid "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/server/middleware"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
@@ -40,7 +41,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymen
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.paymentUc.PrepayForOrder(ctx, biz.PrepayForOrderArgs{OrderNo: req.OrderNo, UserID: claims.UserID, Method: method, ClientIP: req.ClientIp, Extension: req.ExtraParams, Description: req.Description})
+	// client_ip is taken from the connection (see the trusted-proxy policy in
+	// server.http.trusted_proxies), never from the request body: a spoofed
+	// value would end up in the channel's risk-control fields.
+	result, err := s.paymentUc.PrepayForOrder(ctx, biz.PrepayForOrderArgs{OrderNo: req.OrderNo, UserID: claims.UserID, Method: method, ClientIP: custommid.ClientIPFromContext(ctx), Extension: req.ExtraParams, Description: req.Description})
 	if err != nil {
 		return nil, err
 	}
