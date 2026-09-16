@@ -217,6 +217,11 @@ func TestEventRepo_CreateEvent_CachesDetailAndInvalidatesListCache(t *testing.T)
 			return mockEvent, nil
 		})
 
+	mockQ.EXPECT().
+		GetEvent(gomock.Any(), int64(5)).
+		Times(1).
+		Return(mockEvent, nil)
+
 	e, err := repo.CreateEvent(context.Background(), "created", 0, coverImage, mediaAssets, "created event", startAt, endAt)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), e.ID)
@@ -226,8 +231,11 @@ func TestEventRepo_CreateEvent_CachesDetailAndInvalidatesListCache(t *testing.T)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), cached.ID)
 	assert.Equal(t, "created", cached.Name)
-	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
-	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	// The create advanced the detail generation, so the fresh read repopulates
+	// the detail cache under the new generation; the stale list keys stay in
+	// Redis but are no longer reachable.
+	assert.Equal(t, "1", d.rdb.Get(context.Background(), eventGenerationKey(5)).Val())
+	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), redisKey("event", 5, "g", 1)).Val())
 	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
 }
 
@@ -238,7 +246,7 @@ func TestEventRepo_UpdateEvent_RefreshesDetailAndInvalidatesListCache(t *testing
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewEventRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), eventCacheKey(6), &biz.Event{ID: 6, Name: "old"})
+	repo.setCache(context.Background(), redisKey(eventCacheKey(6), "g", 0), &biz.Event{ID: 6, Name: "old"})
 	repo.setListCache(context.Background(), eventListCacheKey(0, 10, 0), []biz.Event{{ID: 6, Name: "stale"}})
 
 	startAt := time.Date(2026, 6, 3, 10, 0, 0, 0, time.UTC)
@@ -269,6 +277,11 @@ func TestEventRepo_UpdateEvent_RefreshesDetailAndInvalidatesListCache(t *testing
 			return mockEvent, nil
 		})
 
+	mockQ.EXPECT().
+		GetEvent(gomock.Any(), int64(6)).
+		Times(1).
+		Return(mockEvent, nil)
+
 	e, err := repo.UpdateEvent(context.Background(), 6, "updated", coverImage, mediaAssets, "updated event", startAt, endAt)
 	require.NoError(t, err)
 	assert.Equal(t, "updated", e.Name)
@@ -276,7 +289,7 @@ func TestEventRepo_UpdateEvent_RefreshesDetailAndInvalidatesListCache(t *testing
 	cached, err := repo.GetEvent(context.Background(), 6)
 	require.NoError(t, err)
 	assert.Equal(t, "updated", cached.Name)
-	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
+	assert.Equal(t, "1", d.rdb.Get(context.Background(), eventGenerationKey(6)).Val())
 	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
 }
 
@@ -305,7 +318,7 @@ func TestEventRepo_UpdateEventStatus_ClearsCaches(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewEventRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), eventCacheKey(7), &biz.Event{ID: 7, Name: "active"})
+	repo.setCache(context.Background(), redisKey(eventCacheKey(7), "g", 0), &biz.Event{ID: 7, Name: "active"})
 	repo.setListCache(context.Background(), eventListCacheKey(0, 10, 0), []biz.Event{{ID: 7, Name: "stale all"}})
 	repo.setListCache(context.Background(), eventListCacheKey(1, 10, 0), []biz.Event{{ID: 7, Name: "stale status"}})
 
@@ -316,10 +329,9 @@ func TestEventRepo_UpdateEventStatus_ClearsCaches(t *testing.T) {
 
 	err := repo.UpdateEventStatus(context.Background(), 7, 2)
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventCacheKey(7)).Val())
-	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
-	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	assert.Equal(t, "1", d.rdb.Get(context.Background(), eventGenerationKey(7)).Val())
 	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
+	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), redisKey(eventCacheKey(7), "g", 1)).Val())
 }
 
 func TestEventRepo_DeleteEvent_ClearsCaches(t *testing.T) {
@@ -329,7 +341,7 @@ func TestEventRepo_DeleteEvent_ClearsCaches(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewEventRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), eventCacheKey(8), &biz.Event{ID: 8, Name: "delete"})
+	repo.setCache(context.Background(), redisKey(eventCacheKey(8), "g", 0), &biz.Event{ID: 8, Name: "delete"})
 	repo.setListCache(context.Background(), eventListCacheKey(0, 10, 0), []biz.Event{{ID: 8, Name: "stale all"}})
 	repo.setListCache(context.Background(), eventListCacheKey(1, 10, 0), []biz.Event{{ID: 8, Name: "stale status"}})
 
@@ -340,10 +352,9 @@ func TestEventRepo_DeleteEvent_ClearsCaches(t *testing.T) {
 
 	err := repo.DeleteEvent(context.Background(), 8)
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), eventCacheKey(8)).Val())
-	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(0, 10, 0)).Val())
-	assert.Equal(t, int64(1), d.rdb.Exists(context.Background(), eventListCacheKey(1, 10, 0)).Val())
+	assert.Equal(t, "1", d.rdb.Get(context.Background(), eventGenerationKey(8)).Val())
 	assert.Equal(t, "1", d.rdb.Get(context.Background(), "event:list:gen").Val())
+	assert.Equal(t, int64(0), d.rdb.Exists(context.Background(), redisKey(eventCacheKey(8), "g", 1)).Val())
 }
 
 func ptrStatus(v int32) *int32 { return &v }

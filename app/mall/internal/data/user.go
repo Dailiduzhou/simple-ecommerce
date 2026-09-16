@@ -55,7 +55,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEnc
 		return nil, err
 	}
 	bizUser := toBizUser(u)
-	r.setCache(ctx, redisKey("user", bizUser.ID), bizUser)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, userGenerationKey(bizUser.ID))
 	return bizUser, nil
 }
 
@@ -71,7 +71,8 @@ func (r *UserRepo) GetAuthUser(ctx context.Context, id int64) (*biz.User, error)
 }
 
 func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error) {
-	return cacheAside(ctx, r.data, r.log, redisKey("user", id), r.getCache, r.setCache, func() (*biz.User, error) {
+	key := generatedEntityCacheKey(ctx, r.data, r.log, userGenerationKey(id), redisKey("user", id))
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.User, error) {
 		row, err := r.data.DB(ctx).GetUserByID(ctx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -95,7 +96,9 @@ func (r *UserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*b
 	}
 	user := toBizUser(u)
 	if !inTransaction(ctx) {
-		r.setCache(ctx, redisKey("user", user.ID), user)
+		if key := generatedEntityCacheKey(ctx, r.data, r.log, userGenerationKey(user.ID), redisKey("user", user.ID)); key != "" {
+			r.setCache(ctx, key, user)
+		}
 	}
 	return user, nil
 }
@@ -110,21 +113,16 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName 
 		return nil, err
 	}
 	bizUser := toBizUser(u)
-	r.deleteCache(ctx, redisKey("user", id))
-	r.setCache(ctx, redisKey("user", id), bizUser)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, userGenerationKey(id))
 	return bizUser, nil
 }
 
 func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
-	u, err := r.data.DB(ctx).GetUserByID(ctx, id)
+	err := r.data.DB(ctx).DeleteUser(ctx, id)
 	if err != nil {
 		return err
 	}
-	err = r.data.DB(ctx).DeleteUser(ctx, id)
-	if err != nil {
-		return err
-	}
-	deleteJSONCache(ctx, r.data, r.log, redisKey("user", id), redisKey("user", "phone", u.PhoneHash))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, userGenerationKey(id))
 	return nil
 }
 
@@ -150,6 +148,10 @@ func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.User) {
 
 func (r *UserRepo) deleteCache(ctx context.Context, key string) {
 	deleteJSONCache(ctx, r.data, r.log, key)
+}
+
+func userGenerationKey(id int64) string {
+	return redisKey("user", id, "gen")
 }
 
 func toBizUser(u db.User) *biz.User {
@@ -204,8 +206,12 @@ func (r *ShippingAddressRepo) deleteCache(ctx context.Context, key string) {
 	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
-func (r *ShippingAddressRepo) deleteListCache(ctx context.Context, key string) {
-	deleteJSONCache(ctx, r.data, r.log, key)
+func shippingAddressGenerationKey(userID, addressID int64) string {
+	return redisKey("shipping_addr", "user", userID, addressID, "gen")
+}
+
+func shippingAddressListGenerationKey(userID int64) string {
+	return redisKey("shipping_addr", "user", userID, "list:gen")
 }
 
 func (r *ShippingAddressRepo) CreateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, receiverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*biz.ShippingAddress, error) {
@@ -233,16 +239,16 @@ func (r *ShippingAddressRepo) CreateShippingAddress(ctx context.Context, userID 
 		return nil, err
 	}
 	result := toBizShippingAddress(sd)
-	r.setCache(ctx, shippingAddressCacheKey(userID, result.ID), &result)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressGenerationKey(userID, result.ID))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressListGenerationKey(userID))
 	if oldDefaultID > 0 {
-		r.deleteCache(ctx, shippingAddressCacheKey(userID, oldDefaultID))
+		bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressGenerationKey(userID, oldDefaultID))
 	}
-	r.deleteListCache(ctx, redisKey("shipping_addr", "user", userID))
 	return &result, nil
 }
 
 func (r *ShippingAddressRepo) ListShippingAddressesByUser(ctx context.Context, userID int64) ([]biz.ShippingAddress, error) {
-	key := redisKey("shipping_addr", "user", userID)
+	key := generatedEntityCacheKey(ctx, r.data, r.log, shippingAddressListGenerationKey(userID), redisKey("shipping_addr", "user", userID))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.ShippingAddress, error) {
 		rows, err := r.data.DB(ctx).ListShippingAddressesByUser(ctx, userID)
 		if err != nil {
@@ -257,7 +263,7 @@ func (r *ShippingAddressRepo) ListShippingAddressesByUser(ctx context.Context, u
 }
 
 func (r *ShippingAddressRepo) GetShippingAddress(ctx context.Context, id int64, userID int64) (*biz.ShippingAddress, error) {
-	key := shippingAddressCacheKey(userID, id)
+	key := generatedEntityCacheKey(ctx, r.data, r.log, shippingAddressGenerationKey(userID, id), shippingAddressCacheKey(userID, id))
 	address, err := cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.ShippingAddress, error) {
 		row, err := r.data.DB(ctx).GetShippingAddress(ctx, db.GetShippingAddressParams{ID: id, UserID: userID})
 		if stderrors.Is(err, pgx.ErrNoRows) {
@@ -301,9 +307,8 @@ func (r *ShippingAddressRepo) UpdateShippingAddress(ctx context.Context, id int6
 		return nil, err
 	}
 	result := toBizShippingAddress(sa)
-	r.deleteCache(ctx, shippingAddressCacheKey(userID, id))
-	r.deleteListCache(ctx, redisKey("shipping_addr", "user", userID))
-	r.setCache(ctx, shippingAddressCacheKey(userID, id), &result)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressGenerationKey(userID, id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressListGenerationKey(userID))
 	return &result, nil
 }
 
@@ -330,11 +335,11 @@ func (r *ShippingAddressRepo) SetDefaultShippingAddress(ctx context.Context, id 
 	if err != nil {
 		return err
 	}
-	r.deleteListCache(ctx, redisKey("shipping_addr", "user", userID))
-	r.deleteCache(ctx, shippingAddressCacheKey(userID, id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressGenerationKey(userID, id))
 	if oldDefaultID > 0 {
-		r.deleteCache(ctx, shippingAddressCacheKey(userID, oldDefaultID))
+		bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressGenerationKey(userID, oldDefaultID))
 	}
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressListGenerationKey(userID))
 	return nil
 }
 
@@ -346,8 +351,8 @@ func (r *ShippingAddressRepo) DeleteShippingAddress(ctx context.Context, id int6
 	if err != nil {
 		return err
 	}
-	r.deleteCache(ctx, shippingAddressCacheKey(userID, id))
-	r.deleteListCache(ctx, redisKey("shipping_addr", "user", userID))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressGenerationKey(userID, id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressListGenerationKey(userID))
 	return nil
 }
 

@@ -33,14 +33,13 @@ func (r *CategoryRepo) CreateCategory(ctx context.Context, parentID int64, name 
 		return nil, err
 	}
 	bizCategory := toBizCategory(c)
-	r.setCache(ctx, redisKey("category", bizCategory.ID), &bizCategory)
-	r.deleteListCache(ctx, parentID)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryGenerationKey(bizCategory.ID))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryListGenerationKey)
 	return &bizCategory, nil
 }
 
 func (r *CategoryRepo) DeleteCategory(ctx context.Context, id int64) error {
-	c, err := r.GetCategory(ctx, id)
-	if err != nil {
+	if _, err := r.GetCategory(ctx, id); err != nil {
 		return err
 	}
 	children, err := r.ListSubCategories(ctx, id)
@@ -52,20 +51,17 @@ func (r *CategoryRepo) DeleteCategory(ctx context.Context, id int64) error {
 		return err
 	}
 
-	r.deleteCache(ctx, redisKey("category", id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryGenerationKey(id))
 	for i := range children {
-		r.deleteCache(ctx, redisKey("category", children[i].ID))
+		bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryGenerationKey(children[i].ID))
 	}
-	r.deleteListCache(ctx, id)
-	r.deleteListCache(ctx, 0)
-	if c != nil {
-		r.deleteListCache(ctx, c.ParentID)
-	}
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryListGenerationKey)
 	return nil
 }
 
 func (r *CategoryRepo) GetCategory(ctx context.Context, id int64) (*biz.Category, error) {
-	return cacheAside(ctx, r.data, r.log, redisKey("category", id), r.getCache, r.setCache, func() (*biz.Category, error) {
+	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryGenerationKey(id), redisKey("category", id))
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.Category, error) {
 		row, err := r.data.DB(ctx).GetCategory(ctx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -79,7 +75,8 @@ func (r *CategoryRepo) GetCategory(ctx context.Context, id int64) (*biz.Category
 }
 
 func (r *CategoryRepo) ListSubCategories(ctx context.Context, parentID int64) ([]biz.Category, error) {
-	return cacheAside(ctx, r.data, r.log, categoryListCacheKey(parentID), r.getListCache, r.setListCache, func() ([]biz.Category, error) {
+	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryListGenerationKey, categoryListCacheKey(parentID))
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Category, error) {
 		rows, err := r.data.DB(ctx).ListSubCategories(ctx, toPgParentID(parentID))
 		if err != nil {
 			return nil, err
@@ -89,7 +86,8 @@ func (r *CategoryRepo) ListSubCategories(ctx context.Context, parentID int64) ([
 }
 
 func (r *CategoryRepo) ListTopCategories(ctx context.Context) ([]biz.Category, error) {
-	return cacheAside(ctx, r.data, r.log, categoryListCacheKey(0), r.getListCache, r.setListCache, func() ([]biz.Category, error) {
+	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryListGenerationKey, categoryListCacheKey(0))
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Category, error) {
 		rows, err := r.data.DB(ctx).ListTopCategories(ctx)
 		if err != nil {
 			return nil, err
@@ -99,11 +97,6 @@ func (r *CategoryRepo) ListTopCategories(ctx context.Context) ([]biz.Category, e
 }
 
 func (r *CategoryRepo) UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*biz.Category, error) {
-	oldCategory, err := r.GetCategory(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
 	c, err := r.data.DB(ctx).UpdateCategory(ctx, db.UpdateCategoryParams{
 		ID:        id,
 		Name:      name,
@@ -117,12 +110,8 @@ func (r *CategoryRepo) UpdateCategory(ctx context.Context, id int64, name string
 	}
 
 	bizCategory := toBizCategory(c)
-	r.deleteCache(ctx, redisKey("category", id))
-	r.setCache(ctx, redisKey("category", id), &bizCategory)
-	if oldCategory != nil {
-		r.deleteListCache(ctx, oldCategory.ParentID)
-	}
-	r.deleteListCache(ctx, bizCategory.ParentID)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryGenerationKey(id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, categoryListGenerationKey)
 	return &bizCategory, nil
 }
 
@@ -142,12 +131,10 @@ func (r *CategoryRepo) setListCache(ctx context.Context, key string, value []biz
 	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
-func (r *CategoryRepo) deleteCache(ctx context.Context, key string) {
-	deleteJSONCache(ctx, r.data, r.log, key)
-}
+const categoryListGenerationKey = "category:list:gen"
 
-func (r *CategoryRepo) deleteListCache(ctx context.Context, parentID int64) {
-	r.deleteCache(ctx, categoryListCacheKey(parentID))
+func categoryGenerationKey(id int64) string {
+	return redisKey("category", id, "gen")
 }
 
 func categoryListCacheKey(parentID int64) string {

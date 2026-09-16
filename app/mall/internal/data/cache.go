@@ -136,3 +136,17 @@ func generationCacheKey(generation int64, key string) string {
 	}
 	return key
 }
+
+// generatedEntityCacheKey scopes a single-entity cache key to the current value
+// of its generation key. Writers advance the generation after commit, so a load
+// that started before a concurrent delete/update can no longer publish a stale
+// value under a reachable key (the old generation expires with its TTL). A
+// failed generation GET disables caching: it must never fall back to an
+// unversioned key that old writers could still target.
+func generatedEntityCacheKey(ctx context.Context, d *Data, logger *log.Helper, generationKey, baseKey string) string {
+	generation := readCacheGeneration(ctx, d.rdb, logger, generationKey)
+	if generation < 0 {
+		return ""
+	}
+	return redisKey(baseKey, "g", generation)
+}

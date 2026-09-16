@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestDetailNegativeCachesExpire(t *testing.T) {
 			mr := miniredis.RunT(t)
 			d := newTestData(t, q, mr)
 			ctx := context.Background()
-			key := redisKey(entity, 42)
+			key := redisKey(entity, 42, "g", 0)
 			var read func()
 			switch entity {
 			case "user":
@@ -60,7 +61,7 @@ func TestDetailNegativeCachesExpire(t *testing.T) {
 					require.Nil(t, value)
 				}
 			case "shipping_addr":
-				key = shippingAddressCacheKey(7, 42)
+				key = redisKey("shipping_addr", "user", 7, 42, "g", 0)
 				q.EXPECT().GetShippingAddress(gomock.Any(), db.GetShippingAddressParams{ID: 42, UserID: 7}).Return(db.ShippingAddress{}, pgx.ErrNoRows).Times(2)
 				r := NewShippingAddressRepo(d, nil, log.DefaultLogger)
 				read = func() {
@@ -210,18 +211,23 @@ func TestCacheMutationsWaitForCommitAndSnapshotValues(t *testing.T) {
 		t.Run(entity, func(t *testing.T) {
 			q := mockdb.NewMockQuerier(gomock.NewController(t))
 			mr := miniredis.RunT(t)
-			d := newTestData(t, nil, mr) // All SQL must use the transaction querier.
+			d := newTestData(t, q, mr) // In-tx SQL must still use the transaction querier.
 			state := &txState{}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			txCtx := context.WithValue(WithQuerier(ctx, q, nil), txStateKey{}, state)
 			var get func(context.Context) (string, error)
-			key := redisKey(entity, 42)
+			// Generation-scoped keys: writers advance the generation after commit
+			// instead of overwriting the key an in-flight load is about to fill.
+			oldKey := redisKey(entity, 42, "g", 0)
+			newKey := redisKey(entity, 42, "g", 1)
+			genKey := redisKey(entity, 42, "gen")
 			if entity == "user" {
 				r := NewUserRepo(d, log.DefaultLogger)
-				r.setCache(ctx, key, &biz.User{ID: 42, Nickname: "old"})
+				r.setCache(ctx, oldKey, &biz.User{ID: 42, Nickname: "old"})
 				q.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).Return(db.User{ID: 42, Nickname: "new", PasswordHash: "secret"}, nil)
-				q.EXPECT().GetUserByID(gomock.Any(), int64(42)).Return(db.User{ID: 42, Nickname: "transaction"}, nil)
+				first := q.EXPECT().GetUserByID(gomock.Any(), int64(42)).Return(db.User{ID: 42, Nickname: "transaction"}, nil)
+				q.EXPECT().GetUserByID(gomock.Any(), int64(42)).Return(db.User{ID: 42, Nickname: "new", PasswordHash: "secret"}, nil).After(first)
 				value, err := r.UpdateUser(txCtx, 42, "new", "")
 				require.NoError(t, err)
 				value.Nickname = "caller mutation"
@@ -234,8 +240,9 @@ func TestCacheMutationsWaitForCommitAndSnapshotValues(t *testing.T) {
 				}
 			} else {
 				r := NewCategoryRepo(d, log.DefaultLogger)
-				r.setCache(ctx, key, &biz.Category{ID: 42, Name: "old"})
-				q.EXPECT().GetCategory(gomock.Any(), int64(42)).Return(db.Category{ID: 42, Name: "transaction"}, nil).Times(2)
+				r.setCache(ctx, oldKey, &biz.Category{ID: 42, Name: "old"})
+				first := q.EXPECT().GetCategory(gomock.Any(), int64(42)).Return(db.Category{ID: 42, Name: "transaction"}, nil)
+				q.EXPECT().GetCategory(gomock.Any(), int64(42)).Return(db.Category{ID: 42, Name: "new"}, nil).After(first)
 				q.EXPECT().UpdateCategory(gomock.Any(), gomock.Any()).Return(db.Category{ID: 42, Name: "new"}, nil)
 				value, err := r.UpdateCategory(txCtx, 42, "new", 0)
 				require.NoError(t, err)
@@ -252,26 +259,82 @@ func TestCacheMutationsWaitForCommitAndSnapshotValues(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "old", value, "uncommitted writes must not be visible")
 			callbacks := len(state.afterCommit)
+			require.Positive(t, callbacks, "the mutation must queue its invalidation for after commit")
 			value, err = get(txCtx)
 			require.NoError(t, err)
 			require.Equal(t, "transaction", value, "transaction reads bypass old shared cache")
 			require.Len(t, state.afterCommit, callbacks, "transaction snapshots must not be queued for publication")
+			require.False(t, mr.Exists(genKey), "a discarded transaction must not advance the generation")
 			// Dropping these callbacks (rollback/failed commit) leaves 'old' intact.
 			// A successful commit must still publish after client cancellation.
 			cancel()
 			for _, callback := range state.afterCommit {
 				callback()
 			}
+			generation, err := mr.Get(genKey)
+			require.NoError(t, err)
+			require.Equal(t, "1", generation)
 			value, err = get(context.Background())
 			require.NoError(t, err)
-			require.Equal(t, "new", value)
-			encoded, err := mr.Get(key)
+			require.Equal(t, "new", value, "post-commit reads must observe the committed value")
+			encoded, err := mr.Get(newKey)
 			require.NoError(t, err)
 			require.NotContains(t, encoded, "secret")
-			require.GreaterOrEqual(t, mr.TTL(key), 10*time.Minute)
-			require.Less(t, mr.TTL(key), 20*time.Minute)
+			require.GreaterOrEqual(t, mr.TTL(newKey), 10*time.Minute)
+			require.Less(t, mr.TTL(newKey), 20*time.Minute)
+			require.True(t, mr.Exists(oldKey), "the superseded generation stays until its TTL expires")
 		})
 	}
+}
+
+func TestUpdateCannotBeUndoneByInflightLoad(t *testing.T) {
+	// Regression for the single-key cache-aside write-back race: a load that
+	// started before a concurrent update used to publish the pre-update value
+	// after the invalidating delete, resurrecting it for the whole TTL.
+	q := mockdb.NewMockQuerier(gomock.NewController(t))
+	mr := miniredis.RunT(t)
+	d := newTestData(t, q, mr)
+	r := NewCategoryRepo(d, log.DefaultLogger)
+	ctx := context.Background()
+	started, releaseCh := make(chan struct{}), make(chan struct{})
+	inflightDone := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseCh) }) }
+	defer func() {
+		release()
+		<-inflightDone
+	}()
+
+	stale := q.EXPECT().GetCategory(gomock.Any(), int64(42)).DoAndReturn(func(context.Context, int64) (db.Category, error) {
+		close(started)
+		<-releaseCh
+		return db.Category{ID: 42, Name: "old"}, nil
+	})
+	q.EXPECT().GetCategory(gomock.Any(), int64(42)).Return(db.Category{ID: 42, Name: "new"}, nil).After(stale)
+	q.EXPECT().UpdateCategory(gomock.Any(), gomock.Any()).Return(db.Category{ID: 42, Name: "new"}, nil)
+
+	go func() {
+		defer close(inflightDone)
+		_, _ = r.GetCategory(ctx, 42)
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("in-flight load did not start")
+	}
+
+	// The update commits and advances the generation while the load still runs.
+	_, err := r.UpdateCategory(ctx, 42, "new", 0)
+	require.NoError(t, err)
+	release()
+	<-inflightDone
+
+	// The stale load filled the superseded generation...
+	require.True(t, mr.Exists(redisKey("category", 42, "g", 0)))
+	// ...but readers never consult it again.
+	value, err := r.GetCategory(ctx, 42)
+	require.NoError(t, err)
+	require.Equal(t, "new", value.Name)
 }
 
 func TestProductSingleflightSeparatesGenerations(t *testing.T) {
@@ -384,12 +447,13 @@ func TestEmptyListIsCachedAndFailedMutationDoesNotInvalidate(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, rows)
 	}
-	value, err := mr.Get(categoryListCacheKey(0))
+	value, err := mr.Get(redisKey(categoryListCacheKey(0), "g", 0))
 	require.NoError(t, err)
 	require.Equal(t, "[]", value)
 	_, err = r.CreateCategory(context.Background(), 0, "new", 0)
 	require.Error(t, err)
-	require.True(t, mr.Exists(categoryListCacheKey(0)))
+	require.True(t, mr.Exists(redisKey(categoryListCacheKey(0), "g", 0)))
+	require.False(t, mr.Exists(categoryListGenerationKey), "a failed mutation must not advance the list generation")
 }
 
 func TestCreateReplacesNegativeCache(t *testing.T) {
@@ -399,15 +463,24 @@ func TestCreateReplacesNegativeCache(t *testing.T) {
 	ctx := context.Background()
 	q.EXPECT().GetCategory(gomock.Any(), int64(42)).Return(db.Category{}, pgx.ErrNoRows)
 	q.EXPECT().CreateCategory(gomock.Any(), gomock.Any()).Return(db.Category{ID: 42, Name: "created"}, nil)
+	q.EXPECT().GetCategory(gomock.Any(), int64(42)).Return(db.Category{ID: 42, Name: "created"}, nil)
 	value, err := r.GetCategory(ctx, 42)
 	require.NoError(t, err)
 	require.Nil(t, value)
+	negative, err := mr.Get(redisKey("category", 42, "g", 0))
+	require.NoError(t, err)
+	require.Equal(t, "null", negative)
 	_, err = r.CreateCategory(ctx, 0, "created", 0)
 	require.NoError(t, err)
+	// The create advanced the generation, so the negative entry below the old
+	// generation can no longer be read.
+	createdGeneration, err := mr.Get(categoryGenerationKey(42))
+	require.NoError(t, err)
+	require.Equal(t, "1", createdGeneration)
 	value, err = r.GetCategory(ctx, 42)
 	require.NoError(t, err)
 	require.Equal(t, "created", value.Name)
-	require.GreaterOrEqual(t, mr.TTL("category:42"), 10*time.Minute)
+	require.GreaterOrEqual(t, mr.TTL(redisKey("category", 42, "g", 1)), 10*time.Minute)
 }
 
 func TestGenerationCommitAndFailureSemantics(t *testing.T) {
@@ -439,15 +512,14 @@ func TestLoginAlwaysLoadsCurrentCredentials(t *testing.T) {
 	mr := miniredis.RunT(t)
 	r := NewUserRepo(newTestData(t, q, mr), log.DefaultLogger)
 	ctx := context.Background()
-	r.setCache(ctx, "user:42", &biz.User{ID: 42, Nickname: "cached"})
-	require.NoError(t, mr.Set("user:phone:hash42", `{"ID":42,"PasswordHash":"legacy"}`))
+	r.setCache(ctx, redisKey("user", 42, "g", 0), &biz.User{ID: 42, Nickname: "cached"})
 	first := q.EXPECT().GetUserByPhoneHash(gomock.Any(), "hash42").Return(db.User{ID: 42, PasswordHash: "password-one"}, nil)
 	q.EXPECT().GetUserByPhoneHash(gomock.Any(), "hash42").Return(db.User{ID: 42, PasswordHash: "password-two"}, nil).After(first)
 	for _, password := range []string{"password-one", "password-two"} {
 		u, err := r.GetUserByPhoneHash(ctx, "hash42")
 		require.NoError(t, err)
 		require.Equal(t, password, u.PasswordHash)
-		profile, err := mr.Get("user:42")
+		profile, err := mr.Get(redisKey("user", 42, "g", 0))
 		require.NoError(t, err)
 		require.NotContains(t, profile, "PasswordHash")
 		require.NotContains(t, profile, password)

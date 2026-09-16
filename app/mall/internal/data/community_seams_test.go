@@ -8,7 +8,6 @@ import (
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
-	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	dbmock "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db/mock"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang/mock/gomock"
@@ -37,7 +36,6 @@ func TestCommunityJobExhaustionIsObservableWithoutPaymentPersistence(t *testing.
 func TestUserRepoDeleteUsesTransactionAndDefersCacheInvalidation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	q := dbmock.NewMockQuerier(ctrl)
-	q.EXPECT().GetUserByID(gomock.Any(), int64(12)).Return(db.User{ID: 12, PhoneHash: "private"}, nil)
 	q.EXPECT().DeleteUser(gomock.Any(), int64(12)).Return(nil)
 	state := &txState{}
 	ctx := context.WithValue(WithQuerier(context.Background(), q, nil), txStateKey{}, state)

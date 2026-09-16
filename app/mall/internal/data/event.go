@@ -49,7 +49,7 @@ func (r *EventRepo) CreateEvent(ctx context.Context, name string, status int16, 
 	}
 
 	bizEvent := toBizEvent(e)
-	r.setCache(ctx, eventCacheKey(bizEvent.ID), &bizEvent)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, eventGenerationKey(bizEvent.ID))
 	r.deleteListCaches(ctx)
 	return &bizEvent, nil
 }
@@ -58,13 +58,14 @@ func (r *EventRepo) DeleteEvent(ctx context.Context, id int64) error {
 	if err := r.data.DB(ctx).SoftDeleteEvent(ctx, id); err != nil {
 		return err
 	}
-	r.deleteCache(ctx, eventCacheKey(id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, eventGenerationKey(id))
 	r.deleteListCaches(ctx)
 	return nil
 }
 
 func (r *EventRepo) GetEvent(ctx context.Context, id int64) (*biz.Event, error) {
-	return cacheAside(ctx, r.data, r.log, redisKey("event", id), r.getCache, r.setCache, func() (*biz.Event, error) {
+	key := generatedEntityCacheKey(ctx, r.data, r.log, eventGenerationKey(id), eventCacheKey(id))
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.Event, error) {
 		row, err := r.data.DB(ctx).GetEvent(ctx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -123,8 +124,7 @@ func (r *EventRepo) UpdateEvent(ctx context.Context, id int64, name string, cove
 	}
 
 	bizEvent := toBizEvent(e)
-	r.deleteCache(ctx, eventCacheKey(id))
-	r.setCache(ctx, eventCacheKey(id), &bizEvent)
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, eventGenerationKey(id))
 	r.deleteListCaches(ctx)
 	return &bizEvent, nil
 }
@@ -136,7 +136,7 @@ func (r *EventRepo) UpdateEventStatus(ctx context.Context, id int64, status int3
 	}); err != nil {
 		return err
 	}
-	r.deleteCache(ctx, eventCacheKey(id))
+	bumpCacheGeneration(ctx, r.data.rdb, r.log, eventGenerationKey(id))
 	r.deleteListCaches(ctx)
 	return nil
 }
@@ -157,12 +157,12 @@ func (r *EventRepo) setListCache(ctx context.Context, key string, value []biz.Ev
 	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
-func (r *EventRepo) deleteCache(ctx context.Context, key string) {
-	deleteJSONCache(ctx, r.data, r.log, key)
-}
-
 func (r *EventRepo) deleteListCaches(ctx context.Context) {
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, "event:list:gen")
+}
+
+func eventGenerationKey(id int64) string {
+	return redisKey("event", id, "gen")
 }
 
 func eventCacheKey(id int64) string {
@@ -184,8 +184,6 @@ func eventListCacheKey(generationOrStatus int64, values ...int32) string {
 	}
 	return redisKey("event", "list", generation, "all", limit, offset)
 }
-
-func eventCacheExpiration() time.Duration { return cacheTTL() }
 
 func toPgTimestamp(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: !t.IsZero()}
