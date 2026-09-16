@@ -908,6 +908,9 @@ paths:
             parameters:
                 - name: cursor
                   in: query
+                  description: |-
+                    512 matches the shared cursor parser in biz (ParsePage), so an oversized
+                     cursor is rejected by both layers with the same bound.
                   schema:
                     type: string
                 - name: pageSize

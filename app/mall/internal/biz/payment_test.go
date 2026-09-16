@@ -192,6 +192,10 @@ func (r *orderTestRepo) CancelOrderByUser(context.Context, int64, int64) error  
 
 type paymentTestTx struct{ active bool }
 
+func (t *paymentTestTx) InTxSnapshot(ctx context.Context, fn func(context.Context) error) error {
+	return t.InTx(ctx, fn)
+}
+
 func (t *paymentTestTx) InTx(ctx context.Context, fn func(context.Context) error) error {
 	t.active = true
 	defer func() { t.active = false }()

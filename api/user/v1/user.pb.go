@@ -1451,9 +1451,11 @@ func (x *RecordProductViewReply) GetLastViewedAt() *timestamppb.Timestamp {
 }
 
 type ListBrowsingHistoryRequest struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Cursor   string                 `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
-	PageSize int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 512 matches the shared cursor parser in biz (ParsePage), so an oversized
+	// cursor is rejected by both layers with the same bound.
+	Cursor   string `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	PageSize int32  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// Optional inclusive lower bound and exclusive upper bound on last_viewed_at.
 	// Both are instants on the server timeline; clients derive local day boundaries
 	// and send RFC 3339 values with an explicit offset.
@@ -1919,7 +1921,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x16RecordProductViewReply\x12@\n" +
 	"\x0elast_viewed_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\flastViewedAt\"\xd8\x01\n" +
 	"\x1aListBrowsingHistoryRequest\x12 \n" +
-	"\x06cursor\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\x06cursor\x12&\n" +
+	"\x06cursor\x18\x01 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\x06cursor\x12&\n" +
 	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x182(\x00R\bpageSize\x129\n" +
 	"\n" +
 	"start_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x125\n" +
