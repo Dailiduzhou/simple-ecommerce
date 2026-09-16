@@ -99,7 +99,15 @@ func (g *integrationRefundGateway) Refund(ctx context.Context, req biz.PaymentRe
 
 func TestFailedRefundRetryCrashCompensationIntegration(t *testing.T) {
 	f := newCorrectnessFixture(t)
-	_, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+	orderID, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+	// seedPayment defaults to a pending order. A successful payment being
+	// refunded must instead belong to a paid order with reserved stock.
+	_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status='paid' WHERE id=$1`, orderID)
+	require.NoError(t, err)
+	_, err = f.pool.Exec(f.ctx, `INSERT INTO order_items (order_id, product_id, quantity, unit_price_minor, product_name_snapshot) VALUES ($1,$2,1,12345,'snapshot')`, orderID, f.productID)
+	require.NoError(t, err)
+	_, err = f.pool.Exec(f.ctx, `UPDATE products SET stock=99 WHERE id=$1`, f.productID)
+	require.NoError(t, err)
 	repo := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 	_, refund, err := repo.PreparePaymentRefund(f.ctx, paymentID, f.prefix+"_original_refund")
 	require.NoError(t, err)
@@ -120,6 +128,19 @@ func TestFailedRefundRetryCrashCompensationIntegration(t *testing.T) {
 	var status string
 	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT status FROM payments WHERE id=$1`, paymentID).Scan(&status))
 	require.Equal(t, biz.PaymentStatusRefunded, status)
+	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT status FROM order_refunds WHERE id=$1`, refund.ID).Scan(&status))
+	require.Equal(t, biz.PaymentRefundStatusSuccess, status)
+	var completed bool
+	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT status,is_completed FROM orders WHERE id=$1`, orderID).Scan(&status, &completed))
+	require.Equal(t, biz.OrderStatusRefunded, status)
+	require.True(t, completed)
+	var stock int64
+	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id=$1`, f.productID).Scan(&stock))
+	require.EqualValues(t, 100, stock)
+	// Replaying settlement must not restore the same stock twice.
+	require.NoError(t, repo.ApplyPaymentRefund(f.ctx, paymentID, refund.ID))
+	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id=$1`, f.productID).Scan(&stock))
+	require.EqualValues(t, 100, stock)
 }
 
 type integrationCloseGateway struct {
