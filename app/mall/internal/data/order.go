@@ -6,6 +6,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
@@ -40,6 +41,11 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		if q == nil {
 			return fmt.Errorf("missing transaction querier")
 		}
+		// Stock decrements lock product rows, so the whole transaction must
+		// always lock them in one order. The usecase sorts too, but the
+		// repository cannot rely on its caller: sort a private copy here.
+		itemInputs := append([]biz.OrderItemInput(nil), args.Items...)
+		sort.SliceStable(itemInputs, func(i, j int) bool { return itemInputs[i].ProductID < itemInputs[j].ProductID })
 		if err := q.LockOrderIdempotency(ctx, db.LockOrderIdempotencyParams{UserID: args.UserID, IdempotencyKey: args.IdempotencyKey}); err != nil {
 			return err
 		}
@@ -74,9 +80,9 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			product   db.Product
 			unitPrice int64
 		}
-		snapshots := make([]itemSnapshot, 0, len(args.Items))
+		snapshots := make([]itemSnapshot, 0, len(itemInputs))
 		var total int64
-		for _, item := range args.Items {
+		for _, item := range itemInputs {
 			product, err := q.GetProductForOrder(ctx, item.ProductID)
 			if err != nil {
 				if stderrors.Is(err, pgx.ErrNoRows) {
