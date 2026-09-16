@@ -47,6 +47,18 @@ func ErrorEventNotFound(format string, args ...interface{}) *errors.Error {
 	return errors.New(404, ErrorReason_EVENT_NOT_FOUND.String(), fmt.Sprintf(format, args...))
 }
 
+func IsEventInvalidWindow(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_EVENT_INVALID_WINDOW.String() && e.Code == 400
+}
+
+func ErrorEventInvalidWindow(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_EVENT_INVALID_WINDOW.String(), fmt.Sprintf(format, args...))
+}
+
 func IsInsufficientStock(err error) bool {
 	if err == nil {
 		return false
