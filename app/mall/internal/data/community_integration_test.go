@@ -497,7 +497,15 @@ func TestCommunityIntegrationUserDeletionAtomicity(t *testing.T) {
 	require.NoError(t, f.posts.SetLike(ctx, f.actor, otherPost.ID, true))
 	orderID, _, _ := f.seedPayment(t, biz.PaymentStatusPending)
 	repo := NewCommunityUserRepo(f.data, f.tx, f.media, log.DefaultLogger)
-	require.NoError(t, f.rdb.Set(ctx, redisKey("user", f.actor.ID), "cached", time.Hour).Err())
+	// Populate the real, generation-scoped profile cache before deletion.
+	cachedUser, e := repo.GetUserByID(ctx, f.actor.ID)
+	require.NoError(t, e)
+	require.NotNil(t, cachedUser)
+	profileKey := func() string {
+		return generatedEntityCacheKey(ctx, f.data, repo.log, userGenerationKey(f.actor.ID), redisKey("user", f.actor.ID))
+	}
+	cachedKey := profileKey()
+	require.EqualValues(t, 1, f.rdb.Exists(ctx, cachedKey).Val())
 	e = repo.DeleteUser(ctx, f.actor.ID)
 	sqlViolation(t, e)
 	_, e = f.posts.Get(ctx, f.other.ID, post.ID)
@@ -509,13 +517,23 @@ func TestCommunityIntegrationUserDeletionAtomicity(t *testing.T) {
 	var jobs int
 	require.NoError(t, f.pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind=$1 AND (args->>'media_id')::bigint=ANY($2::bigint[])`, biz.MediaDeleteKind, f.mediaIDs).Scan(&jobs))
 	require.Zero(t, jobs)
-	require.Equal(t, "cached", f.rdb.Get(ctx, redisKey("user", f.actor.ID)).Val())
+	require.Equal(t, cachedKey, profileKey(), "rollback must not advance the profile generation")
+	user, e := repo.GetUserByID(ctx, f.actor.ID)
+	require.NoError(t, e)
+	require.NotNil(t, user)
+	require.Equal(t, cachedUser.ID, user.ID)
+	require.Equal(t, cachedUser.Nickname, user.Nickname)
 	_, e = f.pool.Exec(ctx, `DELETE FROM payments WHERE order_id=$1`, orderID)
 	require.NoError(t, e)
 	_, e = f.pool.Exec(ctx, `DELETE FROM orders WHERE id=$1`, orderID)
 	require.NoError(t, e)
 	require.NoError(t, repo.DeleteUser(ctx, f.actor.ID))
-	require.Zero(t, f.rdb.Exists(ctx, redisKey("user", f.actor.ID)).Val())
+	// Committed deletion advances the generation rather than deleting old
+	// cache entries. The old profile must no longer be reachable by readers.
+	require.NotEqual(t, cachedKey, profileKey())
+	user, e = repo.GetUserByID(ctx, f.actor.ID)
+	require.NoError(t, e)
+	require.Nil(t, user)
 	_, e = f.posts.Get(ctx, f.other.ID, post.ID)
 	require.True(t, communityv1.IsPostNotFound(e))
 	cs, _, e := f.comments.List(ctx, otherPost.ID, 0, pageFor(t, "roots", 20))
