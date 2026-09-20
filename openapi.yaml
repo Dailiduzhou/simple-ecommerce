@@ -3,19 +3,49 @@
 
 openapi: 3.0.3
 info:
-    title: ""
+    title: 简单电商平台 API
+    description: |-
+        用户、分类/商品/限时活动、下单与支付、图文社区、图片上传的统一 HTTP API。
+
+        本文件由 protoc-gen-openapi 从 api/**/*.proto 生成，再由 tools/openapi-doc 补全
+        （认证、错误响应、buf.validate 约束、手工注册的回调路由与 info 元数据），
+        因此与生成器的原始输出不同：请通过 make -C app/mall api 重新生成，不要手工编辑。
+
+        ## 认证
+        注册、登录、刷新令牌和支付渠道回调不需要令牌；其余接口都必须携带
+        Authorization: Bearer <access_token>（HS256 JWT）。需要管理员角色的接口
+        （商品/分类/活动的写操作、退款、对账任务）以及只能操作自己名下资源的接口
+        （收货地址、订单、浏览记录）在权限不足时返回 403。
+
+        ## 错误响应
+        失败时返回 kratos 统一错误体，HTTP 状态码即 body 的 code 字段：
+        {"code":404,"reason":"PRODUCT_NOT_FOUND","message":"...","metadata":{}}，
+        结构见 components.schemas.errors.Status。接口声明的 4xx/5xx 来自该服务
+        *_error.proto 的错误码集合，以及服务层中实际存在的鉴权分支，属于服务级上界。
+
+        ## 64 位整数
+        protojson 把 int64/uint64 编码成 JSON 字符串，所以这类字段是 type: string
+        加 format: int64，buf.validate 的数值边界以 x-minimum / x-exclusiveMinimum /
+        x-maximum / x-exclusiveMaximum 给出。
     version: 0.0.1
+servers:
+    - url: http://localhost:8000
+      description: 本地开发默认地址（server.http.addr）
+security:
+    - bearerAuth: []
 paths:
     /v1/categories:
         get:
             tags:
                 - Mall
+            summary: List categories
             operationId: Mall_ListCategories
             parameters:
                 - name: parentId
                   in: query
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -23,9 +53,40 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.ListCategoriesReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         post:
             tags:
                 - Mall
+            summary: Categories
             description: Categories
             operationId: Mall_CreateCategory
             requestBody:
@@ -41,10 +102,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.Category'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/categories/{id}:
         put:
             tags:
                 - Mall
+            summary: Update category
             operationId: Mall_UpdateCategory
             parameters:
                 - name: id
@@ -52,6 +150,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -65,9 +164,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.Category'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         delete:
             tags:
                 - Mall
+            summary: Delete category
             operationId: Mall_DeleteCategory
             parameters:
                 - name: id
@@ -75,6 +211,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -82,10 +219,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.DeleteCategoryReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/events:
         get:
             tags:
                 - Mall
+            summary: List events
             operationId: Mall_ListEvents
             parameters:
                 - name: status
@@ -110,9 +284,40 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.ListEventsReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         post:
             tags:
                 - Mall
+            summary: Events
             description: Events
             operationId: Mall_CreateEvent
             requestBody:
@@ -128,10 +333,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.Event'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/events/{id}:
         get:
             tags:
                 - Mall
+            summary: Get event
             operationId: Mall_GetEvent
             parameters:
                 - name: id
@@ -139,6 +381,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -146,9 +389,40 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.Event'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         put:
             tags:
                 - Mall
+            summary: Update event
             operationId: Mall_UpdateEvent
             parameters:
                 - name: id
@@ -156,6 +430,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -169,9 +444,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.Event'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         delete:
             tags:
                 - Mall
+            summary: Delete event
             operationId: Mall_DeleteEvent
             parameters:
                 - name: id
@@ -179,6 +491,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -186,10 +499,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.DeleteEventReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/events/{id}/status:
         patch:
             tags:
                 - Mall
+            summary: Update event status
             operationId: Mall_UpdateEventStatus
             parameters:
                 - name: id
@@ -197,6 +547,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -210,10 +561,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.UpdateEventStatusReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/media/images/uploads:
         post:
             tags:
                 - Media
+            summary: Create image upload
             operationId: Media_CreateImageUpload
             requestBody:
                 content:
@@ -228,10 +616,59 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.media.v1.CreateImageUploadReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列或第三方支付未配置
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/media/images/{id}:
         get:
             tags:
                 - Media
+            summary: Get image
             operationId: Media_GetImage
             parameters:
                 - name: id
@@ -239,6 +676,8 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             responses:
                 "200":
                     description: OK
@@ -246,10 +685,59 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.media.v1.ImageAsset'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列或第三方支付未配置
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/media/images/{id}/complete:
         post:
             tags:
                 - Media
+            summary: Complete image upload
             operationId: Media_CompleteImageUpload
             parameters:
                 - name: id
@@ -257,6 +745,8 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             requestBody:
                 content:
                     application/json:
@@ -270,10 +760,59 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.media.v1.ImageAsset'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列或第三方支付未配置
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/orders:
         post:
             tags:
                 - Order
+            summary: Create order
             operationId: Order_CreateOrder
             requestBody:
                 content:
@@ -288,10 +827,41 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.order.v1.OrderInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/orders/{id}:
         get:
             tags:
                 - Order
+            summary: Get order
             operationId: Order_GetOrder
             parameters:
                 - name: id
@@ -299,10 +869,12 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
                 - name: userId
                   in: query
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -310,10 +882,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.order.v1.OrderInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/orders/{id}/cancel:
         post:
             tags:
                 - Order
+            summary: Cancel order
             operationId: Order_CancelOrder
             parameters:
                 - name: id
@@ -321,6 +930,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -334,17 +944,55 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.order.v1.CancelOrderReply'
-    /v1/orders/{orderId}/payment:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/orders/{order_id}/payment:
         get:
             tags:
                 - Payment
+            summary: Get payment by order
             operationId: Payment_GetPaymentByOrder
             parameters:
-                - name: orderId
+                - name: order_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -352,10 +1000,53 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.PaymentInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/payments:
         post:
             tags:
                 - Payment
+            summary: 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
             description: |-
                 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
                  同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
@@ -374,10 +1065,53 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.CreatePaymentReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/payments/lookup:
         get:
             tags:
                 - Payment
+            summary: 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
             description: 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
             operationId: Payment_QueryPayment
             parameters:
@@ -392,10 +1126,53 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.QueryPaymentReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/payments/lookup/close:
         post:
             tags:
                 - Payment
+            summary: 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
             description: 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
             operationId: Payment_ClosePayment
             requestBody:
@@ -411,17 +1188,61 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.ClosePaymentReply'
-    /v1/payments/mq/jobs/{jobId}:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/payments/mq/jobs/{job_id}:
         get:
             tags:
                 - Payment
+            summary: Get mq job
             operationId: Payment_GetMQJob
             parameters:
-                - name: jobId
+                - name: job_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -429,10 +1250,65 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.MQJobInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列或第三方支付未配置
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/payments/{id}:
         get:
             tags:
                 - Payment
+            summary: Get payment
             operationId: Payment_GetPayment
             parameters:
                 - name: id
@@ -440,6 +1316,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -447,10 +1324,53 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.PaymentInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/payments/{id}/refund:
         post:
             tags:
                 - Payment
+            summary: 管理员对指定支付发起整笔全额退款。
             description: 管理员对指定支付发起整笔全额退款。
             operationId: Payment_RefundPayment
             parameters:
@@ -459,6 +1379,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -472,17 +1393,67 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.RefundPaymentReply'
-    /v1/payments/{paymentId}/checks:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/payments/{payment_id}/checks:
         post:
             tags:
                 - Payment
+            summary: Create payment check job
             operationId: Payment_CreatePaymentCheckJob
             parameters:
-                - name: paymentId
+                - name: payment_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -496,25 +1467,137 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.MQJobInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/payments/{provider}/notify:
+        post:
+            tags:
+                - Payment
+            summary: 支付渠道异步回调
+            description: |-
+                支付宝/微信等渠道服务器直接调用的异步通知入口，不使用 Bearer 令牌，按 provider 校验签名后更新支付单状态。
+
+                请求体是渠道原始报文（支付宝为 application/x-www-form-urlencoded，微信为 JSON 或 XML），服务端原样交给渠道适配器解析。
+                响应体是渠道约定的确认串，必须原样回给渠道，否则渠道会重试：支付宝为 success / fail，微信为 <xml><return_code><![CDATA[SUCCESS]]></return_code></xml>。
+                未注册的 provider 返回 400 unsupported provider（text/plain）。
+            operationId: Payment_NotifyCallback
+            parameters:
+                - name: provider
+                  in: path
+                  required: true
+                  description: 渠道标识，与支付适配器注册名一致（本仓库为 alipay、wechat）
+                  schema:
+                    type: string
+                    example: wechat
+            requestBody:
+                required: true
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            type: object
+                            additionalProperties:
+                                type: string
+                    application/json:
+                        schema:
+                            type: object
+                            description: 渠道原始报文，字段随渠道不同
+                            additionalProperties: true
+            responses:
+                "200":
+                    description: 渠道确认串：支付宝 success/fail，微信返回码 XML
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: success
+                        application/xml:
+                            schema:
+                                type: string
+                "400":
+                    description: provider 未注册或回调被判为无效渠道
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: unsupported provider
+                "500":
+                    description: 服务内部错误（panic 由 recovery 中间件转成统一错误体）
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+            security: []
     /v1/posts:
         get:
             tags:
                 - Community
+            summary: List posts
             operationId: Community_ListPosts
             parameters:
                 - name: cursor
                   in: query
                   schema:
                     type: string
+                    maxLength: 512
                 - name: pageSize
                   in: query
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
+                    maximum: 50
                 - name: authorId
                   in: query
                   schema:
                     type: string
+                    format: int64
+                    x-minimum: 0
             responses:
                 "200":
                     description: OK
@@ -522,9 +1605,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.ListPostsReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         post:
             tags:
                 - Community
+            summary: Create post
             operationId: Community_CreatePost
             requestBody:
                 content:
@@ -539,10 +1659,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.Post'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/posts/{id}:
         get:
             tags:
                 - Community
+            summary: Get post
             operationId: Community_GetPost
             parameters:
                 - name: id
@@ -550,6 +1707,8 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             responses:
                 "200":
                     description: OK
@@ -557,9 +1716,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.Post'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         put:
             tags:
                 - Community
+            summary: Update post
             operationId: Community_UpdatePost
             parameters:
                 - name: id
@@ -567,6 +1763,8 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             requestBody:
                 content:
                     application/json:
@@ -580,9 +1778,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.Post'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         delete:
             tags:
                 - Community
+            summary: Delete post
             operationId: Community_DeletePost
             parameters:
                 - name: id
@@ -590,6 +1825,8 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             responses:
                 "200":
                     description: OK
@@ -597,10 +1834,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.EmptyReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/posts/{id}/like:
         put:
             tags:
                 - Community
+            summary: Like post
             operationId: Community_LikePost
             parameters:
                 - name: id
@@ -608,6 +1882,8 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             responses:
                 "200":
                     description: OK
@@ -615,9 +1891,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.EmptyReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         delete:
             tags:
                 - Community
+            summary: Unlike post
             operationId: Community_UnlikePost
             parameters:
                 - name: id
@@ -625,6 +1938,8 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             responses:
                 "200":
                     description: OK
@@ -632,26 +1947,68 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.EmptyReply'
-    /v1/posts/{postId}/comments:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/posts/{post_id}/comments:
         get:
             tags:
                 - Community
+            summary: List comments
             operationId: Community_ListComments
             parameters:
-                - name: postId
+                - name: post_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
                 - name: cursor
                   in: query
                   schema:
                     type: string
+                    maxLength: 512
                 - name: pageSize
                   in: query
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
+                    maximum: 50
             responses:
                 "200":
                     description: OK
@@ -659,16 +2016,55 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.ListCommentsReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         post:
             tags:
                 - Community
+            summary: Create comment
             operationId: Community_CreateComment
             parameters:
-                - name: postId
+                - name: post_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             requestBody:
                 content:
                     application/json:
@@ -682,22 +2078,63 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.Comment'
-    /v1/posts/{postId}/comments/{id}:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/posts/{post_id}/comments/{id}:
         delete:
             tags:
                 - Community
+            summary: Delete comment
             operationId: Community_DeleteComment
             parameters:
-                - name: postId
+                - name: post_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
                 - name: id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             responses:
                 "200":
                     description: OK
@@ -705,31 +2142,75 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.EmptyReply'
-    /v1/posts/{postId}/comments/{rootCommentId}/replies:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/posts/{post_id}/comments/{root_comment_id}/replies:
         get:
             tags:
                 - Community
+            summary: List comment replies
             operationId: Community_ListCommentReplies
             parameters:
-                - name: postId
+                - name: post_id
                   in: path
                   required: true
                   schema:
                     type: string
-                - name: rootCommentId
+                    format: int64
+                    x-exclusiveMinimum: 0
+                - name: root_comment_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
                 - name: cursor
                   in: query
                   schema:
                     type: string
+                    maxLength: 512
                 - name: pageSize
                   in: query
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
+                    maximum: 50
             responses:
                 "200":
                     description: OK
@@ -737,16 +2218,54 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.community.v1.ListCommentsReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/products:
         get:
             tags:
                 - Mall
+            summary: List products
             operationId: Mall_ListProducts
             parameters:
                 - name: categoryId
                   in: query
                   schema:
                     type: string
+                    format: int64
                 - name: pageSize
                   in: query
                   schema:
@@ -764,9 +2283,40 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.ListProductsReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         post:
             tags:
                 - Mall
+            summary: Products
             description: Products
             operationId: Mall_CreateProduct
             requestBody:
@@ -782,10 +2332,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.Product'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/products/{id}:
         get:
             tags:
                 - Mall
+            summary: Get product
             operationId: Mall_GetProduct
             parameters:
                 - name: id
@@ -793,6 +2380,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -800,9 +2388,40 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.Product'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         put:
             tags:
                 - Mall
+            summary: Update product
             operationId: Mall_UpdateProduct
             parameters:
                 - name: id
@@ -810,6 +2429,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -823,9 +2443,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.Product'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         delete:
             tags:
                 - Mall
+            summary: Delete product
             operationId: Mall_DeleteProduct
             parameters:
                 - name: id
@@ -833,6 +2490,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -840,10 +2498,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.DeleteProductReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/products/{id}/status:
         patch:
             tags:
                 - Mall
+            summary: Update product status
             operationId: Mall_UpdateProductStatus
             parameters:
                 - name: id
@@ -851,6 +2546,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -864,10 +2560,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.UpdateProductStatusReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/users/login:
         post:
             tags:
                 - User
+            summary: Login
             operationId: User_Login
             requestBody:
                 content:
@@ -882,10 +2615,48 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.LoginReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 凭证校验失败：账号/密码不正确或令牌无效
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+            security: []
     /v1/users/logout:
         post:
             tags:
                 - User
+            summary: Logout
             operationId: User_Logout
             requestBody:
                 content:
@@ -900,10 +2671,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.LogoutReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/users/me/browsing-history:
         get:
             tags:
                 - User
+            summary: List browsing history
             operationId: User_ListBrowsingHistory
             parameters:
                 - name: cursor
@@ -913,11 +2721,14 @@ paths:
                      cursor is rejected by both layers with the same bound.
                   schema:
                     type: string
+                    maxLength: 512
                 - name: pageSize
                   in: query
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
+                    maximum: 50
                 - name: startTime
                   in: query
                   description: |-
@@ -939,9 +2750,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.ListBrowsingHistoryReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         post:
             tags:
                 - User
+            summary: Record product view
             operationId: User_RecordProductView
             requestBody:
                 content:
@@ -956,9 +2804,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.RecordProductViewReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         delete:
             tags:
                 - User
+            summary: Clear browsing history
             operationId: User_ClearBrowsingHistory
             responses:
                 "200":
@@ -967,17 +2852,56 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.ClearBrowsingHistoryReply'
-    /v1/users/me/browsing-history/{productId}:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/users/me/browsing-history/{product_id}:
         delete:
             tags:
                 - User
+            summary: Delete browsing history item
             operationId: User_DeleteBrowsingHistoryItem
             parameters:
-                - name: productId
+                - name: product_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
             responses:
                 "200":
                     description: OK
@@ -985,10 +2909,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.DeleteBrowsingHistoryItemReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/users/me/password:
         put:
             tags:
                 - User
+            summary: ChangePassword rotates the caller's password and revokes every session
             description: |-
                 ChangePassword rotates the caller's password and revokes every session
                  issued before the change (including the caller's own tokens).
@@ -1006,10 +2967,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.ChangePasswordReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/users/refresh:
         post:
             tags:
                 - User
+            summary: Refresh token
             operationId: User_RefreshToken
             requestBody:
                 content:
@@ -1024,10 +3022,48 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.RefreshReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 凭证校验失败：账号/密码不正确或令牌无效
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+            security: []
     /v1/users/register:
         post:
             tags:
                 - User
+            summary: Register
             operationId: User_Register
             requestBody:
                 content:
@@ -1042,10 +3078,48 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.RegisterReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 凭证校验失败：账号/密码不正确或令牌无效
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+            security: []
     /v1/users/{id}:
         get:
             tags:
                 - User
+            summary: Get user
             operationId: User_GetUser
             parameters:
                 - name: id
@@ -1053,6 +3127,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -1060,9 +3135,52 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.UserInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         put:
             tags:
                 - User
+            summary: Update user
             operationId: User_UpdateUser
             parameters:
                 - name: id
@@ -1070,6 +3188,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -1083,9 +3202,52 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.UserInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         delete:
             tags:
                 - User
+            summary: Delete user
             operationId: User_DeleteUser
             parameters:
                 - name: id
@@ -1093,6 +3255,7 @@ paths:
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -1100,17 +3263,61 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.DeleteUserReply'
-    /v1/users/{userId}/addresses:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/users/{user_id}/addresses:
         get:
             tags:
                 - User
+            summary: List shipping addresses
             operationId: User_ListShippingAddresses
             parameters:
-                - name: userId
+                - name: user_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -1118,17 +3325,61 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.ListShippingAddressesReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         post:
             tags:
                 - User
+            summary: Shipping Addresses
             description: Shipping Addresses
             operationId: User_CreateShippingAddress
             parameters:
-                - name: userId
+                - name: user_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -1142,22 +3393,67 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.ShippingAddress'
-    /v1/users/{userId}/addresses/{id}:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/users/{user_id}/addresses/{id}:
         put:
             tags:
                 - User
+            summary: Update shipping address
             operationId: User_UpdateShippingAddress
             parameters:
-                - name: userId
+                - name: user_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
                 - name: id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -1171,21 +3467,66 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.ShippingAddress'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
         delete:
             tags:
                 - User
+            summary: Delete shipping address
             operationId: User_DeleteShippingAddress
             parameters:
-                - name: userId
+                - name: user_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
                 - name: id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -1193,22 +3534,67 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.DeleteShippingAddressReply'
-    /v1/users/{userId}/addresses/{id}/default:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/users/{user_id}/addresses/{id}/default:
         post:
             tags:
                 - User
+            summary: Set default shipping address
             operationId: User_SetDefaultShippingAddress
             parameters:
-                - name: userId
+                - name: user_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
                 - name: id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
             requestBody:
                 content:
                     application/json:
@@ -1222,17 +3608,61 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.user.v1.SetDefaultShippingAddressReply'
-    /v1/users/{userId}/orders:
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/users/{user_id}/orders:
         get:
             tags:
                 - Order
+            summary: List orders
             operationId: Order_ListOrders
             parameters:
-                - name: userId
+                - name: user_id
                   in: path
                   required: true
                   schema:
                     type: string
+                    format: int64
                 - name: ongoing
                   in: query
                   schema:
@@ -1254,10 +3684,47 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.order.v1.ListOrdersReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/wellness/today:
         get:
             tags:
                 - Mall
+            summary: 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
             description: 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
             operationId: Mall_GetTodayWellness
             responses:
@@ -1267,13 +3734,50 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.TodayWellnessReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
 components:
+    securitySchemes:
+        bearerAuth:
+            type: http
+            scheme: bearer
+            bearerFormat: JWT
+            description: '访问令牌（HS256 JWT），登录/刷新接口返回，通过 Authorization: Bearer <token> 传递'
     schemas:
         api.community.v1.Author:
             type: object
             properties:
                 id:
                     type: string
+                    format: int64
                 nickname:
                     type: string
         api.community.v1.Comment:
@@ -1281,16 +3785,20 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 postId:
                     type: string
+                    format: int64
                 author:
                     $ref: '#/components/schemas/api.community.v1.Author'
                 content:
                     type: string
                 rootCommentId:
                     type: string
+                    format: int64
                 replyToCommentId:
                     type: string
+                    format: int64
                 deleted:
                     type: boolean
                 createdAt:
@@ -1298,6 +3806,7 @@ components:
                     format: date-time
                 replyCount:
                     type: string
+                    format: int64
                 replyToDeleted:
                     type: boolean
                 replyToAuthor:
@@ -1307,25 +3816,44 @@ components:
             properties:
                 postId:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
                 content:
                     type: string
+                    minLength: 1
+                    maxLength: 16384
                 replyToCommentId:
                     type: string
+                    format: int64
+                    x-minimum: 0
+            required:
+                - content
         api.community.v1.CreatePostRequest:
             type: object
             properties:
                 title:
                     type: string
+                    minLength: 1
+                    maxLength: 16384
                 content:
                     type: string
+                    minLength: 1
+                    maxLength: 16384
                 imageIds:
                     type: array
                     items:
                         type: string
+                        format: int64
+                        x-exclusiveMinimum: 0
                     description: Optional ordered image IDs (0-9). Omitted or empty means a text-only post.
+                    maxItems: 9
+                    uniqueItems: true
             description: |-
                 Text is trimmed before domain limits (title 100, body 5000 Unicode
                  characters). Images are optional; a post can contain 0-9 images.
+            required:
+                - title
+                - content
         api.community.v1.EmptyReply:
             type: object
             properties: {}
@@ -1334,12 +3862,14 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 url:
                     type: string
                 contentType:
                     type: string
                 sizeBytes:
                     type: string
+                    format: int64
                 width:
                     type: integer
                     format: int32
@@ -1369,6 +3899,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 author:
                     $ref: '#/components/schemas/api.community.v1.Author'
                 title:
@@ -1381,6 +3912,7 @@ components:
                         $ref: '#/components/schemas/api.community.v1.Image'
                 version:
                     type: string
+                    format: int64
                 createdAt:
                     type: string
                     format: date-time
@@ -1389,8 +3921,10 @@ components:
                     format: date-time
                 likeCount:
                     type: string
+                    format: int64
                 commentCount:
                     type: string
+                    format: int64
                 likedByMe:
                     type: boolean
         api.community.v1.UpdatePostRequest:
@@ -1398,24 +3932,42 @@ components:
             properties:
                 title:
                     type: string
+                    minLength: 1
+                    maxLength: 16384
                 content:
                     type: string
+                    minLength: 1
+                    maxLength: 16384
                 imageIds:
                     type: array
                     items:
                         type: string
+                        format: int64
+                        x-exclusiveMinimum: 0
                     description: Full replacement (0-9). Omitted or empty removes all existing images.
+                    maxItems: 9
+                    uniqueItems: true
                 id:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
                 expectedVersion:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            required:
+                - title
+                - content
+                - expectedVersion
         api.mall.v1.Category:
             type: object
             properties:
                 id:
                     type: string
+                    format: int64
                 parentId:
                     type: string
+                    format: int64
                 name:
                     type: string
                 sortOrder:
@@ -1426,6 +3978,7 @@ components:
             properties:
                 parentId:
                     type: string
+                    format: int64
                 name:
                     type: string
                 sortOrder:
@@ -1455,6 +4008,7 @@ components:
             properties:
                 categoryId:
                     type: string
+                    format: int64
                 name:
                     type: string
                 price:
@@ -1486,6 +4040,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 name:
                     type: string
                 status:
@@ -1545,13 +4100,16 @@ components:
                     type: string
                 size:
                     type: string
+                    format: int64
         api.mall.v1.Product:
             type: object
             properties:
                 id:
                     type: string
+                    format: int64
                 categoryId:
                     type: string
+                    format: int64
                 name:
                     type: string
                 price:
@@ -1580,6 +4138,7 @@ components:
                     description: |-
                         Discounted unit price in minor units computed by the server with the same
                          rounding the order flow uses; rendering it keeps display equal to charge.
+                    format: int64
         api.mall.v1.TodayWellnessReply:
             type: object
             properties:
@@ -1597,6 +4156,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 name:
                     type: string
                 sortOrder:
@@ -1607,6 +4167,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 name:
                     type: string
                 coverImage:
@@ -1631,6 +4192,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 status:
                     type: integer
                     format: int32
@@ -1639,8 +4201,10 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 categoryId:
                     type: string
+                    format: int64
                 name:
                     type: string
                 price:
@@ -1666,6 +4230,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 status:
                     type: integer
                     format: int32
@@ -1674,6 +4239,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 uploadUrl:
                     type: string
                 formFields:
@@ -1688,19 +4254,31 @@ components:
             properties:
                 contentType:
                     type: string
+                    enum:
+                        - image/jpeg
+                        - image/png
+                        - image/webp
                 sizeBytes:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+                    x-maximum: 10485760
+            required:
+                - contentType
+                - sizeBytes
         api.media.v1.ImageAsset:
             type: object
             properties:
                 id:
                     type: string
+                    format: int64
                 url:
                     type: string
                 contentType:
                     type: string
                 sizeBytes:
                     type: string
+                    format: int64
                 width:
                     type: integer
                     format: int32
@@ -1714,6 +4292,8 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
         api.order.v1.CancelOrderReply:
             type: object
             properties: {}
@@ -1722,13 +4302,16 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 userId:
                     type: string
+                    format: int64
         api.order.v1.CreateOrderRequest:
             type: object
             properties:
                 addressId:
                     type: string
+                    format: int64
                 items:
                     type: array
                     items:
@@ -1736,8 +4319,15 @@ components:
                     description: |-
                         Bounded because the whole order runs in one transaction that locks every
                          product row it touches.
+                    minItems: 1
+                    maxItems: 50
                 idempotencyKey:
                     type: string
+                    minLength: 8
+                    maxLength: 64
+            required:
+                - items
+                - idempotencyKey
         api.order.v1.ListOrdersReply:
             type: object
             properties:
@@ -1753,10 +4343,13 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 userId:
                     type: string
+                    format: int64
                 addressId:
                     type: string
+                    format: int64
                 totalAmount:
                     type: string
                 status:
@@ -1782,6 +4375,7 @@ components:
             properties:
                 productId:
                     type: string
+                    format: int64
                 productName:
                     type: string
                 coverImage:
@@ -1796,9 +4390,16 @@ components:
             properties:
                 productId:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
                 quantity:
                     type: integer
                     format: int32
+                    minimum: 1
+                    maximum: 999
+            required:
+                - productId
+                - quantity
         api.payment.v1.ClosePaymentReply:
             type: object
             properties:
@@ -1814,6 +4415,7 @@ components:
             properties:
                 paymentId:
                     type: string
+                    format: int64
                 delaySeconds:
                     type: integer
                     format: int32
@@ -1830,6 +4432,7 @@ components:
             properties:
                 paymentId:
                     type: string
+                    format: int64
                 outTradeNo:
                     type: string
                 actionType:
@@ -1849,11 +4452,16 @@ components:
             properties:
                 orderNo:
                     type: string
+                    minLength: 1
+                    maxLength: 64
                 method:
                     type: string
+                    minLength: 1
+                    maxLength: 64
                 clientIp:
                     type: string
                     description: 'Ignored: the server derives the address from the connection.'
+                    maxLength: 45
                 extraParams:
                     type: object
                     additionalProperties:
@@ -1861,6 +4469,7 @@ components:
                 description:
                     type: string
                     description: Optional; 127 bytes is the strictest channel limit (Wechat).
+                    maxLength: 127
             description: |-
                 统一创建支付请求。
                  - order_no: 商户订单号(对应 orders.out_trade_no)。
@@ -1871,6 +4480,9 @@ components:
                      * WECHAT_JSAPI 必须传 "openid"。
                      * ALIPAY_WAP 可传 "return_url"。
                  - description: 可选;省略时服务端从订单号生成安全描述。
+            required:
+                - orderNo
+                - method
         api.payment.v1.MQJobError:
             type: object
             properties:
@@ -1887,6 +4499,7 @@ components:
             properties:
                 jobId:
                     type: string
+                    format: int64
                 kind:
                     type: string
                 queue:
@@ -1926,14 +4539,19 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 orderId:
                     type: string
+                    format: int64
                 userId:
                     type: string
+                    format: int64
                 merchantId:
                     type: string
+                    format: int64
                 amountMinor:
                     type: string
+                    format: int64
                 status:
                     type: string
                 method:
@@ -1966,6 +4584,7 @@ components:
                     format: enum
                 amountMinor:
                     type: string
+                    format: int64
                 currency:
                     type: string
         api.payment.v1.RefundPaymentReply:
@@ -1976,15 +4595,18 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
         api.user.v1.BrowsingHistoryItem:
             type: object
             properties:
                 productId:
                     type: string
+                    format: int64
                 name:
                     type: string
                 priceMinor:
                     type: string
+                    format: int64
                 available:
                     type: boolean
                 lastViewedAt:
@@ -1994,6 +4616,7 @@ components:
                     type: string
                 effectivePriceMinor:
                     type: string
+                    format: int64
         api.user.v1.ChangePasswordReply:
             type: object
             properties: {}
@@ -2002,8 +4625,15 @@ components:
             properties:
                 oldPassword:
                     type: string
+                    minLength: 8
+                    maxLength: 72
                 newPassword:
                     type: string
+                    minLength: 8
+                    maxLength: 72
+            required:
+                - oldPassword
+                - newPassword
         api.user.v1.ClearBrowsingHistoryReply:
             type: object
             properties: {}
@@ -2012,6 +4642,7 @@ components:
             properties:
                 userId:
                     type: string
+                    format: int64
                 receiverName:
                     type: string
                 receiverPhone:
@@ -2058,6 +4689,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 token:
                     type: string
                 refreshToken:
@@ -2069,6 +4701,10 @@ components:
                     type: string
                 password:
                     type: string
+                    minLength: 8
+                    maxLength: 72
+            required:
+                - password
         api.user.v1.LogoutReply:
             type: object
             properties: {}
@@ -2091,6 +4727,10 @@ components:
             properties:
                 productId:
                     type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            required:
+                - productId
         api.user.v1.RefreshReply:
             type: object
             properties:
@@ -2108,6 +4748,7 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
         api.user.v1.RegisterRequest:
             type: object
             properties:
@@ -2115,6 +4756,10 @@ components:
                     type: string
                 password:
                     type: string
+                    minLength: 8
+                    maxLength: 72
+            required:
+                - password
         api.user.v1.SetDefaultShippingAddressReply:
             type: object
             properties: {}
@@ -2123,15 +4768,19 @@ components:
             properties:
                 userId:
                     type: string
+                    format: int64
                 id:
                     type: string
+                    format: int64
         api.user.v1.ShippingAddress:
             type: object
             properties:
                 id:
                     type: string
+                    format: int64
                 userId:
                     type: string
+                    format: int64
                 receiverName:
                     type: string
                 receiverPhone:
@@ -2153,8 +4802,10 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 userId:
                     type: string
+                    format: int64
                 receiverName:
                     type: string
                 receiverPhone:
@@ -2174,15 +4825,19 @@ components:
             properties:
                 id:
                     type: string
+                    format: int64
                 nickname:
                     type: string
+                    maxLength: 50
                 realName:
                     type: string
+                    maxLength: 50
         api.user.v1.UserInfo:
             type: object
             properties:
                 id:
                     type: string
+                    format: int64
                 nickname:
                     type: string
                 realName:
@@ -2194,14 +4849,39 @@ components:
                 createdAt:
                     type: string
                     format: date-time
+        errors.Status:
+            type: object
+            description: kratos 统一错误体，HTTP 状态码等于 code
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                    description: HTTP 状态码
+                reason:
+                    type: string
+                    description: 机器可读的错误原因，如 PRODUCT_NOT_FOUND
+                message:
+                    type: string
+                    description: 人类可读的错误说明
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: string
+            required:
+                - code
+                - reason
+                - message
+                - metadata
 tags:
     - name: Community
+      description: 图文帖子、点赞与评论（含一层楼中楼）
     - name: Mall
+      description: 分类、商品、限时活动与今日养生卡片（写操作需要管理员角色）
     - name: Media
+      description: 图片上传（预签名直传）与资源查询
     - name: Order
+      description: 下单、订单查询与取消
     - name: Payment
-      description: |-
-        支付服务。
-         原 WechatPayService / AliPayService 已经被收编到本 service,前端只需
-         通过 method 字段路由到已注册 adapter,不再为不同渠道调用不同的 RPC。
+      description: 支付单、渠道查询/关单/退款、对账任务与支付渠道异步回调
     - name: User
+      description: 注册登录、令牌轮转、用户资料、收货地址与商品浏览记录
