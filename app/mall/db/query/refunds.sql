@@ -51,8 +51,9 @@ RETURNING *;
 SELECT *
 FROM order_refunds
 WHERE status = 'pending'
+  AND id > sqlc.arg(after_id)
   AND updated_at < now() - make_interval(secs => sqlc.arg(older_than_seconds)::double precision)
-ORDER BY updated_at
+ORDER BY id
 LIMIT sqlc.arg(limit_rows);
 
 -- name: RetryOrderRefund :one

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -362,6 +363,14 @@ func (a *AlipayPaymentAdapter) Prepay(ctx context.Context, req biz.PaymentPrepay
 	case "wap":
 		if a.wapSigner == nil {
 			return nil, paymentProviderNotConfigured("alipay wap signer")
+		}
+		if returnURL := req.Extension["return_url"]; returnURL != "" {
+			parsed, parseErr := url.Parse(returnURL)
+			if parseErr != nil || parsed.Hostname() == "" || parsed.User != nil ||
+				(parsed.Scheme != "https" && parsed.Scheme != "http") || strings.Contains(returnURL, "\\") {
+				return nil, errors.BadRequest("PAYMENT_RETURN_URL_INVALID", "return_url must be an absolute HTTP(S) URL without credentials")
+			}
+			body.Set("return_url", returnURL)
 		}
 		payload, err = a.wapSigner.TradeWapPay(ctx, body)
 		actionType = biz.PaymentActionRedirect
@@ -788,13 +797,32 @@ func (r *PaymentRepo) PreparePaymentRefund(ctx context.Context, paymentID int64,
 	var refund db.OrderRefund
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
-		var err error
+		// Refund preparation and settlement use the same order-first lock order.
+		order, err := q.GetOrderForUpdateByPaymentID(ctx, paymentID)
+		if err != nil {
+			if stderrors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrPaymentNotFound
+			}
+			return err
+		}
+		if !refundableOrderStatus(order.Status) {
+			return biz.ErrPaymentStateConflict
+		}
 		payment, err = q.GetPaymentForUpdate(ctx, paymentID)
 		if err != nil {
 			if stderrors.Is(err, pgx.ErrNoRows) {
 				return biz.ErrPaymentNotFound
 			}
 			return err
+		}
+		payments, err := q.ListPaymentsByOrderForUpdate(ctx, payment.OrderID)
+		if err != nil {
+			return err
+		}
+		// Resolve in-flight sibling payments before moving money. Otherwise a
+		// later close/success could leave a paid order with no backing payment.
+		if hasOtherActivePayment(payments, payment.ID) {
+			return biz.ErrPaymentStateConflict
 		}
 		refund, err = q.GetOrderRefundByPaymentID(ctx, pgtype.Int8{Int64: paymentID, Valid: true})
 		if err == nil {
@@ -849,7 +877,7 @@ func (r *PaymentRepo) RecordPaymentRefundError(ctx context.Context, refundID int
 	return err
 }
 
-func (r *PaymentRepo) ListStalePendingRefunds(ctx context.Context, olderThan time.Duration, limit int) ([]biz.PaymentRefund, error) {
+func (r *PaymentRepo) ListStalePendingRefunds(ctx context.Context, olderThan time.Duration, limit int, afterID int64) ([]biz.PaymentRefund, error) {
 	if olderThan <= 0 {
 		olderThan = 10 * time.Minute
 	}
@@ -857,7 +885,7 @@ func (r *PaymentRepo) ListStalePendingRefunds(ctx context.Context, olderThan tim
 		limit = 100
 	}
 	rows, err := querierFromContext(ctx, r.data.q).ListStalePendingRefunds(ctx, db.ListStalePendingRefundsParams{
-		OlderThanSeconds: olderThan.Seconds(), LimitRows: int32(limit),
+		OlderThanSeconds: olderThan.Seconds(), LimitRows: int32(limit), AfterID: afterID,
 	})
 	if err != nil {
 		return nil, err
@@ -871,12 +899,16 @@ func (r *PaymentRepo) ListStalePendingRefunds(ctx context.Context, olderThan tim
 
 func (r *PaymentRepo) ApplyPaymentRefund(ctx context.Context, paymentID, refundID int64) error {
 	var changed db.Payment
+	var order db.Order
+	stockRestored := false
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
 		// Lock the order row before the payment row: every other
 		// order-payment transaction locks orders first, and inverting the
 		// order here would open a deadlock window against them.
-		if _, err := q.GetOrderForUpdateByPaymentID(ctx, paymentID); err != nil {
+		var err error
+		order, err = q.GetOrderForUpdateByPaymentID(ctx, paymentID)
+		if err != nil {
 			if stderrors.Is(err, pgx.ErrNoRows) {
 				return biz.ErrPaymentNotFound
 			}
@@ -912,22 +944,21 @@ func (r *PaymentRepo) ApplyPaymentRefund(ctx context.Context, paymentID, refundI
 		if err != nil {
 			return err
 		}
-		// The order settles with the refund: it leaves the ongoing set and its
-		// stock comes back, because nothing was ever shipped. An order outside
-		// 'paid' rolls the whole refund application back so the retry path
-		// surfaces the conflict instead of settling half of the story.
-		if _, err := q.MarkOrderRefunded(ctx, current.OrderID); err != nil {
-			if stderrors.Is(err, pgx.ErrNoRows) {
-				return biz.ErrPaymentStateConflict
-			}
+		payments, err := q.ListPaymentsByOrderForUpdate(ctx, current.OrderID)
+		if err != nil {
 			return err
 		}
-		return q.RestoreOrderItemStock(ctx, current.OrderID)
+		stockRestored, err = settleOrderAfterRefund(ctx, q, order, payments, current.ID)
+		return err
 	})
 	if err != nil {
 		return err
 	}
 	r.invalidatePayment(ctx, changed)
+	(&OrderRepo{data: r.data, log: r.log}).invalidateOrder(ctx, toBizOrder(order))
+	if stockRestored {
+		invalidateProductCachesForOrder(ctx, r.data, r.log, changed.OrderID)
+	}
 	observability.PaymentTransition(ctx, biz.PaymentStatusSuccess, biz.PaymentStatusRefunded, "provider_refund", strings.SplitN(changed.PayChannel, ":", 2)[0])
 	return nil
 }
@@ -1007,7 +1038,7 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 	var changed db.Payment
 	var fromStatus, provider, event string
 	var orderID int64
-	orderCancelled := false
+	stockRestored := false
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
 		snapshot, err := q.GetPayment(ctx, args.PaymentID)
@@ -1161,7 +1192,7 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 			if err != nil {
 				return paymentStateAfterCAS(ctx, q, payment.ID, biz.PaymentStatusClosed)
 			}
-			orderCancelled, err = finalizeOrderAfterPaymentInactive(ctx, q, order, payments, payment)
+			stockRestored, err = finalizeOrderAfterPaymentInactive(ctx, q, order, payments, payment)
 			if err != nil {
 				return err
 			}
@@ -1184,7 +1215,7 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 			// expiry, api close, or poll exhaustion); nobody revisits the order
 			// afterwards, so settle it here exactly like a provider close.
 			if payment.Status == biz.PaymentStatusClosePending || args.Trigger == "close_pay" {
-				orderCancelled, err = finalizeOrderAfterPaymentInactive(ctx, q, order, payments, payment)
+				stockRestored, err = finalizeOrderAfterPaymentInactive(ctx, q, order, payments, payment)
 				if err != nil {
 					return err
 				}
@@ -1245,16 +1276,8 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 				changed = payment
 				changed.Status = biz.PaymentStatusRefunded
 			}
-			// Settle the order exactly like the initiated-refund path so both
-			// refund settlements agree: terminal refunded order plus restored
-			// stock, or a conflict that rolls back for visible retries.
-			if _, err := q.MarkOrderRefunded(ctx, payment.OrderID); err != nil {
-				if stderrors.Is(err, pgx.ErrNoRows) {
-					return biz.ErrPaymentStateConflict
-				}
-				return err
-			}
-			if err := q.RestoreOrderItemStock(ctx, payment.OrderID); err != nil {
+			stockRestored, err = settleOrderAfterRefund(ctx, q, order, payments, payment.ID)
+			if err != nil {
 				return err
 			}
 		default:
@@ -1293,7 +1316,7 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 		r.invalidatePayment(ctx, changed)
 		r.invalidateOrder(ctx, changed.OrderID)
 	}
-	if err == nil && orderCancelled {
+	if err == nil && stockRestored {
 		if changed.ID == 0 {
 			r.invalidateOrder(ctx, orderID)
 		}
