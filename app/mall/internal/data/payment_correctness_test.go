@@ -55,7 +55,8 @@ func TestAlipaySignedParametersBindProductAndAbsoluteExpiry(t *testing.T) {
 	for _, product := range []string{"wap", "app"} {
 		t.Run(product, func(t *testing.T) {
 			request := biz.PaymentPrepayRequest{Method: biz.PaymentMethod{Provider: "alipay", Product: product},
-				OutTradeNo: "pay_1", Amount: 12345, Currency: "CNY", Description: "order", ExpiresAt: deadline}
+				OutTradeNo: "pay_1", Amount: 12345, Currency: "CNY", Description: "order", ExpiresAt: deadline,
+				Extension: map[string]string{"return_url": "https://merchant.example/result?order=pay_1&from=wap"}}
 			result, err := adapter.Prepay(context.Background(), request)
 			require.NoError(t, err)
 			var action biz.SignedPaymentPayload
@@ -79,6 +80,9 @@ func TestAlipaySignedParametersBindProductAndAbsoluteExpiry(t *testing.T) {
 			require.Equal(t, "app_cert", values.Get("app_cert_sn"))
 			require.Equal(t, "root_cert", values.Get("alipay_root_cert_sn"))
 			require.Equal(t, adapter.notifyURL, values.Get("notify_url"))
+			if product == "wap" {
+				require.Equal(t, request.Extension["return_url"], values.Get("return_url"))
+			}
 			var body map[string]any
 			require.NoError(t, json.Unmarshal([]byte(values.Get("biz_content")), &body))
 			require.Equal(t, wantProduct, body["product_code"])
@@ -95,6 +99,18 @@ func TestAlipaySignedParametersBindProductAndAbsoluteExpiry(t *testing.T) {
 			}
 			digest := sha256.Sum256([]byte(signed.EncodeAliPaySignParams()))
 			require.NoError(t, rsa.VerifyPKCS1v15(&key.PublicKey, crypto.SHA256, digest[:], signature))
+			if product == "wap" {
+				for _, invalid := range []string{"/result", "//merchant.example/result", "javascript:alert(1)", "https://", "https://user:password@merchant.example", "https://merchant.example\\evil", "https://merchant.example/%zz"} {
+					badRequest := request
+					badRequest.Extension = map[string]string{"return_url": invalid}
+					_, err := adapter.Prepay(context.Background(), badRequest)
+					require.ErrorContains(t, err, "PAYMENT_RETURN_URL_INVALID", invalid)
+				}
+				optional := request
+				optional.Extension = nil
+				_, err := adapter.Prepay(context.Background(), optional)
+				require.NoError(t, err, "return_url remains optional")
+			}
 			for _, expired := range []time.Time{{}, time.Now().Add(-time.Second)} {
 				request.ExpiresAt = expired
 				_, err := adapter.Prepay(context.Background(), request)
@@ -153,7 +169,9 @@ func TestRefundRetryRestoresPendingBeforeReturningOriginalNumber(t *testing.T) {
 	pending := refund
 	pending.Status = biz.PaymentRefundStatusPending
 	gomock.InOrder(
+		q.EXPECT().GetOrderForUpdateByPaymentID(gomock.Any(), payment.ID).Return(db.Order{ID: payment.OrderID, Status: biz.OrderStatusPaid}, nil),
 		q.EXPECT().GetPaymentForUpdate(gomock.Any(), payment.ID).Return(payment, nil),
+		q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), payment.OrderID).Return([]db.Payment{payment}, nil),
 		q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), refund.PaymentID).Return(refund, nil),
 		q.EXPECT().RetryOrderRefund(gomock.Any(), refund.ID).Return(pending, nil),
 	)

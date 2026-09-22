@@ -41,7 +41,9 @@ func TestPreparePaymentRefundCreatesFullRefundUnderPaymentLock(t *testing.T) {
 		TotalAmountMinor: payment.AmountMinor, RefundAmountMinor: payment.AmountMinor,
 		Currency: payment.Currency, Status: biz.PaymentRefundStatusPending,
 	}
+	q.EXPECT().GetOrderForUpdateByPaymentID(gomock.Any(), payment.ID).Return(db.Order{ID: payment.OrderID, UserID: payment.UserID, Status: biz.OrderStatusPaid}, nil)
 	q.EXPECT().GetPaymentForUpdate(gomock.Any(), payment.ID).Return(payment, nil)
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), payment.OrderID).Return([]db.Payment{payment}, nil)
 	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), pgtype.Int8{Int64: payment.ID, Valid: true}).Return(db.OrderRefund{}, pgx.ErrNoRows)
 	q.EXPECT().CreateOrderRefund(gomock.Any(), db.CreateOrderRefundParams{
 		PaymentID: pgtype.Int8{Int64: payment.ID, Valid: true},
@@ -70,7 +72,9 @@ func TestPreparePaymentRefundReusesSuccessfulRefund(t *testing.T) {
 		TotalAmountMinor: payment.AmountMinor, RefundAmountMinor: payment.AmountMinor,
 		Currency: payment.Currency, Status: biz.PaymentRefundStatusSuccess,
 	}
+	q.EXPECT().GetOrderForUpdateByPaymentID(gomock.Any(), payment.ID).Return(db.Order{ID: payment.OrderID, UserID: payment.UserID, Status: biz.OrderStatusPaid}, nil)
 	q.EXPECT().GetPaymentForUpdate(gomock.Any(), payment.ID).Return(payment, nil)
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), payment.OrderID).Return([]db.Payment{payment}, nil)
 	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), pgtype.Int8{Int64: payment.ID, Valid: true}).Return(refund, nil)
 
 	d := refundTestData(q)
@@ -101,6 +105,8 @@ func TestApplyPaymentRefundUpdatesRefundAndPaymentAtomically(t *testing.T) {
 		ID: refund.ID, PaymentID: pgtype.Int8{Int64: payment.ID, Valid: true},
 	}).Return(refund, nil)
 	q.EXPECT().ConfirmPaymentRefunded(gomock.Any(), payment.ID).Return(refundedPayment, nil)
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), payment.OrderID).Return([]db.Payment{refundedPayment}, nil)
+	q.EXPECT().ListOrderItems(gomock.Any(), payment.OrderID).Return(nil, nil)
 	// A settled refund must also settle the order: terminal refunded state
 	// plus restored stock, in the same transaction.
 	refundedOrder := db.Order{ID: payment.OrderID, UserID: payment.UserID, Status: biz.OrderStatusRefunded, IsCompleted: true}
@@ -128,10 +134,8 @@ func TestApplyPaymentRefundRejectsOrderOutsidePaidState(t *testing.T) {
 	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), pgtype.Int8{Int64: payment.ID, Valid: true}).Return(refund, nil)
 	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), gomock.Any()).Return(refund, nil)
 	q.EXPECT().ConfirmPaymentRefunded(gomock.Any(), payment.ID).Return(payment, nil)
-	// The order is not in 'paid' (for example it was already cancelled), so
-	// the whole refund application rolls back for a visible retry instead of
-	// settling half of the story.
-	q.EXPECT().MarkOrderRefunded(gomock.Any(), payment.OrderID).Return(db.Order{}, pgx.ErrNoRows)
+	// An unsupported state must not change the order or restore inventory.
+	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), payment.OrderID).Return([]db.Payment{payment}, nil)
 
 	d := refundTestData(q)
 	t.Cleanup(func() { _ = d.rdb.Close() })
