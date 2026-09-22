@@ -429,7 +429,9 @@ type PaymentRepo interface {
 	PreparePaymentRefund(context.Context, int64, string) (*PaymentDO, *PaymentRefund, error)
 	RecordPaymentRefundError(context.Context, int64, string, bool) error
 	ApplyPaymentRefund(context.Context, int64, int64) error
-	ListStalePendingRefunds(context.Context, time.Duration, int) ([]PaymentRefund, error)
+	// ListStalePendingRefunds returns at most limit rows in ascending ID order,
+	// strictly after afterID, whose last update is older than the given duration.
+	ListStalePendingRefunds(ctx context.Context, olderThan time.Duration, limit int, afterID int64) ([]PaymentRefund, error)
 	MarkReconciliationRequired(context.Context, ReconciliationFailure) error
 	RecordReconciliationFailure(context.Context, ReconciliationFailure) error
 }
@@ -986,17 +988,38 @@ func (uc *paymentUsecase) ReconcilePendingRefunds(ctx context.Context, olderThan
 	if limit <= 0 {
 		limit = 100
 	}
-	refunds, err := uc.paymentRepo.ListStalePendingRefunds(ctx, olderThan, limit)
-	if err != nil {
-		return 0, err
-	}
+	// limit bounds each page, not the sweep. Advance by immutable IDs even
+	// when preparation/settlement fails without updating the refund timestamp.
+	var afterID int64
 	settled := 0
-	for _, refund := range refunds {
-		if err := uc.reconcileRefund(ctx, refund); err != nil {
-			uc.log.WithContext(ctx).Errorw("msg", "reconcile pending refund failed", "payment_id", refund.PaymentID, "refund_id", refund.ID, "out_refund_no", refund.OutRefundNo, "error", err)
-			continue
+	for {
+		if err := ctx.Err(); err != nil {
+			return settled, err
 		}
-		settled++
+		refunds, err := uc.paymentRepo.ListStalePendingRefunds(ctx, olderThan, limit, afterID)
+		if err != nil {
+			return settled, err
+		}
+		for _, refund := range refunds {
+			if err := ctx.Err(); err != nil {
+				return settled, err
+			}
+			if err := uc.reconcileRefund(ctx, refund); err != nil {
+				// Preparation and local-settlement failures also need an error
+				// and retry timestamp, not just provider errors. This keeps slow
+				// failing rows from monopolizing successive bounded job runs.
+				if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), false); recordErr != nil {
+					uc.log.WithContext(ctx).Errorw("msg", "record refund reconciliation error failed", "refund_id", refund.ID, "error", recordErr)
+				}
+				uc.log.WithContext(ctx).Errorw("msg", "reconcile pending refund failed", "payment_id", refund.PaymentID, "refund_id", refund.ID, "out_refund_no", refund.OutRefundNo, "error", err)
+				continue
+			}
+			settled++
+		}
+		if len(refunds) < limit {
+			break
+		}
+		afterID = refunds[len(refunds)-1].ID
 	}
 	return settled, nil
 }

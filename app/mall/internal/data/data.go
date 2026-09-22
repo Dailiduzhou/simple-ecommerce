@@ -181,16 +181,8 @@ func NewConfiguredRiverClient(pool *pgxpool.Pool, workers *river.Workers, period
 	if c.GetMediaWorkers() > 0 {
 		media = int(c.MediaWorkers)
 	}
-	driver := riverpgxv5.New(pool)
-	migrator, err := rivermigrate.New(driver, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create river migrator: %w", err)
-	}
-	if _, err := migrator.Migrate(context.Background(), rivermigrate.DirectionUp, nil); err != nil {
-		return nil, fmt.Errorf("run river migrations: %w", err)
-	}
-
-	client, err := river.NewClient(driver, &river.Config{
+	// Schema changes belong to RunMigrations, not runtime client construction.
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
 			"payments":    {MaxWorkers: 10},
 			"orders":      {MaxWorkers: 10},
@@ -208,6 +200,10 @@ func NewConfiguredRiverClient(pool *pgxpool.Pool, workers *river.Workers, period
 }
 
 func RunMigrations(c *conf.Data) error {
+	return runMigrations(c, runDatabaseMigrations, runRiverMigrations)
+}
+
+func runMigrations(c *conf.Data, databaseMigration, riverMigration func(string) error) error {
 	// Explicit opt-out: production lets CI or a DBA own schema changes instead
 	// of every pod racing to migrate with the application DSN.
 	if c.GetDatabase().GetDisableMigrations() {
@@ -222,6 +218,14 @@ func RunMigrations(c *conf.Data) error {
 		return fmt.Errorf("database source is required for migrations")
 	}
 
+	if err := databaseMigration(source); err != nil {
+		return err
+	}
+	// River may need an upgrade even when the application schema is unchanged.
+	return riverMigration(source)
+}
+
+func runDatabaseMigrations(source string) error {
 	sourceDriver, err := iofs.New(dbmigrations.FS, "migrations")
 	if err != nil {
 		return fmt.Errorf("create migration source: %w", err)
@@ -250,6 +254,24 @@ func RunMigrations(c *conf.Data) error {
 	}
 
 	log.Info("database migrations applied")
+	return nil
+}
+
+func runRiverMigrations(source string) error {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, source)
+	if err != nil {
+		return fmt.Errorf("create river migration pool: %w", err)
+	}
+	defer pool.Close()
+
+	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+	if err != nil {
+		return fmt.Errorf("create river migrator: %w", err)
+	}
+	if _, err := migrator.Migrate(ctx, rivermigrate.DirectionUp, nil); err != nil {
+		return fmt.Errorf("run river migrations: %w", err)
+	}
 	return nil
 }
 
