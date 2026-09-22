@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	mockdb "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db/mock"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/golang/mock/gomock"
+	"github.com/riverqueue/river"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,6 +63,82 @@ func TestRunMigrationsHonoursTheDisableSwitch(t *testing.T) {
 		DisableMigrations: true,
 	}}
 	require.NoError(t, RunMigrations(c), "a disabled migrator must not contact the database")
+}
+
+func TestRunMigrationsUsesSameAccountForBothSchemas(t *testing.T) {
+	const runtimeSource = "postgres://runtime.invalid/ecommerce"
+	const migrationSource = "postgres://migration.invalid/ecommerce"
+	for _, tt := range []struct {
+		name   string
+		data   *conf.Data_Database
+		source string
+	}{
+		{"dedicated account", &conf.Data_Database{Source: runtimeSource, MigrationSource: migrationSource}, migrationSource},
+		{"runtime fallback", &conf.Data_Database{Source: runtimeSource}, runtimeSource},
+		{"migration only", &conf.Data_Database{MigrationSource: migrationSource}, migrationSource},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls []string
+			err := runMigrations(&conf.Data{Database: tt.data}, func(source string) error {
+				require.Equal(t, tt.source, source)
+				calls = append(calls, "database")
+				// An up-to-date application schema also returns nil; River must
+				// still run, since its migration version is independent.
+				return nil
+			}, func(source string) error {
+				require.Equal(t, tt.source, source)
+				calls = append(calls, "river")
+				return nil
+			})
+			require.NoError(t, err)
+			require.Equal(t, []string{"database", "river"}, calls)
+		})
+	}
+}
+
+func TestRunMigrationsStopsOnFailure(t *testing.T) {
+	for _, failingStage := range []string{"database", "river"} {
+		t.Run(failingStage, func(t *testing.T) {
+			failure := errors.New("migration failed")
+			var calls []string
+			err := runMigrations(&conf.Data{Database: &conf.Data_Database{Source: "postgres://runtime.invalid/ecommerce"}}, func(string) error {
+				calls = append(calls, "database")
+				if failingStage == "database" {
+					return failure
+				}
+				return nil
+			}, func(string) error {
+				calls = append(calls, "river")
+				return failure
+			})
+			require.ErrorIs(t, err, failure)
+			if failingStage == "database" {
+				require.Equal(t, []string{"database"}, calls)
+			} else {
+				require.Equal(t, []string{"database", "river"}, calls)
+			}
+		})
+	}
+}
+
+// Neither pool nor River client construction may contact the database when
+// startup migrations are disabled. This catches migrations hidden in the
+// runtime River constructor, outside RunMigrations' configuration guard.
+func TestDisabledMigrationsAllowRuntimeClientConstructionWithoutDatabase(t *testing.T) {
+	pool, cleanup, err := NewPgxPool(&conf.Data{Database: &conf.Data_Database{
+		Source:            "postgres://runtime.invalid/ecommerce?connect_timeout=1",
+		MigrationSource:   "postgres://migration.invalid/ecommerce?connect_timeout=1",
+		DisableMigrations: true,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	client, err := NewConfiguredRiverClient(pool, river.NewWorkers(), nil, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	legacyClient, err := NewRiverClient(pool, river.NewWorkers(), nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, legacyClient)
 }
 
 func TestEmbeddedMigrationsAvailable(t *testing.T) {

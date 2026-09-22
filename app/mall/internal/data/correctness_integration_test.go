@@ -388,7 +388,9 @@ func TestCorrectnessIntegration(t *testing.T) {
 	})
 
 	t.Run("concurrent refund preparation yields a single refund record", func(t *testing.T) {
-		_, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+		orderID, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+		_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status='paid' WHERE id=$1`, orderID)
+		require.NoError(t, err)
 		repo := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 
 		refundIDs := make(chan int64, 2)

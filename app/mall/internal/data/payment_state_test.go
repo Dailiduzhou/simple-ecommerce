@@ -268,6 +268,7 @@ func TestApplyPayQuery_RefundSettlesPendingRefundRecord(t *testing.T) {
 	q.EXPECT().UpdatePaymentRefunded(gomock.Any(), int64(1)).Return(int64(1), nil)
 	q.EXPECT().MarkOrderRefunded(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusRefunded, IsCompleted: true}, nil)
 	q.EXPECT().RestoreOrderItemStock(gomock.Any(), int64(2)).Return(nil)
+	q.EXPECT().ListOrderItems(gomock.Any(), int64(2)).Return(nil, nil)
 	q.EXPECT().GetOrder(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
 	d := newTestData(t, q, redisServer)
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
@@ -388,10 +389,7 @@ func TestApplyPayQuery_RefundConflictOutsidePaidOrderRollsBack(t *testing.T) {
 	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), gomock.Any()).Return(refund, nil)
 	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), gomock.Any()).Return(refund, nil)
 	q.EXPECT().UpdatePaymentRefunded(gomock.Any(), int64(1)).Return(int64(1), nil)
-	// The order is not in 'paid' (for example it was already cancelled), so
-	// the whole refund settlement rolls back for a visible conflict instead
-	// of half-settling the story.
-	q.EXPECT().MarkOrderRefunded(gomock.Any(), int64(2)).Return(db.Order{}, pgx.ErrNoRows)
+	// A pending order is not eligible for refund settlement.
 	d := newTestData(t, q, redisServer)
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
 	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, result)

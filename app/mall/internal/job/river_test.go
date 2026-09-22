@@ -140,7 +140,7 @@ func (r *workerRepo) RecordPaymentRefundError(context.Context, int64, string, bo
 	return nil
 }
 func (r *workerRepo) ApplyPaymentRefund(context.Context, int64, int64) error { return nil }
-func (r *workerRepo) ListStalePendingRefunds(context.Context, time.Duration, int) ([]biz.PaymentRefund, error) {
+func (r *workerRepo) ListStalePendingRefunds(context.Context, time.Duration, int, int64) ([]biz.PaymentRefund, error) {
 	return nil, nil
 }
 

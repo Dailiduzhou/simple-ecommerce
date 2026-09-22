@@ -156,8 +156,17 @@ func (r *paymentTestRepo) ApplyPaymentRefund(context.Context, int64, int64) erro
 	r.refund.Status = PaymentRefundStatusSuccess
 	return nil
 }
-func (r *paymentTestRepo) ListStalePendingRefunds(context.Context, time.Duration, int) ([]PaymentRefund, error) {
-	return r.staleRefunds, nil
+func (r *paymentTestRepo) ListStalePendingRefunds(_ context.Context, _ time.Duration, limit int, afterID int64) ([]PaymentRefund, error) {
+	var rows []PaymentRefund
+	for _, refund := range r.staleRefunds {
+		if refund.ID > afterID {
+			rows = append(rows, refund)
+			if len(rows) == limit {
+				break
+			}
+		}
+	}
+	return rows, nil
 }
 
 func (r *paymentTestRepo) MarkReconciliationRequired(_ context.Context, failure ReconciliationFailure) error {
