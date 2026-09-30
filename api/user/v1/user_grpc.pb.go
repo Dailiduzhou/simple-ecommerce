@@ -53,6 +53,8 @@ type UserClient interface {
 	// ChangePassword rotates the caller's password and revokes every session
 	// issued before the change (including the caller's own tokens).
 	ChangePassword(ctx context.Context, in *ChangePasswordRequest, opts ...grpc.CallOption) (*ChangePasswordReply, error)
+	// Physically deletes accounts without retained transaction/audit history.
+	// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
 	DeleteUser(ctx context.Context, in *DeleteUserRequest, opts ...grpc.CallOption) (*DeleteUserReply, error)
 	// Shipping Addresses
 	CreateShippingAddress(ctx context.Context, in *CreateShippingAddressRequest, opts ...grpc.CallOption) (*ShippingAddress, error)
@@ -257,6 +259,8 @@ type UserServer interface {
 	// ChangePassword rotates the caller's password and revokes every session
 	// issued before the change (including the caller's own tokens).
 	ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordReply, error)
+	// Physically deletes accounts without retained transaction/audit history.
+	// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
 	DeleteUser(context.Context, *DeleteUserRequest) (*DeleteUserReply, error)
 	// Shipping Addresses
 	CreateShippingAddress(context.Context, *CreateShippingAddressRequest) (*ShippingAddress, error)

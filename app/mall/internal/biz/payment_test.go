@@ -181,14 +181,17 @@ func (r *orderTestRepo) GetOrderByUser(context.Context, int64, int64) (Order, er
 	return r.order, nil
 }
 func (r *orderTestRepo) HasOngoingOrders(context.Context, int64) (bool, error) { return false, nil }
-func (r *orderTestRepo) ListOngoingOrdersByUser(context.Context, int64) ([]Order, error) {
+func (r *orderTestRepo) ListOngoingOrdersByUser(context.Context, int64, int32, int32) ([]Order, error) {
 	return nil, nil
 }
 func (r *orderTestRepo) ListOrdersByUser(context.Context, int64, int32, int32) ([]Order, error) {
 	return nil, nil
 }
 func (r *orderTestRepo) CountOrdersByUser(context.Context, int64) (int64, error) { return 0, nil }
-func (r *orderTestRepo) CancelOrderByUser(context.Context, int64, int64) error   { return nil }
+func (r *orderTestRepo) CountOngoingOrdersByUser(context.Context, int64) (int64, error) {
+	return 0, nil
+}
+func (r *orderTestRepo) CancelOrderByUser(context.Context, int64, int64) error { return nil }
 
 type paymentTestTx struct{ active bool }
 

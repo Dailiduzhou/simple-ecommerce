@@ -12,6 +12,39 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const adjustProductStock = `-- name: AdjustProductStock :one
+UPDATE products
+SET stock = stock + $2::integer, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
+`
+
+type AdjustProductStockParams struct {
+	ID    int64
+	Delta int32
+}
+
+func (q *Queries) AdjustProductStock(ctx context.Context, arg AdjustProductStockParams) (Product, error) {
+	row := q.db.QueryRow(ctx, adjustProductStock, arg.ID, arg.Delta)
+	var i Product
+	err := row.Scan(
+		&i.ID,
+		&i.CategoryID,
+		&i.Name,
+		&i.PriceMinor,
+		&i.Discount,
+		&i.Stock,
+		&i.Status,
+		&i.CoverImage,
+		&i.MediaAssets,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const countProducts = `-- name: CountProducts :one
 SELECT count(*)
 FROM products
@@ -311,10 +344,9 @@ SET category_id = $2,
     name = $3,
     price_minor = $4,
     discount = $5,
-    stock = $6,
-    cover_image = $7,
-    media_assets = $8,
-    description = $9,
+    cover_image = $6,
+    media_assets = $7,
+    description = $8,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND deleted_at IS NULL
@@ -327,7 +359,6 @@ type UpdateProductParams struct {
 	Name        string
 	PriceMinor  int64
 	Discount    decimal.Decimal
-	Stock       int32
 	CoverImage  []byte
 	MediaAssets []byte
 	Description pgtype.Text
@@ -340,7 +371,6 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (P
 		arg.Name,
 		arg.PriceMinor,
 		arg.Discount,
-		arg.Stock,
 		arg.CoverImage,
 		arg.MediaAssets,
 		arg.Description,
@@ -364,12 +394,13 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (P
 	return i, err
 }
 
-const updateProductStatus = `-- name: UpdateProductStatus :exec
+const updateProductStatus = `-- name: UpdateProductStatus :one
 UPDATE products
 SET status = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND deleted_at IS NULL
+RETURNING id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
 `
 
 type UpdateProductStatusParams struct {
@@ -377,7 +408,23 @@ type UpdateProductStatusParams struct {
 	Status int16
 }
 
-func (q *Queries) UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) error {
-	_, err := q.db.Exec(ctx, updateProductStatus, arg.ID, arg.Status)
-	return err
+func (q *Queries) UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) (Product, error) {
+	row := q.db.QueryRow(ctx, updateProductStatus, arg.ID, arg.Status)
+	var i Product
+	err := row.Scan(
+		&i.ID,
+		&i.CategoryID,
+		&i.Name,
+		&i.PriceMinor,
+		&i.Discount,
+		&i.Stock,
+		&i.Status,
+		&i.CoverImage,
+		&i.MediaAssets,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }

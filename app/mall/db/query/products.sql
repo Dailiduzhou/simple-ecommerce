@@ -49,21 +49,27 @@ SET category_id = $2,
     name = $3,
     price_minor = $4,
     discount = $5,
-    stock = $6,
-    cover_image = $7,
-    media_assets = $8,
-    description = $9,
+    cover_image = $6,
+    media_assets = $7,
+    description = $8,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND deleted_at IS NULL
 RETURNING *;
 
--- name: UpdateProductStatus :exec
+-- name: UpdateProductStatus :one
 UPDATE products
 SET status = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-  AND deleted_at IS NULL;
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: AdjustProductStock :one
+UPDATE products
+SET stock = stock + sqlc.arg(delta)::integer, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
 
 -- name: DecrProductStock :one
 UPDATE products

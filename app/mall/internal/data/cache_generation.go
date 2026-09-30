@@ -4,8 +4,6 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
-	"time"
-
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/redis/go-redis/v9"
 )
@@ -33,16 +31,7 @@ func cacheGeneration(ctx context.Context, rdb *redis.Client, logger *log.Helper,
 }
 
 func bumpCacheGeneration(ctx context.Context, rdb *redis.Client, logger *log.Helper, key string) {
-	afterCommit(ctx, func() {
-		if rdb == nil {
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-		defer cancel()
-		if err := rdb.Incr(ctx, key).Err(); err != nil {
-			cacheFailure(ctx, logger, "incr_generation", key, err)
-		}
-	})
+	scheduleCacheInvalidation(ctx, rdb, logger, []string{key}, nil)
 }
 
 // readCacheGeneration avoids even Redis metadata reads inside a transaction.

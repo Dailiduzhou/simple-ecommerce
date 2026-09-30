@@ -60,7 +60,7 @@ func authenticatedPaymentContext(userID int64, role string) context.Context {
 
 func TestPaymentService_CreatePaymentPassesNeutralMethodAndAction(t *testing.T) {
 	uc := &servicePaymentUsecase{payment: &biz.PaymentDO{ID: 1, UserID: 42}}
-	service := NewPaymentService(uc, nil, log.DefaultLogger)
+	service := NewPaymentService(uc, nil, nil, log.DefaultLogger)
 	reply, err := service.CreatePayment(authenticatedPaymentContext(42, "user"), &pb.CreatePaymentReq{OrderNo: "order_1", Method: "newpay:embedded"})
 	require.NoError(t, err)
 	require.Equal(t, biz.PaymentMethod{Provider: "newpay", Product: "embedded"}, uc.prepayArgs.Method)
@@ -70,14 +70,14 @@ func TestPaymentService_CreatePaymentPassesNeutralMethodAndAction(t *testing.T) 
 }
 
 func TestPaymentService_CreatePaymentRequiresAuthentication(t *testing.T) {
-	service := NewPaymentService(&servicePaymentUsecase{}, nil, log.DefaultLogger)
+	service := NewPaymentService(&servicePaymentUsecase{}, nil, nil, log.DefaultLogger)
 	_, err := service.CreatePayment(context.Background(), &pb.CreatePaymentReq{OrderNo: "order_1", Method: "alipay:wap"})
 	require.True(t, errors.IsUnauthorized(err))
 }
 
 func TestPaymentService_RefundRequiresAdminAndDelegates(t *testing.T) {
 	uc := &servicePaymentUsecase{}
-	service := NewPaymentService(uc, nil, log.DefaultLogger)
+	service := NewPaymentService(uc, nil, nil, log.DefaultLogger)
 	_, err := service.RefundPayment(authenticatedPaymentContext(42, "user"), &pb.RefundPaymentRequest{Id: 1})
 	require.True(t, errors.IsForbidden(err))
 
@@ -104,7 +104,7 @@ func TestCallbackLimiterKeyUsesRemoteHost(t *testing.T) {
 
 func TestPaymentService_CreatePaymentUsesTheResolvedClientIP(t *testing.T) {
 	uc := &servicePaymentUsecase{payment: &biz.PaymentDO{ID: 1, UserID: 42}}
-	service := NewPaymentService(uc, nil, log.DefaultLogger)
+	service := NewPaymentService(uc, nil, nil, log.DefaultLogger)
 
 	// The middleware-resolved address wins over the request body.
 	ctx := custommid.WithClientIP(authenticatedPaymentContext(42, "user"), "203.0.113.7")

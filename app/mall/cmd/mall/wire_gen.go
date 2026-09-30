@@ -56,7 +56,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	communityUserRepo := data.NewCommunityUserRepo(dataData, txManager, mediaRepo, logger)
 	authRepo := data.NewAuthRepo(client, logger)
 	authUsecase := biz.NewAuthUsecase(communityUserRepo, authRepo, auth)
-	productRepo := data.NewProductRepo(dataData, logger)
+	productRepo := data.NewProductRepo(dataData, txManager, logger)
 	productUsecase := biz.NewProductUsecase(productRepo, logger)
 	categoryRepo := data.NewCategoryRepo(dataData, logger)
 	categoryUsecase := biz.NewCategoryUsecase(categoryRepo, logger)
@@ -79,8 +79,9 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 		return nil, nil, err
 	}
 	orderPolicy := data.NewOrderPolicy(payment)
-	orderUsecase := biz.NewConfiguredOrderUsecase(orderRepo, snowflakeGenerator, orderPolicy, logger)
-	orderService := service.NewOrderService(orderUsecase)
+	orderUsecase := biz.NewConfiguredOrderUsecase(orderRepo, snowflakeGenerator, orderPolicy, auth, logger)
+	orderFulfillmentUsecase := biz.NewOrderFulfillmentUsecase(orderRepo)
+	orderService := service.NewOrderService(orderUsecase, orderFulfillmentUsecase)
 	v, err := data.NewPaymentAdapters(payment, logger)
 	if err != nil {
 		cleanup2()
@@ -93,7 +94,9 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	paymentJobUsecase := biz.NewPaymentJobUsecase(paymentMQRepo, logger)
 	paymentPolicy := data.NewPaymentPolicy(payment)
 	paymentUsecase := biz.NewConfiguredPaymentUsecase(paymentGateway, paymentRepo, paymentNotificationRepo, orderRepo, paymentJobUsecase, txManager, snowflakeGenerator, paymentPolicy, logger)
-	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase, logger)
+	paymentReconciliationRepo := data.NewPaymentReconciliationRepo(dataData, txManager, paymentMQRepo, logger)
+	paymentReconciliationUsecase := biz.NewPaymentReconciliationUsecase(paymentReconciliationRepo)
+	paymentService := service.NewPaymentService(paymentUsecase, paymentJobUsecase, paymentReconciliationUsecase, logger)
 	postRepo := data.NewPostRepo(dataData, txManager, mediaRepo)
 	objectStorage, err := data.NewObjectStorage(storage)
 	if err != nil {
@@ -130,7 +133,9 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	browsingHistoryCleanupWorker := job.NewBrowsingHistoryCleanupWorker(browsingHistoryUsecase)
 	mediaSweepWorker := job.NewMediaSweepWorker(mediaUsecase)
 	mediaDeleteWorker := job.NewMediaDeleteWorker(mediaUsecase)
-	workers := job.NewWorkers(checkPayWorker, expireOrderWorker, closePayWorker, reapExpiredOrdersWorker, reconcileRefundsWorker, browsingHistoryCleanupWorker, mediaSweepWorker, mediaDeleteWorker, logger)
+	cacheInvalidationRepo := data.NewCacheInvalidationRepo(dataData, txManager, logger)
+	cacheInvalidationWorker := job.NewCacheInvalidationWorker(cacheInvalidationRepo)
+	workers := job.NewWorkers(checkPayWorker, expireOrderWorker, closePayWorker, reapExpiredOrdersWorker, reconcileRefundsWorker, browsingHistoryCleanupWorker, mediaSweepWorker, mediaDeleteWorker, cacheInvalidationWorker, logger)
 	v2 := job.NewPeriodicJobs()
 	paymentRiverErrorHandler := data.NewPaymentRiverErrorHandler(pool, client, logger)
 	riverClient, err := data.NewConfiguredRiverClient(pool, workers, v2, paymentRiverErrorHandler, community)

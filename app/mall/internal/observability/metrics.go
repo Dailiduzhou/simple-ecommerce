@@ -17,8 +17,10 @@ var (
 	paymentCallback               = counter("payment_callback_total")
 	paymentCallbackPersistFailure = counter("payment_callback_persist_failure_total")
 	paymentReconcileJob           = counter("payment_reconcile_job_total")
+	paymentReconciliationAction   = counter("payment_reconciliation_action_total")
 	paymentReconcileRequired      = counter("payment_reconcile_required_total")
 	riverJobDiscarded             = counter("river_job_discarded_total")
+	cacheRecovery                 = counter("cache_invalidation_recovery_total")
 	cacheOperationFailure         = counter("cache_operation_failure_total")
 	authorizationDenied           = counter("authorization_denied_total")
 	idGeneratorClockRollback      = counter("id_generator_clock_rollback_total")
@@ -70,4 +72,12 @@ func IDGeneratorClockRollback() {
 // CommunityEvent uses only bounded operation/result labels, never content or IDs.
 func CommunityEvent(ctx context.Context, operation, result string) {
 	add(ctx, communityOperation, attribute.String("operation", operation), attribute.String("result", result))
+}
+
+func CacheRecovery(ctx context.Context, result string, count int64) {
+	cacheRecovery.Add(ctx, count, metric.WithAttributes(attribute.String("result", result)))
+}
+
+func PaymentReconciliationAction(ctx context.Context, action, result string) {
+	add(ctx, paymentReconciliationAction, attribute.String("action", action), attribute.String("result", result))
 }

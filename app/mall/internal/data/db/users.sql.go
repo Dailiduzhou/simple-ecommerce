@@ -12,7 +12,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (nickname, real_name, phone_hash, phone_encrypt, password_hash, role)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, nickname, real_name, phone_hash, phone_encrypt, password_hash, password_changed_at, role, created_at, updated_at
+RETURNING id, nickname, real_name, phone_hash, phone_encrypt, password_hash, auth_version, role, created_at, updated_at
 `
 
 type CreateUserParams struct {
@@ -41,7 +41,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PhoneHash,
 		&i.PhoneEncrypt,
 		&i.PasswordHash,
-		&i.PasswordChangedAt,
+		&i.AuthVersion,
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -60,7 +60,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, password_changed_at, role, created_at, updated_at
+SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, auth_version, role, created_at, updated_at
 FROM users
 WHERE id = $1
 `
@@ -75,7 +75,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.PhoneHash,
 		&i.PhoneEncrypt,
 		&i.PasswordHash,
-		&i.PasswordChangedAt,
+		&i.AuthVersion,
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -84,7 +84,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 }
 
 const getUserByPhoneHash = `-- name: GetUserByPhoneHash :one
-SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, password_changed_at, role, created_at, updated_at
+SELECT id, nickname, real_name, phone_hash, phone_encrypt, password_hash, auth_version, role, created_at, updated_at
 FROM users
 WHERE phone_hash = $1
 `
@@ -99,12 +99,24 @@ func (q *Queries) GetUserByPhoneHash(ctx context.Context, phoneHash string) (Use
 		&i.PhoneHash,
 		&i.PhoneEncrypt,
 		&i.PasswordHash,
-		&i.PasswordChangedAt,
+		&i.AuthVersion,
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const lockUserForAddress = `-- name: LockUserForAddress :one
+SELECT id FROM users WHERE id=$1 FOR UPDATE
+`
+
+// Serialize default-address switches even when the user has no default yet.
+func (q *Queries) LockUserForAddress(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, lockUserForAddress, id)
+	var id_2 int64
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const updateUser = `-- name: UpdateUser :one
@@ -113,7 +125,7 @@ SET nickname = $2,
     real_name = $3,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-RETURNING id, nickname, real_name, phone_hash, phone_encrypt, password_hash, password_changed_at, role, created_at, updated_at
+RETURNING id, nickname, real_name, phone_hash, phone_encrypt, password_hash, auth_version, role, created_at, updated_at
 `
 
 type UpdateUserParams struct {
@@ -132,7 +144,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.PhoneHash,
 		&i.PhoneEncrypt,
 		&i.PasswordHash,
-		&i.PasswordChangedAt,
+		&i.AuthVersion,
 		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -140,24 +152,26 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 	return i, err
 }
 
-const updateUserPassword = `-- name: UpdateUserPassword :exec
+const updateUserPassword = `-- name: UpdateUserPassword :execrows
 UPDATE users
 SET password_hash = $2,
-    password_changed_at = date_trunc('second', CURRENT_TIMESTAMP),
+    auth_version = auth_version + 1,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1
+WHERE id = $1 AND auth_version = $3::bigint
 `
 
 type UpdateUserPasswordParams struct {
-	ID           int64
-	PasswordHash string
+	ID              int64
+	PasswordHash    string
+	ExpectedVersion int64
 }
 
-// password_changed_at is truncated to whole seconds so it can be compared
-// against the second-resolution iat claim of already-issued JWTs.
-func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
-	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
-	return err
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash, arg.ExpectedVersion)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateUserRole = `-- name: UpdateUserRole :exec

@@ -52,6 +52,8 @@ service User {
       body: "*"
     };
   }
+  // Physically deletes accounts without retained transaction/audit history.
+  // Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {
     option (google.api.http) = {delete: "/v1/users/{id}"};
   }

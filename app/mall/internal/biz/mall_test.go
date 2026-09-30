@@ -269,6 +269,7 @@ func TestProductDiscountValidation(t *testing.T) {
 	}{
 		{"1", true}, {"1.00", true}, {"0.85", true}, {"0.01", true},
 		{"0", false}, {"0.00", false}, {"-0.5", false}, {"1.01", false}, {"2", false},
+		{"0.999", false}, {"0.001", false}, {"0.850", true},
 	} {
 		d, err := decimal.NewFromString(tc.discount)
 		require.NoError(t, err)

@@ -13,6 +13,10 @@ SELECT *
 FROM users
 WHERE phone_hash = $1;
 
+-- name: LockUserForAddress :one
+-- Serialize default-address switches even when the user has no default yet.
+SELECT id FROM users WHERE id=$1 FOR UPDATE;
+
 -- name: UpdateUser :one
 UPDATE users
 SET nickname = $2,
@@ -21,14 +25,12 @@ SET nickname = $2,
 WHERE id = $1
 RETURNING *;
 
--- name: UpdateUserPassword :exec
--- password_changed_at is truncated to whole seconds so it can be compared
--- against the second-resolution iat claim of already-issued JWTs.
+-- name: UpdateUserPassword :execrows
 UPDATE users
 SET password_hash = $2,
-    password_changed_at = date_trunc('second', CURRENT_TIMESTAMP),
+    auth_version = auth_version + 1,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = $1;
+WHERE id = $1 AND auth_version = sqlc.arg(expected_version)::bigint;
 
 -- name: UpdateUserRole :exec
 UPDATE users

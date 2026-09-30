@@ -4,6 +4,7 @@ package api.mall.v1;
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
 
 option go_package = "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1;v1";
 option java_multiple_files = true;
@@ -73,6 +74,13 @@ service Mall {
   rpc DeleteProduct (DeleteProductRequest) returns (DeleteProductReply) {
     option (google.api.http) = {
       delete: "/v1/products/{id}"
+    };
+  }
+  // Inventory changes are audited deltas; content editing cannot set stock.
+  rpc AdjustProductStock (AdjustProductStockRequest) returns (StockAdjustment) {
+    option (google.api.http) = {
+      post: "/v1/products/{id}/stock-adjustments"
+      body: "*"
     };
   }
 
@@ -156,7 +164,7 @@ message Product {
   int64  category_id = 2;
   string name        = 3;
   string price       = 4; // NUMERIC as string to avoid float precision
-  string discount    = 5;
+  string discount    = 5; // (0,1], at most two effective decimal places.
   int32  stock       = 6;
   int32  status      = 7;
   string cover_image = 8;
@@ -185,8 +193,8 @@ message GetProductRequest {
 
 message ListProductsRequest {
   int64 category_id = 1;
-  int32 page_size   = 2;
-  int32 page        = 3;
+  int32 page_size   = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  int32 page        = 3 [(buf.validate.field).int32.gte = 0];
 }
 message ListProductsReply {
   repeated Product products = 1;
@@ -199,7 +207,8 @@ message UpdateProductRequest {
   string name         = 3;
   string price        = 4;
   string discount     = 5;
-  int32  stock        = 6;
+  reserved 6;
+  reserved "stock";
   string cover_image  = 7;
   repeated MediaInfo media_assets = 8;
   string description  = 9;
@@ -207,15 +216,34 @@ message UpdateProductRequest {
 
 message UpdateProductStatusRequest {
   int64 id     = 1;
-  int32 status = 2;
+  int32 status = 2 [(buf.validate.field).int32 = {in: [0, 1]}];
 }
 message UpdateProductStatusReply {}
+
+message AdjustProductStockRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+  int32 delta = 2 [(buf.validate.field).int32 = {not_in: [0]}];
+  string reason = 3 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  string idempotency_key = 4 [(buf.validate.field).string = {min_len: 8, max_len: 64}];
+}
+message StockAdjustment {
+  int64 id = 1;
+  int64 product_id = 2;
+  int64 actor_id = 3;
+  int32 delta = 4;
+  int32 resulting_stock = 5;
+  string reason = 6;
+  string idempotency_key = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
 
 message DeleteProductRequest {
   int64 id = 1;
 }
 message DeleteProductReply {}
 
+// Display-only scheduled content, not a checkout promotion. Events do not
+// reserve promotional inventory, override prices, or enforce purchase quotas.
 message Event {
   reserved 3, 4;
 
@@ -230,6 +258,8 @@ message Event {
   google.protobuf.Timestamp created_at = 11;
 }
 
+// Creates display content only; product.discount is an independent catalogue
+// discount and is never interpreted as a timed campaign allocation.
 message CreateEventRequest {
   reserved 2, 3;
 
@@ -246,9 +276,10 @@ message GetEventRequest {
 }
 
 message ListEventsRequest {
-  optional int32 status    = 1; // 0-未开始 1-进行中，不传则全部
-  int32 page_size = 2;
-  int32 page      = 3;
+  // Display events: 0=upcoming, 1=active, 2=ended; omitted means all.
+  optional int32 status = 1 [(buf.validate.field).int32 = {in: [0, 1, 2]}];
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  int32 page = 3 [(buf.validate.field).int32.gte = 0];
 }
 message ListEventsReply {
   repeated Event events = 1;
@@ -268,7 +299,7 @@ message UpdateEventRequest {
 
 message UpdateEventStatusRequest {
   int64 id     = 1;
-  int32 status = 2;
+  int32 status = 2 [(buf.validate.field).int32 = {in: [0, 1, 2]}];
 }
 message UpdateEventStatusReply {}
 

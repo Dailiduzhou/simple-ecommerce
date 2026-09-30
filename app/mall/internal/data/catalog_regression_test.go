@@ -37,7 +37,7 @@ func TestReviewProductLateFill(t *testing.T) {
 	q := mockdb.NewMockQuerier(gomock.NewController(t))
 	mr := miniredis.RunT(t)
 	d := newTestData(t, q, mr)
-	r := NewProductRepo(d, log.DefaultLogger)
+	r := NewProductRepo(d, nil, log.DefaultLogger)
 	ctx := context.Background()
 	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	q.EXPECT().GetProduct(gomock.Any(), int64(1)).DoAndReturn(func(context.Context, int64) (db.Product, error) {
@@ -48,7 +48,7 @@ func TestReviewProductLateFill(t *testing.T) {
 	go func() { defer close(done); _, e := r.GetProduct(ctx, 1); require.NoError(t, e) }()
 	<-entered
 	q.EXPECT().GetProduct(gomock.Any(), int64(1)).Return(db.Product{ID: 1}, nil)
-	q.EXPECT().UpdateProductStatus(gomock.Any(), gomock.Any()).Return(nil)
+	q.EXPECT().UpdateProductStatus(gomock.Any(), gomock.Any()).Return(db.Product{}, nil)
 	require.NoError(t, r.UpdateProductStatus(ctx, 1, 1))
 	q.EXPECT().GetProduct(gomock.Any(), int64(1)).Return(db.Product{ID: 1, PriceMinor: 200}, nil)
 	fresh, e := r.GetProduct(ctx, 1)

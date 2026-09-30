@@ -325,7 +325,7 @@ func TestEventRepo_UpdateEventStatus_ClearsCaches(t *testing.T) {
 	mockQ.EXPECT().
 		UpdateEventStatus(gomock.Any(), db.UpdateEventStatusParams{ID: 7, Status: 2}).
 		Times(1).
-		Return(nil)
+		Return(db.Event{}, nil)
 
 	err := repo.UpdateEventStatus(context.Background(), 7, 2)
 	require.NoError(t, err)

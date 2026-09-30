@@ -8,26 +8,23 @@ import (
 	"regexp"
 	"time"
 
-	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
-	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/pwdhash"
-
-	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
-	"github.com/golang-jwt/jwt/v5"
+	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
+	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 )
 
 var ErrShippingAddressNotFound = mallv1.ErrorShippingAddressNotFound("shipping address not found")
 
 type UserRepo interface {
 	CreateUser(ctx context.Context, nickname, phoneHash, phoneEncrypt, passwordHash string) (*User, error)
-	GetUserByID(ctx context.Context, id int64) (*User, error)
+	GetUserByID(ctx context.Context, id int64) (*UserProfile, error)
 	GetAuthUser(ctx context.Context, id int64) (*User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (*User, error)
-	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
-	UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error
+	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*UserProfile, error)
+	UpdateUserPassword(ctx context.Context, id, expectedVersion int64, passwordHash string) error
 	DeleteUser(ctx context.Context, id int64) error
 }
 
@@ -81,23 +78,37 @@ func NewShippingAddressUsecase(addressRepo ShippingAddressRepo, ac *conf.Auth, l
 }
 
 type User struct {
-	ID                int64
-	Nickname          string
-	RealName          string
-	PhoneHash         string
-	PhoneEncrypt      string
-	PasswordHash      string
-	PasswordChangedAt time.Time
-	Role              string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID           int64
+	Nickname     string
+	RealName     string
+	PhoneHash    string
+	PhoneEncrypt string
+	PasswordHash string
+	AuthVersion  int64
+	Role         string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// Public profile reads have no credential fields, including on cache misses.
+type UserProfile struct {
+	ID                       int64
+	Nickname, RealName, Role string
+	CreatedAt, UpdatedAt     time.Time
+}
+
+func (u *User) Profile() *UserProfile {
+	if u == nil {
+		return nil
+	}
+	return &UserProfile{ID: u.ID, Nickname: u.Nickname, RealName: u.RealName, Role: u.Role, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt}
 }
 
 type UserUsecase interface {
 	Register(ctx context.Context, phone string, password string) (*User, error)
 	Login(ctx context.Context, phone string, password string) (*User, error)
-	GetUser(ctx context.Context, id int64) (*User, error)
-	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error)
+	GetUser(ctx context.Context, id int64) (*UserProfile, error)
+	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*UserProfile, error)
 	ChangePassword(ctx context.Context, id int64, oldPassword, newPassword string) error
 	DeleteUser(ctx context.Context, id int64) error
 }
@@ -137,189 +148,6 @@ func NewUserUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth, logger 
 		loginLockoutDuration: lockout,
 		log:                  log.NewHelper(logger),
 	}
-}
-
-type AuthRepo interface {
-	ConsumeRefresh(ctx context.Context, tokenID string, expiration time.Duration) (bool, error)
-	SetBlacklist(ctx context.Context, tokenID string, expiration time.Duration) error
-	IsBlacklisted(ctx context.Context, tokenID string) (bool, error)
-	LoginFailures(ctx context.Context, phoneHash string) (int64, error)
-	RecordLoginFailure(ctx context.Context, phoneHash string, window time.Duration) error
-	ClearLoginFailures(ctx context.Context, phoneHash string) error
-}
-
-type EcommerceClaims struct {
-	UserID int64  `json:"user_id"`
-	Role   string `json:"role"`
-	jwt.RegisteredClaims
-}
-
-type AuthUsecase interface {
-	ValidateAccount(ctx context.Context, claims *EcommerceClaims) error
-	ConsumeRefresh(ctx context.Context, claims *EcommerceClaims) error
-	GenerateAccessToken(userID int64, role string) (string, error)
-	GenerateRefreshToken(userID int64, role string) (string, error)
-	ParseAccessToken(tokenStr string) (*EcommerceClaims, error)
-	ParseRefreshToken(tokenStr string) (*EcommerceClaims, error)
-	BlacklistToken(ctx context.Context, tokenID string, expiresAt time.Time) error
-	IsTokenBlacklisted(ctx context.Context, tokenID string) (bool, error)
-	Logout(ctx context.Context, claims *EcommerceClaims, refreshToken string) error
-}
-
-type authUsecase struct {
-	userRepo       UserRepo
-	authRepo       AuthRepo
-	accessSecret   string
-	accessTimeout  time.Duration
-	refreshSecret  string
-	refreshTimeout time.Duration
-}
-
-func NewAuthUsecase(userRepo UserRepo, authRepo AuthRepo, ac *conf.Auth) AuthUsecase {
-	return &authUsecase{
-		userRepo:       userRepo,
-		authRepo:       authRepo,
-		accessSecret:   ac.AccessTokenSecret,
-		accessTimeout:  ac.AccessTokenTimeout.AsDuration(),
-		refreshSecret:  ac.RefreshTokenSecret,
-		refreshTimeout: ac.RefreshTokenTimeout.AsDuration(),
-	}
-}
-
-// ValidateAccount always uses the authoritative account, so deleting an account
-// revokes every session, role changes apply to already-issued tokens, and a
-// password change invalidates every token issued before it (the only global
-// revocation path: no per-token sweep is needed).
-func (uc *authUsecase) ValidateAccount(ctx context.Context, claims *EcommerceClaims) error {
-	u, err := uc.userRepo.GetAuthUser(ctx, claims.UserID)
-	if err != nil {
-		return err
-	}
-	if u == nil {
-		return userv1.ErrorUnauthorized("account no longer exists")
-	}
-	if claims.IssuedAt != nil && !u.PasswordChangedAt.IsZero() && claims.IssuedAt.Time.Before(u.PasswordChangedAt) {
-		return userv1.ErrorUnauthorized("credentials changed; sign in again")
-	}
-	claims.Role = u.Role
-	return nil
-}
-
-func (uc *authUsecase) ConsumeRefresh(ctx context.Context, claims *EcommerceClaims) error {
-	if claims.ID == "" || claims.ExpiresAt == nil {
-		return userv1.ErrorUnauthorized("invalid refresh claims")
-	}
-	ttl := time.Until(claims.ExpiresAt.Time)
-	if ttl <= 0 {
-		return userv1.ErrorTokenExpired("refresh expired")
-	}
-	ok, err := uc.authRepo.ConsumeRefresh(ctx, claims.ID, ttl)
-	if err != nil {
-		return userv1.ErrorUnauthorized("refresh store unavailable")
-	}
-	if !ok {
-		return userv1.ErrorTokenExpired("refresh already consumed")
-	}
-	return uc.ValidateAccount(ctx, claims)
-}
-
-func (uc *authUsecase) GenerateAccessToken(userID int64, role string) (string, error) {
-	now := time.Now()
-	tokenID := generateTokenID()
-	claims := EcommerceClaims{
-		UserID: userID,
-		Role:   role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        tokenID,
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(uc.accessTimeout)),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(uc.accessSecret))
-}
-
-func (uc *authUsecase) GenerateRefreshToken(userID int64, role string) (string, error) {
-	now := time.Now()
-	tokenID := generateTokenID()
-	claims := EcommerceClaims{
-		UserID: userID,
-		Role:   role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        tokenID,
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(uc.refreshTimeout)),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(uc.refreshSecret))
-}
-
-func (uc *authUsecase) ParseAccessToken(tokenStr string) (*EcommerceClaims, error) {
-	return uc.parseToken(tokenStr, uc.accessSecret)
-}
-
-func (uc *authUsecase) ParseRefreshToken(tokenStr string) (*EcommerceClaims, error) {
-	return uc.parseToken(tokenStr, uc.refreshSecret)
-}
-
-func (uc *authUsecase) BlacklistToken(ctx context.Context, tokenID string, expiresAt time.Time) error {
-	expiration := time.Until(expiresAt)
-	if expiration <= 0 {
-		return nil
-	}
-	return uc.authRepo.SetBlacklist(ctx, tokenID, expiration)
-}
-
-func (uc *authUsecase) IsTokenBlacklisted(ctx context.Context, tokenID string) (bool, error) {
-	return uc.authRepo.IsBlacklisted(ctx, tokenID)
-}
-
-// Logout revokes the caller's access token via the blacklist and, when the
-// client supplies its refresh token, burns that token too. The refresh burn
-// is best effort: a token that fails to parse or is already expired has
-// nothing left to revoke, and a store failure only leaves an unused token
-// that the client discarded and that expires on its own.
-func (uc *authUsecase) Logout(ctx context.Context, claims *EcommerceClaims, refreshToken string) error {
-	if claims == nil || claims.ID == "" || claims.ExpiresAt == nil {
-		return userv1.ErrorUnauthorized("invalid token claims")
-	}
-	if err := uc.BlacklistToken(ctx, claims.ID, claims.ExpiresAt.Time); err != nil {
-		// Fail closed: the token was NOT revoked, so the session stays
-		// active; surface it as infrastructure trouble, not auth trouble.
-		return errors.ServiceUnavailable("LOGOUT_UNAVAILABLE", "logout failed; the access token was not revoked")
-	}
-	if refreshToken != "" {
-		if refreshClaims, err := uc.ParseRefreshToken(refreshToken); err == nil && refreshClaims.ID != "" && refreshClaims.ExpiresAt != nil {
-			if ttl := time.Until(refreshClaims.ExpiresAt.Time); ttl > 0 {
-				_, _ = uc.authRepo.ConsumeRefresh(ctx, refreshClaims.ID, ttl)
-			}
-		}
-	}
-	return nil
-}
-
-func (uc *authUsecase) parseToken(tokenStr, secret string) (*EcommerceClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &EcommerceClaims{}, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return []byte(secret), nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	claims, ok := token.Claims.(*EcommerceClaims)
-	if !ok || !token.Valid {
-		return nil, fmt.Errorf("invalid token")
-	}
-	return claims, nil
-}
-
-func generateTokenID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	return hex.EncodeToString(b)
 }
 
 func generateDefaultNickname(seed string) string {
@@ -446,20 +274,18 @@ func (uc *userUsecase) clearLoginFailures(ctx context.Context, phoneHash string)
 	}
 }
 
-func (uc *userUsecase) GetUser(ctx context.Context, id int64) (*User, error) {
+func (uc *userUsecase) GetUser(ctx context.Context, id int64) (*UserProfile, error) {
 	return uc.userRepo.GetUserByID(ctx, id)
 }
 
-func (uc *userUsecase) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
+func (uc *userUsecase) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*UserProfile, error) {
 	return uc.userRepo.UpdateUser(ctx, id, nickname, realName)
 }
 
 // ChangePassword rotates the caller's password. It verifies the current
 // password against the authoritative row (never a cached profile), stores the
-// new hash and lets users.password_changed_at revoke every previously issued
-// access and refresh token: ValidateAccount rejects tokens issued before the
-// change, so a leaked password can be cut off globally without blacklisting
-// tokens one by one.
+// new hash with a version CAS. Only one request verified against a given
+// credential version can commit; every token of that version is then rejected.
 func (uc *userUsecase) ChangePassword(ctx context.Context, id int64, oldPassword, newPassword string) error {
 	if id <= 0 {
 		return userv1.ErrorUnauthorized("invalid account")
@@ -490,7 +316,7 @@ func (uc *userUsecase) ChangePassword(ctx context.Context, id int64, oldPassword
 		uc.log.WithContext(ctx).Errorf("hash new password failed: %v", err)
 		return fmt.Errorf("hash password: %w", err)
 	}
-	if err := uc.userRepo.UpdateUserPassword(ctx, id, passwordHash); err != nil {
+	if err := uc.userRepo.UpdateUserPassword(ctx, id, u.AuthVersion, passwordHash); err != nil {
 		return err
 	}
 	// Best effort: the old password's failure window must not survive the

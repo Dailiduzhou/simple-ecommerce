@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"fmt"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"strings"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ type orderUsecaseRepo struct {
 func TestHashOrderRequest_NormalizesItemOrder(t *testing.T) {
 	first := []OrderItemInput{{ProductID: 9, Quantity: 1}, {ProductID: 3, Quantity: 2}}
 	second := []OrderItemInput{{ProductID: 3, Quantity: 2}, {ProductID: 9, Quantity: 1}}
-	uc := NewConfiguredOrderUsecase(&orderUsecaseRepo{}, paymentTestID{}, OrderPolicy{PaymentTimeout: time.Minute}, log.DefaultLogger)
+	uc := NewConfiguredOrderUsecase(&orderUsecaseRepo{}, paymentTestID{}, OrderPolicy{PaymentTimeout: time.Minute}, &conf.Auth{}, log.DefaultLogger)
 	_, err := uc.CreateOrder(context.Background(), &CreateOrderReq{
 		UserID: 1, AddressID: 2, IdempotencyKey: "checkout-normalized", Items: first,
 	})
@@ -92,13 +93,16 @@ func (r *orderUsecaseRepo) GetOrderByUser(context.Context, int64, int64) (Order,
 	return r.order, nil
 }
 func (r *orderUsecaseRepo) HasOngoingOrders(context.Context, int64) (bool, error) { return false, nil }
-func (r *orderUsecaseRepo) ListOngoingOrdersByUser(context.Context, int64) ([]Order, error) {
+func (r *orderUsecaseRepo) ListOngoingOrdersByUser(context.Context, int64, int32, int32) ([]Order, error) {
 	return []Order{r.order}, nil
 }
 func (r *orderUsecaseRepo) ListOrdersByUser(context.Context, int64, int32, int32) ([]Order, error) {
 	return []Order{r.order}, nil
 }
 func (r *orderUsecaseRepo) CountOrdersByUser(context.Context, int64) (int64, error) { return 1, nil }
+func (r *orderUsecaseRepo) CountOngoingOrdersByUser(context.Context, int64) (int64, error) {
+	return 1, nil
+}
 func (r *orderUsecaseRepo) CancelOrderByUser(_ context.Context, _ int64, userID int64) error {
 	r.cancelUser = userID
 	return nil

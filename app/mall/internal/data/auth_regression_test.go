@@ -21,13 +21,14 @@ func TestReviewAtomicRefresh(t *testing.T) {
 	d := newTestData(t, mockdb.NewMockQuerier(gomock.NewController(t)), mr)
 	r := NewAuthRepo(d.rdb, log.DefaultLogger)
 	ctx := context.Background()
+	require.NoError(t, r.CreateSession(ctx, "session", 1, time.Minute))
 	var successes atomic.Int32
 	var wg sync.WaitGroup
 	for range 32 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ok, e := r.ConsumeRefresh(ctx, "same", time.Minute)
+			ok, e := r.ConsumeSessionRefresh(ctx, "session", 1, "same", time.Minute)
 			require.NoError(t, e)
 			if ok {
 				successes.Add(1)
@@ -36,13 +37,15 @@ func TestReviewAtomicRefresh(t *testing.T) {
 	}
 	wg.Wait()
 	require.Equal(t, int32(1), successes.Load())
-	require.Equal(t, time.Minute, mr.TTL("jwt:blacklist:same"))
-	require.NoError(t, r.SetBlacklist(ctx, "logout", time.Minute))
-	ok, e := r.ConsumeRefresh(ctx, "logout", time.Minute)
+	require.Equal(t, time.Minute, mr.TTL("auth:session:{session}:used:same"))
+	ok, e := r.RevokeSession(ctx, "session", 1)
+	require.NoError(t, e)
+	require.True(t, ok)
+	ok, e = r.ConsumeSessionRefresh(ctx, "session", 1, "logout", time.Minute)
 	require.NoError(t, e)
 	require.False(t, ok)
 	mr.SetError("store failed")
-	_, e = r.ConsumeRefresh(ctx, "new", time.Minute)
+	_, e = r.ConsumeSessionRefresh(ctx, "session", 1, "new", time.Minute)
 	require.Error(t, e)
 }
 func TestReviewAuthBypassesDeletedProfile(t *testing.T) {

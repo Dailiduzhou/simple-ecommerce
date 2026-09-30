@@ -46,6 +46,8 @@ type UserHTTPServer interface {
 	CreateShippingAddress(context.Context, *CreateShippingAddressRequest) (*ShippingAddress, error)
 	DeleteBrowsingHistoryItem(context.Context, *DeleteBrowsingHistoryItemRequest) (*DeleteBrowsingHistoryItemReply, error)
 	DeleteShippingAddress(context.Context, *DeleteShippingAddressRequest) (*DeleteShippingAddressReply, error)
+	// DeleteUser Physically deletes accounts without retained transaction/audit history.
+	// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
 	DeleteUser(context.Context, *DeleteUserRequest) (*DeleteUserReply, error)
 	GetUser(context.Context, *GetUserRequest) (*UserInfo, error)
 	ListBrowsingHistory(context.Context, *ListBrowsingHistoryRequest) (*ListBrowsingHistoryReply, error)
@@ -470,6 +472,8 @@ type UserHTTPClient interface {
 	CreateShippingAddress(ctx context.Context, req *CreateShippingAddressRequest, opts ...http.CallOption) (rsp *ShippingAddress, err error)
 	DeleteBrowsingHistoryItem(ctx context.Context, req *DeleteBrowsingHistoryItemRequest, opts ...http.CallOption) (rsp *DeleteBrowsingHistoryItemReply, err error)
 	DeleteShippingAddress(ctx context.Context, req *DeleteShippingAddressRequest, opts ...http.CallOption) (rsp *DeleteShippingAddressReply, err error)
+	// DeleteUser Physically deletes accounts without retained transaction/audit history.
+	// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
 	DeleteUser(ctx context.Context, req *DeleteUserRequest, opts ...http.CallOption) (rsp *DeleteUserReply, err error)
 	GetUser(ctx context.Context, req *GetUserRequest, opts ...http.CallOption) (rsp *UserInfo, err error)
 	ListBrowsingHistory(ctx context.Context, req *ListBrowsingHistoryRequest, opts ...http.CallOption) (rsp *ListBrowsingHistoryReply, err error)
@@ -560,6 +564,8 @@ func (c *UserHTTPClientImpl) DeleteShippingAddress(ctx context.Context, in *Dele
 	return &out, nil
 }
 
+// DeleteUser Physically deletes accounts without retained transaction/audit history.
+// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
 func (c *UserHTTPClientImpl) DeleteUser(ctx context.Context, in *DeleteUserRequest, opts ...http.CallOption) (*DeleteUserReply, error) {
 	var out DeleteUserReply
 	pattern := "/v1/users/{id}"
