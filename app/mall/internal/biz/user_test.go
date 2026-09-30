@@ -30,19 +30,21 @@ func (r *fakeUserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phon
 	return r.createUser(ctx, nickname, phoneHash, phoneEncrypt, passwordHash)
 }
 
-func (r *fakeUserRepo) GetUserByID(ctx context.Context, id int64) (*User, error) {
-	return r.getUserByID(ctx, id)
+func (r *fakeUserRepo) GetUserByID(ctx context.Context, id int64) (*UserProfile, error) {
+	u, err := r.getUserByID(ctx, id)
+	return u.Profile(), err
 }
 
 func (r *fakeUserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*User, error) {
 	return r.getUserByPhoneHash(ctx, phoneHash)
 }
 
-func (r *fakeUserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
-	return r.updateUser(ctx, id, nickname, realName)
+func (r *fakeUserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*UserProfile, error) {
+	u, err := r.updateUser(ctx, id, nickname, realName)
+	return u.Profile(), err
 }
 
-func (r *fakeUserRepo) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+func (r *fakeUserRepo) UpdateUserPassword(ctx context.Context, id, expectedVersion int64, passwordHash string) error {
 	if r.updateUserPassword == nil {
 		return nil
 	}
@@ -68,13 +70,13 @@ type fakeAuthRepo struct {
 	cleared            []string
 }
 
-func (r *fakeAuthRepo) ConsumeRefresh(context.Context, string, time.Duration) (bool, error) {
+func (r *fakeAuthRepo) ConsumeSessionRefresh(context.Context, string, int64, string, time.Duration) (bool, error) {
 	return true, nil
 }
 
-func (r *fakeAuthRepo) SetBlacklist(context.Context, string, time.Duration) error { return nil }
-
-func (r *fakeAuthRepo) IsBlacklisted(context.Context, string) (bool, error) { return false, nil }
+func (r *fakeAuthRepo) CreateSession(context.Context, string, int64, time.Duration) error { return nil }
+func (r *fakeAuthRepo) SessionActive(context.Context, string, int64) (bool, error)        { return true, nil }
+func (r *fakeAuthRepo) RevokeSession(context.Context, string, int64) (bool, error)        { return true, nil }
 
 func (r *fakeAuthRepo) LoginFailures(ctx context.Context, phoneHash string) (int64, error) {
 	if r.loginFailures != nil {
@@ -360,7 +362,7 @@ func TestUserUsecase_GetUpdateDelete(t *testing.T) {
 }
 
 func (r *fakeUserRepo) GetAuthUser(ctx context.Context, id int64) (*User, error) {
-	return r.GetUserByID(ctx, id)
+	return r.getUserByID(ctx, id)
 }
 
 func TestUserUsecase_ChangePasswordRotatesHashAndClearsFailures(t *testing.T) {
@@ -412,21 +414,20 @@ func TestUserUsecase_ChangePasswordRejectsBadInputAndCredentials(t *testing.T) {
 	require.False(t, updated, "no invalid request may reach the database")
 }
 
-func TestAuthUsecase_ValidateAccountRevokesTokensIssuedBeforePasswordChange(t *testing.T) {
+func TestAuthUsecase_ValidateAccountRevokesOldVersionEvenInSameSecond(t *testing.T) {
 	changedAt := time.Now().Truncate(time.Second)
 	repo := &fakeUserRepo{
 		getUserByID: func(context.Context, int64) (*User, error) {
-			return &User{ID: 1, Role: "user", PasswordChangedAt: changedAt}, nil
+			return &User{ID: 1, Role: "user", AuthVersion: 2}, nil
 		},
 	}
 	uc := NewAuthUsecase(repo, &fakeAuthRepo{}, testUserAuth())
 
-	stale := &EcommerceClaims{UserID: 1, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt.Add(-time.Minute))}}
+	stale := &EcommerceClaims{UserID: 1, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt)}}
 	require.Error(t, uc.ValidateAccount(context.Background(), stale))
 
-	// A token issued in the same second as the rotation stays valid: JWTs only
-	// carry second-resolution iat values.
-	fresh := &EcommerceClaims{UserID: 1, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt)}}
+	// Identical iat values do not affect revocation; only the verified version does.
+	fresh := &EcommerceClaims{UserID: 1, AuthVersion: 2, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt)}}
 	require.NoError(t, uc.ValidateAccount(context.Background(), fresh))
 	require.Equal(t, "user", fresh.Role)
 }

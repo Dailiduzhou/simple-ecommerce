@@ -52,6 +52,19 @@ service Payment {
       body: "*"
     };
   }
+  // 管理员人工对账；重试、解决与审计写入同一事务。解决必须有证据，且不能覆盖资金事实。
+  rpc RetryPaymentReconciliation(ReconciliationCommandRequest) returns (ReconciliationActionInfo) {
+    option (google.api.http) = {post: "/v1/payments/{id}/reconciliation/retry" body: "*"};
+  }
+  rpc ResolvePaymentReconciliation(ReconciliationCommandRequest) returns (ReconciliationActionInfo) {
+    option (google.api.http) = {post: "/v1/payments/{id}/reconciliation/resolve" body: "*"};
+  }
+  rpc ListPaymentReconciliations(ListReconciliationCasesRequest) returns (ListReconciliationCasesReply) {
+    option (google.api.http) = {get: "/v1/payment-reconciliations"};
+  }
+  rpc ListPaymentReconciliationActions(ListReconciliationActionsRequest) returns (ListReconciliationActionsReply) {
+    option (google.api.http) = {get: "/v1/payments/{id}/reconciliation/actions"};
+  }
   rpc CreatePaymentCheckJob(CreatePaymentCheckJobRequest) returns (MQJobInfo) {
     option (google.api.http) = {
       post: "/v1/payments/{payment_id}/checks"
@@ -130,6 +143,7 @@ message PaymentInfo {
   string currency = 12;
   string reconciliation_status = 13;
   string reconciliation_reason = 14;
+  int64 reconciliation_version = 15;
 }
 
 message GetPaymentRequest {
@@ -189,3 +203,39 @@ enum TradeState {
   USERPAYING = 6; // 用户支付中
   PAYERROR = 7; // 支付失败
 }
+
+message ReconciliationCommandRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 expected_version = 2 [(buf.validate.field).int64.gt = 0];
+  string idempotency_key = 3 [(buf.validate.field).string = {min_bytes: 8, max_bytes: 64}];
+  string reason = 4 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  // 必填于解决命令；渠道查验凭据或补偿记录，不应包含个人敏感信息。
+  string evidence = 5 [(buf.validate.field).string.max_len = 2000];
+}
+message ReconciliationActionInfo {
+  int64 id = 1;
+  int64 payment_id = 2;
+  int64 actor_id = 3;
+  string action = 4;
+  string from_status = 5;
+  string to_status = 6;
+  int64 from_version = 7;
+  int64 to_version = 8;
+  string idempotency_key = 9;
+  string reason = 10;
+  string evidence = 11;
+  int64 job_id = 12;
+  google.protobuf.Timestamp created_at = 13;
+}
+message ListReconciliationCasesRequest {
+  int64 after_id = 1 [(buf.validate.field).int64.gte = 0];
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+}
+message ReconciliationCaseInfo { PaymentInfo payment = 1; string detail = 2; }
+message ListReconciliationCasesReply { repeated ReconciliationCaseInfo cases = 1; }
+message ListReconciliationActionsRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+  int64 after_id = 2 [(buf.validate.field).int64.gte = 0];
+  int32 page_size = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+}
+message ListReconciliationActionsReply { repeated ReconciliationActionInfo actions = 1; }

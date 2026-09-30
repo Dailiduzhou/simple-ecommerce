@@ -9,6 +9,12 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type CacheInvalidation struct {
+	ID             int64
+	GenerationKeys []string
+	CreatedAt      pgtype.Timestamptz
+}
+
 type Category struct {
 	ID        int64
 	ParentID  pgtype.Int8
@@ -53,19 +59,40 @@ type MediaAsset struct {
 }
 
 type Order struct {
-	ID               int64
-	UserID           int64
-	AddressID        int64
-	TotalAmountMinor int64
-	Currency         string
-	Status           string
-	IsCompleted      bool
-	OutTradeNo       string
-	IdempotencyKey   string
-	RequestHash      string
-	ExpiresAt        pgtype.Timestamptz
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
+	ID                    int64
+	UserID                int64
+	AddressID             int64
+	ReceiverName          string
+	ReceiverPhoneEncrypt  string
+	ShippingProvince      string
+	ShippingCity          string
+	ShippingDistrict      string
+	ShippingDetailAddress string
+	PaidPaymentID         pgtype.Int8
+	TotalAmountMinor      int64
+	Currency              string
+	Status                string
+	IsCompleted           bool
+	OutTradeNo            string
+	IdempotencyKey        string
+	RequestHash           string
+	ExpiresAt             pgtype.Timestamptz
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+}
+
+type OrderFulfillmentAction struct {
+	ID             int64
+	OrderID        int64
+	ActorID        int64
+	Action         string
+	FromStatus     string
+	ToStatus       string
+	IdempotencyKey string
+	Reason         string
+	Carrier        string
+	TrackingNumber string
+	CreatedAt      pgtype.Timestamptz
 }
 
 type OrderItem struct {
@@ -89,6 +116,7 @@ type OrderRefund struct {
 	RefundAmountMinor int64
 	Currency          string
 	Reason            string
+	Purpose           string
 	Status            string
 	LastError         string
 	CreatedAt         pgtype.Timestamptz
@@ -96,28 +124,29 @@ type OrderRefund struct {
 }
 
 type Payment struct {
-	ID                   int64
-	OrderID              int64
-	UserID               int64
-	MerchantID           int64
-	AmountMinor          int64
-	Currency             string
-	Status               string
-	PayChannel           string
-	ThirdPartyTxID       pgtype.Text
-	OutTradeNo           string
-	ActionType           pgtype.Text
-	ActionPayload        []byte
-	PaidAt               pgtype.Timestamptz
-	ReconciliationStatus string
-	ReconciliationReason pgtype.Text
-	ReconciliationDetail pgtype.Text
-	PrepayLeaseToken     pgtype.Text
-	PrepayLeaseUntil     pgtype.Timestamptz
-	PrepayAttempts       int32
-	LastError            pgtype.Text
-	CreatedAt            pgtype.Timestamptz
-	UpdatedAt            pgtype.Timestamptz
+	ID                    int64
+	OrderID               int64
+	UserID                int64
+	MerchantID            int64
+	AmountMinor           int64
+	Currency              string
+	Status                string
+	PayChannel            string
+	ThirdPartyTxID        pgtype.Text
+	OutTradeNo            string
+	ActionType            pgtype.Text
+	ActionPayload         []byte
+	PaidAt                pgtype.Timestamptz
+	ReconciliationStatus  string
+	ReconciliationVersion int64
+	ReconciliationReason  pgtype.Text
+	ReconciliationDetail  pgtype.Text
+	PrepayLeaseToken      pgtype.Text
+	PrepayLeaseUntil      pgtype.Timestamptz
+	PrepayAttempts        int32
+	LastError             pgtype.Text
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
 }
 
 type PaymentNotification struct {
@@ -133,6 +162,22 @@ type PaymentNotification struct {
 	RiverJobID      pgtype.Int8
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+}
+
+type PaymentReconciliationAction struct {
+	ID             int64
+	PaymentID      int64
+	ActorID        int64
+	Action         string
+	FromStatus     string
+	ToStatus       string
+	FromVersion    int64
+	ToVersion      int64
+	IdempotencyKey string
+	Reason         string
+	Evidence       string
+	RiverJobID     pgtype.Int8
+	CreatedAt      pgtype.Timestamptz
 }
 
 type PaymentReconciliationFailure struct {
@@ -221,6 +266,17 @@ type ShippingAddress struct {
 	UpdatedAt            pgtype.Timestamptz
 }
 
+type StockAdjustment struct {
+	ID             int64
+	ProductID      int64
+	ActorID        int64
+	Delta          int32
+	Reason         string
+	IdempotencyKey string
+	ResultingStock int32
+	CreatedAt      pgtype.Timestamptz
+}
+
 // 电商系统用户表
 type User struct {
 	// 用户全局唯一ID
@@ -233,9 +289,9 @@ type User struct {
 	PhoneEncrypt string
 	// Bcrypt加密后的密码
 	PasswordHash string
-	// 密码最近变更时间；早于该时间签发的访问/刷新令牌全部失效
-	PasswordChangedAt pgtype.Timestamptz
-	Role              string
-	CreatedAt         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
+	// 凭证版本；改密原子递增，令牌必须携带验证密码时读取的同一版本
+	AuthVersion int64
+	Role        string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var _ biz.OrderExpiryRepo = (*OrderExpiryRepo)(nil)
@@ -32,6 +33,7 @@ func (r *OrderExpiryRepo) ExpireOrder(ctx context.Context, orderID int64) error 
 	var order db.Order
 	var changedPayments []db.Payment
 	cancelled := false
+	needsReconciliation := false
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
 		var err error
@@ -71,7 +73,7 @@ func (r *OrderExpiryRepo) ExpireOrder(ctx context.Context, orderID int64) error 
 		for _, payment := range payments {
 			switch payment.Status {
 			case biz.PaymentStatusSuccess:
-				_, err = q.MarkOrderPaid(ctx, orderID)
+				_, err = q.MarkOrderPaid(ctx, db.MarkOrderPaidParams{ID: orderID, PaidPaymentID: pgtype.Int8{Int64: payment.ID, Valid: true}})
 				return err
 			case biz.PaymentStatusRefunded:
 				// A refunded payment on a still-pending order is an anomaly:
@@ -92,7 +94,8 @@ func (r *OrderExpiryRepo) ExpireOrder(ctx context.Context, orderID int64) error 
 				}); err != nil {
 					return err
 				}
-				return biz.ErrPaymentReconciliationRequired
+				needsReconciliation = true
+				return nil
 			}
 		}
 		hasActive := false
@@ -141,17 +144,22 @@ func (r *OrderExpiryRepo) ExpireOrder(ctx context.Context, orderID int64) error 
 	if err != nil {
 		return err
 	}
-	if order.ID > 0 {
-		orderRepo := &OrderRepo{data: r.data, log: r.log}
-		orderRepo.invalidateOrder(ctx, toBizOrder(order))
+	if needsReconciliation {
+		return biz.ErrPaymentReconciliationRequired
 	}
-	paymentRepo := &PaymentRepo{data: r.data, log: r.log}
-	for _, payment := range changedPayments {
-		paymentRepo.invalidatePayment(ctx, payment)
-	}
-	if cancelled {
-		invalidateProductCachesForOrder(ctx, r.data, r.log, orderID)
-	}
+	batchCacheInvalidations(ctx, func(ctx context.Context) {
+		if order.ID > 0 {
+			orderRepo := &OrderRepo{data: r.data, log: r.log}
+			orderRepo.invalidateOrder(ctx, toBizOrder(order))
+		}
+		paymentRepo := &PaymentRepo{data: r.data, log: r.log}
+		for _, payment := range changedPayments {
+			paymentRepo.invalidatePayment(ctx, payment)
+		}
+		if cancelled {
+			invalidateProductCachesForOrder(ctx, r.data, r.log, orderID)
+		}
+	})
 	return nil
 }
 

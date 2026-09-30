@@ -289,12 +289,13 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 	return i, err
 }
 
-const updateEventStatus = `-- name: UpdateEventStatus :exec
+const updateEventStatus = `-- name: UpdateEventStatus :one
 UPDATE events
 SET status = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND deleted_at IS NULL
+RETURNING id, name, status, start_at, end_at, cover_image, media_assets, description, created_at, updated_at, deleted_at
 `
 
 type UpdateEventStatusParams struct {
@@ -302,7 +303,21 @@ type UpdateEventStatusParams struct {
 	Status int16
 }
 
-func (q *Queries) UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) error {
-	_, err := q.db.Exec(ctx, updateEventStatus, arg.ID, arg.Status)
-	return err
+func (q *Queries) UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) (Event, error) {
+	row := q.db.QueryRow(ctx, updateEventStatus, arg.ID, arg.Status)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Status,
+		&i.StartAt,
+		&i.EndAt,
+		&i.CoverImage,
+		&i.MediaAssets,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }

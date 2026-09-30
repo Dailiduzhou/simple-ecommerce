@@ -30,6 +30,7 @@ const (
 	Mall_UpdateProduct_FullMethodName       = "/api.mall.v1.Mall/UpdateProduct"
 	Mall_UpdateProductStatus_FullMethodName = "/api.mall.v1.Mall/UpdateProductStatus"
 	Mall_DeleteProduct_FullMethodName       = "/api.mall.v1.Mall/DeleteProduct"
+	Mall_AdjustProductStock_FullMethodName  = "/api.mall.v1.Mall/AdjustProductStock"
 	Mall_CreateEvent_FullMethodName         = "/api.mall.v1.Mall/CreateEvent"
 	Mall_GetEvent_FullMethodName            = "/api.mall.v1.Mall/GetEvent"
 	Mall_ListEvents_FullMethodName          = "/api.mall.v1.Mall/ListEvents"
@@ -56,6 +57,8 @@ type MallClient interface {
 	UpdateProduct(ctx context.Context, in *UpdateProductRequest, opts ...grpc.CallOption) (*Product, error)
 	UpdateProductStatus(ctx context.Context, in *UpdateProductStatusRequest, opts ...grpc.CallOption) (*UpdateProductStatusReply, error)
 	DeleteProduct(ctx context.Context, in *DeleteProductRequest, opts ...grpc.CallOption) (*DeleteProductReply, error)
+	// Inventory changes are audited deltas; content editing cannot set stock.
+	AdjustProductStock(ctx context.Context, in *AdjustProductStockRequest, opts ...grpc.CallOption) (*StockAdjustment, error)
 	// Events
 	CreateEvent(ctx context.Context, in *CreateEventRequest, opts ...grpc.CallOption) (*Event, error)
 	GetEvent(ctx context.Context, in *GetEventRequest, opts ...grpc.CallOption) (*Event, error)
@@ -183,6 +186,16 @@ func (c *mallClient) DeleteProduct(ctx context.Context, in *DeleteProductRequest
 	return out, nil
 }
 
+func (c *mallClient) AdjustProductStock(ctx context.Context, in *AdjustProductStockRequest, opts ...grpc.CallOption) (*StockAdjustment, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StockAdjustment)
+	err := c.cc.Invoke(ctx, Mall_AdjustProductStock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *mallClient) CreateEvent(ctx context.Context, in *CreateEventRequest, opts ...grpc.CallOption) (*Event, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Event)
@@ -261,6 +274,8 @@ type MallServer interface {
 	UpdateProduct(context.Context, *UpdateProductRequest) (*Product, error)
 	UpdateProductStatus(context.Context, *UpdateProductStatusRequest) (*UpdateProductStatusReply, error)
 	DeleteProduct(context.Context, *DeleteProductRequest) (*DeleteProductReply, error)
+	// Inventory changes are audited deltas; content editing cannot set stock.
+	AdjustProductStock(context.Context, *AdjustProductStockRequest) (*StockAdjustment, error)
 	// Events
 	CreateEvent(context.Context, *CreateEventRequest) (*Event, error)
 	GetEvent(context.Context, *GetEventRequest) (*Event, error)
@@ -310,6 +325,9 @@ func (UnimplementedMallServer) UpdateProductStatus(context.Context, *UpdateProdu
 }
 func (UnimplementedMallServer) DeleteProduct(context.Context, *DeleteProductRequest) (*DeleteProductReply, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteProduct not implemented")
+}
+func (UnimplementedMallServer) AdjustProductStock(context.Context, *AdjustProductStockRequest) (*StockAdjustment, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdjustProductStock not implemented")
 }
 func (UnimplementedMallServer) CreateEvent(context.Context, *CreateEventRequest) (*Event, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateEvent not implemented")
@@ -548,6 +566,24 @@ func _Mall_DeleteProduct_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Mall_AdjustProductStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdjustProductStockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MallServer).AdjustProductStock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Mall_AdjustProductStock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MallServer).AdjustProductStock(ctx, req.(*AdjustProductStockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Mall_CreateEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateEventRequest)
 	if err := dec(in); err != nil {
@@ -706,6 +742,10 @@ var Mall_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteProduct",
 			Handler:    _Mall_DeleteProduct_Handler,
+		},
+		{
+			MethodName: "AdjustProductStock",
+			Handler:    _Mall_AdjustProductStock_Handler,
 		},
 		{
 			MethodName: "CreateEvent",

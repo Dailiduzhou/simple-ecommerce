@@ -22,3 +22,11 @@ SET stock = p.stock + oi.quantity,
 FROM order_items oi
 WHERE oi.order_id = $1
   AND oi.product_id = p.id;
+
+-- name: ListOrderItemsByOrderIDs :many
+SELECT * FROM order_items WHERE order_id=ANY($1::bigint[])
+ORDER BY order_id, id;
+
+-- name: ListOrderProductCacheTargets :many
+SELECT DISTINCT p.id, p.category_id FROM products p
+JOIN order_items oi ON oi.product_id = p.id WHERE oi.order_id = $1;

@@ -5,11 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"math"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 )
@@ -66,6 +66,8 @@ type Order struct {
 	ID             int64
 	UserID         int64
 	AddressID      int64
+	PaidPaymentID  int64
+	Shipping       *OrderShippingSnapshot
 	TotalAmount    int64 // minor units
 	Currency       string
 	Status         string
@@ -96,12 +98,13 @@ type OrderItemInput struct {
 type CreateOrderArgs struct {
 	UserID         int64
 	AddressID      int64
+	PaidPaymentID  int64
 	OutTradeNo     string
 	Currency       string
 	Items          []OrderItemInput
 	IdempotencyKey string
 	RequestHash    string
-	ExpiresAt      time.Time
+	PaymentTimeout time.Duration
 }
 
 const ExpireOrderJobKind = "expire_order"
@@ -131,7 +134,8 @@ type OrderRepo interface {
 	GetOrderByOrderNo(ctx context.Context, orderNo string) (Order, error)
 	GetOrderByUser(ctx context.Context, id, userID int64) (Order, error)
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
-	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)
+	ListOngoingOrdersByUser(ctx context.Context, userID int64, limit, offset int32) ([]Order, error)
+	CountOngoingOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	ListOrdersByUser(ctx context.Context, userID int64, limit, offset int32) ([]Order, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CancelOrderByUser(ctx context.Context, id, userID int64) error
@@ -145,10 +149,11 @@ type OrderUsecase interface {
 }
 
 type orderUsecase struct {
-	repo   OrderRepo
-	idGen  IDGenerator
-	policy OrderPolicy
-	log    *log.Helper
+	repo        OrderRepo
+	idGen       IDGenerator
+	policy      OrderPolicy
+	phoneSecret string
+	log         *log.Helper
 }
 
 type OrderPolicy struct {
@@ -156,19 +161,20 @@ type OrderPolicy struct {
 }
 
 func NewOrderUsecase(repo OrderRepo, idGen IDGenerator, logger log.Logger) OrderUsecase {
-	return NewConfiguredOrderUsecase(repo, idGen, OrderPolicy{}, logger)
+	return NewConfiguredOrderUsecase(repo, idGen, OrderPolicy{}, &conf.Auth{}, logger)
 }
 
-func NewConfiguredOrderUsecase(repo OrderRepo, idGen IDGenerator, policy OrderPolicy, logger log.Logger) OrderUsecase {
+func NewConfiguredOrderUsecase(repo OrderRepo, idGen IDGenerator, policy OrderPolicy, auth *conf.Auth, logger log.Logger) OrderUsecase {
 	if policy.PaymentTimeout <= 0 {
 		policy.PaymentTimeout = 30 * time.Minute
 	}
-	return &orderUsecase{repo: repo, idGen: idGen, policy: policy, log: log.NewHelper(logger)}
+	return &orderUsecase{repo: repo, idGen: idGen, policy: policy, phoneSecret: auth.GetPhoneSecret(), log: log.NewHelper(logger)}
 }
 
 type CreateOrderReq struct {
 	UserID         int64
 	AddressID      int64
+	PaidPaymentID  int64
 	Items          []OrderItemInput
 	IdempotencyKey string
 }
@@ -225,7 +231,7 @@ func (uc *orderUsecase) CreateOrder(ctx context.Context, req *CreateOrderReq) (*
 		order, createErr = uc.repo.CreateOrder(ctx, CreateOrderArgs{
 			UserID: req.UserID, AddressID: req.AddressID, OutTradeNo: orderNo,
 			Currency: DefaultCurrency, Items: items, IdempotencyKey: req.IdempotencyKey,
-			RequestHash: requestHash, ExpiresAt: time.Now().UTC().Add(uc.policy.PaymentTimeout),
+			RequestHash: requestHash, PaymentTimeout: uc.policy.PaymentTimeout,
 		})
 		if createErr == nil || !errors.Is(createErr, ErrOrderNoCollision) {
 			break
@@ -235,6 +241,9 @@ func (uc *orderUsecase) CreateOrder(ctx context.Context, req *CreateOrderReq) (*
 	}
 	if createErr != nil {
 		return nil, createErr
+	}
+	if err := uc.decryptShipping(&order); err != nil {
+		return nil, err
 	}
 	return &order, nil
 }
@@ -261,6 +270,9 @@ func (uc *orderUsecase) GetOrder(ctx context.Context, id, userID int64) (*Order,
 	if err != nil {
 		return nil, err
 	}
+	if err := uc.decryptShipping(&order); err != nil {
+		return nil, err
+	}
 	return &order, nil
 }
 
@@ -268,24 +280,31 @@ func (uc *orderUsecase) ListOrders(ctx context.Context, req *ListOrdersReq) ([]O
 	if req == nil || req.UserID <= 0 {
 		return nil, 0, ErrOrderInputInvalid
 	}
-	if req.Ongoing {
-		orders, err := uc.repo.ListOngoingOrdersByUser(ctx, req.UserID)
-		return orders, int64(len(orders)), err
-	}
-	limit := req.Limit
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
-	}
-	offset := req.Offset
-	if offset < 0 || int64(offset) > math.MaxInt32 {
-		return nil, 0, ErrOrderInputInvalid
-	}
-	orders, err := uc.repo.ListOrdersByUser(ctx, req.UserID, limit, offset)
+	pagination, err := NewOffsetPage(req.Limit, req.Offset)
 	if err != nil {
 		return nil, 0, err
+	}
+	if req.Ongoing {
+		orders, err := uc.repo.ListOngoingOrdersByUser(ctx, req.UserID, pagination.Limit, pagination.Offset)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i := range orders {
+			if err := uc.decryptShipping(&orders[i]); err != nil {
+				return nil, 0, err
+			}
+		}
+		total, err := uc.repo.CountOngoingOrdersByUser(ctx, req.UserID)
+		return orders, total, err
+	}
+	orders, err := uc.repo.ListOrdersByUser(ctx, req.UserID, pagination.Limit, pagination.Offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range orders {
+		if err := uc.decryptShipping(&orders[i]); err != nil {
+			return nil, 0, err
+		}
 	}
 	total, err := uc.repo.CountOrdersByUser(ctx, req.UserID)
 	if err != nil {

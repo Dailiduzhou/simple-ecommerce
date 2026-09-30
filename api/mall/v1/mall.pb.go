@@ -7,6 +7,7 @@
 package v1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -460,8 +461,8 @@ type Product struct {
 	Id          int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	CategoryId  int64                  `protobuf:"varint,2,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
 	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Price       string                 `protobuf:"bytes,4,opt,name=price,proto3" json:"price,omitempty"` // NUMERIC as string to avoid float precision
-	Discount    string                 `protobuf:"bytes,5,opt,name=discount,proto3" json:"discount,omitempty"`
+	Price       string                 `protobuf:"bytes,4,opt,name=price,proto3" json:"price,omitempty"`       // NUMERIC as string to avoid float precision
+	Discount    string                 `protobuf:"bytes,5,opt,name=discount,proto3" json:"discount,omitempty"` // (0,1], at most two effective decimal places.
 	Stock       int32                  `protobuf:"varint,6,opt,name=stock,proto3" json:"stock,omitempty"`
 	Status      int32                  `protobuf:"varint,7,opt,name=status,proto3" json:"status,omitempty"`
 	CoverImage  string                 `protobuf:"bytes,8,opt,name=cover_image,json=coverImage,proto3" json:"cover_image,omitempty"`
@@ -852,7 +853,6 @@ type UpdateProductRequest struct {
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Price         string                 `protobuf:"bytes,4,opt,name=price,proto3" json:"price,omitempty"`
 	Discount      string                 `protobuf:"bytes,5,opt,name=discount,proto3" json:"discount,omitempty"`
-	Stock         int32                  `protobuf:"varint,6,opt,name=stock,proto3" json:"stock,omitempty"`
 	CoverImage    string                 `protobuf:"bytes,7,opt,name=cover_image,json=coverImage,proto3" json:"cover_image,omitempty"`
 	MediaAssets   []*MediaInfo           `protobuf:"bytes,8,rep,name=media_assets,json=mediaAssets,proto3" json:"media_assets,omitempty"`
 	Description   string                 `protobuf:"bytes,9,opt,name=description,proto3" json:"description,omitempty"`
@@ -923,13 +923,6 @@ func (x *UpdateProductRequest) GetDiscount() string {
 		return x.Discount
 	}
 	return ""
-}
-
-func (x *UpdateProductRequest) GetStock() int32 {
-	if x != nil {
-		return x.Stock
-	}
-	return 0
 }
 
 func (x *UpdateProductRequest) GetCoverImage() string {
@@ -1041,6 +1034,174 @@ func (*UpdateProductStatusReply) Descriptor() ([]byte, []int) {
 	return file_mall_v1_mall_proto_rawDescGZIP(), []int{15}
 }
 
+type AdjustProductStockRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Delta          int32                  `protobuf:"varint,2,opt,name=delta,proto3" json:"delta,omitempty"`
+	Reason         string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AdjustProductStockRequest) Reset() {
+	*x = AdjustProductStockRequest{}
+	mi := &file_mall_v1_mall_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdjustProductStockRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdjustProductStockRequest) ProtoMessage() {}
+
+func (x *AdjustProductStockRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_mall_v1_mall_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdjustProductStockRequest.ProtoReflect.Descriptor instead.
+func (*AdjustProductStockRequest) Descriptor() ([]byte, []int) {
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *AdjustProductStockRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *AdjustProductStockRequest) GetDelta() int32 {
+	if x != nil {
+		return x.Delta
+	}
+	return 0
+}
+
+func (x *AdjustProductStockRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *AdjustProductStockRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type StockAdjustment struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	ProductId      int64                  `protobuf:"varint,2,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	ActorId        int64                  `protobuf:"varint,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Delta          int32                  `protobuf:"varint,4,opt,name=delta,proto3" json:"delta,omitempty"`
+	ResultingStock int32                  `protobuf:"varint,5,opt,name=resulting_stock,json=resultingStock,proto3" json:"resulting_stock,omitempty"`
+	Reason         string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *StockAdjustment) Reset() {
+	*x = StockAdjustment{}
+	mi := &file_mall_v1_mall_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StockAdjustment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StockAdjustment) ProtoMessage() {}
+
+func (x *StockAdjustment) ProtoReflect() protoreflect.Message {
+	mi := &file_mall_v1_mall_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StockAdjustment.ProtoReflect.Descriptor instead.
+func (*StockAdjustment) Descriptor() ([]byte, []int) {
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *StockAdjustment) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *StockAdjustment) GetProductId() int64 {
+	if x != nil {
+		return x.ProductId
+	}
+	return 0
+}
+
+func (x *StockAdjustment) GetActorId() int64 {
+	if x != nil {
+		return x.ActorId
+	}
+	return 0
+}
+
+func (x *StockAdjustment) GetDelta() int32 {
+	if x != nil {
+		return x.Delta
+	}
+	return 0
+}
+
+func (x *StockAdjustment) GetResultingStock() int32 {
+	if x != nil {
+		return x.ResultingStock
+	}
+	return 0
+}
+
+func (x *StockAdjustment) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *StockAdjustment) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *StockAdjustment) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
 type DeleteProductRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1050,7 +1211,7 @@ type DeleteProductRequest struct {
 
 func (x *DeleteProductRequest) Reset() {
 	*x = DeleteProductRequest{}
-	mi := &file_mall_v1_mall_proto_msgTypes[16]
+	mi := &file_mall_v1_mall_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1062,7 +1223,7 @@ func (x *DeleteProductRequest) String() string {
 func (*DeleteProductRequest) ProtoMessage() {}
 
 func (x *DeleteProductRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[16]
+	mi := &file_mall_v1_mall_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1075,7 +1236,7 @@ func (x *DeleteProductRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProductRequest.ProtoReflect.Descriptor instead.
 func (*DeleteProductRequest) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{16}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DeleteProductRequest) GetId() int64 {
@@ -1093,7 +1254,7 @@ type DeleteProductReply struct {
 
 func (x *DeleteProductReply) Reset() {
 	*x = DeleteProductReply{}
-	mi := &file_mall_v1_mall_proto_msgTypes[17]
+	mi := &file_mall_v1_mall_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1105,7 +1266,7 @@ func (x *DeleteProductReply) String() string {
 func (*DeleteProductReply) ProtoMessage() {}
 
 func (x *DeleteProductReply) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[17]
+	mi := &file_mall_v1_mall_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1118,9 +1279,11 @@ func (x *DeleteProductReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProductReply.ProtoReflect.Descriptor instead.
 func (*DeleteProductReply) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{17}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{19}
 }
 
+// Display-only scheduled content, not a checkout promotion. Events do not
+// reserve promotional inventory, override prices, or enforce purchase quotas.
 type Event struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1138,7 +1301,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_mall_v1_mall_proto_msgTypes[18]
+	mi := &file_mall_v1_mall_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1150,7 +1313,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[18]
+	mi := &file_mall_v1_mall_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1163,7 +1326,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{18}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Event) GetId() int64 {
@@ -1229,6 +1392,8 @@ func (x *Event) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// Creates display content only; product.discount is an independent catalogue
+// discount and is never interpreted as a timed campaign allocation.
 type CreateEventRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -1243,7 +1408,7 @@ type CreateEventRequest struct {
 
 func (x *CreateEventRequest) Reset() {
 	*x = CreateEventRequest{}
-	mi := &file_mall_v1_mall_proto_msgTypes[19]
+	mi := &file_mall_v1_mall_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1255,7 +1420,7 @@ func (x *CreateEventRequest) String() string {
 func (*CreateEventRequest) ProtoMessage() {}
 
 func (x *CreateEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[19]
+	mi := &file_mall_v1_mall_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1268,7 +1433,7 @@ func (x *CreateEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEventRequest.ProtoReflect.Descriptor instead.
 func (*CreateEventRequest) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{19}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CreateEventRequest) GetName() string {
@@ -1322,7 +1487,7 @@ type GetEventRequest struct {
 
 func (x *GetEventRequest) Reset() {
 	*x = GetEventRequest{}
-	mi := &file_mall_v1_mall_proto_msgTypes[20]
+	mi := &file_mall_v1_mall_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1334,7 +1499,7 @@ func (x *GetEventRequest) String() string {
 func (*GetEventRequest) ProtoMessage() {}
 
 func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[20]
+	mi := &file_mall_v1_mall_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1347,7 +1512,7 @@ func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
 func (*GetEventRequest) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{20}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetEventRequest) GetId() int64 {
@@ -1358,17 +1523,18 @@ func (x *GetEventRequest) GetId() int64 {
 }
 
 type ListEventsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        *int32                 `protobuf:"varint,1,opt,name=status,proto3,oneof" json:"status,omitempty"` // 0-未开始 1-进行中，不传则全部
-	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	Page          int32                  `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Display events: 0=upcoming, 1=active, 2=ended; omitted means all.
+	Status        *int32 `protobuf:"varint,1,opt,name=status,proto3,oneof" json:"status,omitempty"`
+	PageSize      int32  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	Page          int32  `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListEventsRequest) Reset() {
 	*x = ListEventsRequest{}
-	mi := &file_mall_v1_mall_proto_msgTypes[21]
+	mi := &file_mall_v1_mall_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1380,7 +1546,7 @@ func (x *ListEventsRequest) String() string {
 func (*ListEventsRequest) ProtoMessage() {}
 
 func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[21]
+	mi := &file_mall_v1_mall_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1393,7 +1559,7 @@ func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsRequest) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{21}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListEventsRequest) GetStatus() int32 {
@@ -1426,7 +1592,7 @@ type ListEventsReply struct {
 
 func (x *ListEventsReply) Reset() {
 	*x = ListEventsReply{}
-	mi := &file_mall_v1_mall_proto_msgTypes[22]
+	mi := &file_mall_v1_mall_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1438,7 +1604,7 @@ func (x *ListEventsReply) String() string {
 func (*ListEventsReply) ProtoMessage() {}
 
 func (x *ListEventsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[22]
+	mi := &file_mall_v1_mall_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1451,7 +1617,7 @@ func (x *ListEventsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsReply.ProtoReflect.Descriptor instead.
 func (*ListEventsReply) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{22}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListEventsReply) GetEvents() []*Event {
@@ -1476,7 +1642,7 @@ type UpdateEventRequest struct {
 
 func (x *UpdateEventRequest) Reset() {
 	*x = UpdateEventRequest{}
-	mi := &file_mall_v1_mall_proto_msgTypes[23]
+	mi := &file_mall_v1_mall_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1488,7 +1654,7 @@ func (x *UpdateEventRequest) String() string {
 func (*UpdateEventRequest) ProtoMessage() {}
 
 func (x *UpdateEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[23]
+	mi := &file_mall_v1_mall_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1501,7 +1667,7 @@ func (x *UpdateEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateEventRequest.ProtoReflect.Descriptor instead.
 func (*UpdateEventRequest) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{23}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *UpdateEventRequest) GetId() int64 {
@@ -1563,7 +1729,7 @@ type UpdateEventStatusRequest struct {
 
 func (x *UpdateEventStatusRequest) Reset() {
 	*x = UpdateEventStatusRequest{}
-	mi := &file_mall_v1_mall_proto_msgTypes[24]
+	mi := &file_mall_v1_mall_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1575,7 +1741,7 @@ func (x *UpdateEventStatusRequest) String() string {
 func (*UpdateEventStatusRequest) ProtoMessage() {}
 
 func (x *UpdateEventStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[24]
+	mi := &file_mall_v1_mall_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1588,7 +1754,7 @@ func (x *UpdateEventStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateEventStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateEventStatusRequest) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{24}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *UpdateEventStatusRequest) GetId() int64 {
@@ -1613,7 +1779,7 @@ type UpdateEventStatusReply struct {
 
 func (x *UpdateEventStatusReply) Reset() {
 	*x = UpdateEventStatusReply{}
-	mi := &file_mall_v1_mall_proto_msgTypes[25]
+	mi := &file_mall_v1_mall_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1625,7 +1791,7 @@ func (x *UpdateEventStatusReply) String() string {
 func (*UpdateEventStatusReply) ProtoMessage() {}
 
 func (x *UpdateEventStatusReply) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[25]
+	mi := &file_mall_v1_mall_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1638,7 +1804,7 @@ func (x *UpdateEventStatusReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateEventStatusReply.ProtoReflect.Descriptor instead.
 func (*UpdateEventStatusReply) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{25}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{27}
 }
 
 type DeleteEventRequest struct {
@@ -1650,7 +1816,7 @@ type DeleteEventRequest struct {
 
 func (x *DeleteEventRequest) Reset() {
 	*x = DeleteEventRequest{}
-	mi := &file_mall_v1_mall_proto_msgTypes[26]
+	mi := &file_mall_v1_mall_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1662,7 +1828,7 @@ func (x *DeleteEventRequest) String() string {
 func (*DeleteEventRequest) ProtoMessage() {}
 
 func (x *DeleteEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[26]
+	mi := &file_mall_v1_mall_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1675,7 +1841,7 @@ func (x *DeleteEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteEventRequest.ProtoReflect.Descriptor instead.
 func (*DeleteEventRequest) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{26}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DeleteEventRequest) GetId() int64 {
@@ -1693,7 +1859,7 @@ type DeleteEventReply struct {
 
 func (x *DeleteEventReply) Reset() {
 	*x = DeleteEventReply{}
-	mi := &file_mall_v1_mall_proto_msgTypes[27]
+	mi := &file_mall_v1_mall_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1705,7 +1871,7 @@ func (x *DeleteEventReply) String() string {
 func (*DeleteEventReply) ProtoMessage() {}
 
 func (x *DeleteEventReply) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[27]
+	mi := &file_mall_v1_mall_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1718,7 +1884,7 @@ func (x *DeleteEventReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteEventReply.ProtoReflect.Descriptor instead.
 func (*DeleteEventReply) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{27}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{29}
 }
 
 // 不接受用户 ID 或指定日期，不提供个性化及历史查询。
@@ -1730,7 +1896,7 @@ type GetTodayWellnessRequest struct {
 
 func (x *GetTodayWellnessRequest) Reset() {
 	*x = GetTodayWellnessRequest{}
-	mi := &file_mall_v1_mall_proto_msgTypes[28]
+	mi := &file_mall_v1_mall_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1742,7 +1908,7 @@ func (x *GetTodayWellnessRequest) String() string {
 func (*GetTodayWellnessRequest) ProtoMessage() {}
 
 func (x *GetTodayWellnessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[28]
+	mi := &file_mall_v1_mall_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1755,7 +1921,7 @@ func (x *GetTodayWellnessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTodayWellnessRequest.ProtoReflect.Descriptor instead.
 func (*GetTodayWellnessRequest) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{28}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{30}
 }
 
 type TodayWellnessReply struct {
@@ -1772,7 +1938,7 @@ type TodayWellnessReply struct {
 
 func (x *TodayWellnessReply) Reset() {
 	*x = TodayWellnessReply{}
-	mi := &file_mall_v1_mall_proto_msgTypes[29]
+	mi := &file_mall_v1_mall_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1784,7 +1950,7 @@ func (x *TodayWellnessReply) String() string {
 func (*TodayWellnessReply) ProtoMessage() {}
 
 func (x *TodayWellnessReply) ProtoReflect() protoreflect.Message {
-	mi := &file_mall_v1_mall_proto_msgTypes[29]
+	mi := &file_mall_v1_mall_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1797,7 +1963,7 @@ func (x *TodayWellnessReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TodayWellnessReply.ProtoReflect.Descriptor instead.
 func (*TodayWellnessReply) Descriptor() ([]byte, []int) {
-	return file_mall_v1_mall_proto_rawDescGZIP(), []int{29}
+	return file_mall_v1_mall_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *TodayWellnessReply) GetDate() string {
@@ -1825,7 +1991,7 @@ var File_mall_v1_mall_proto protoreflect.FileDescriptor
 
 const file_mall_v1_mall_proto_rawDesc = "" +
 	"\n" +
-	"\x12mall/v1/mall.proto\x12\vapi.mall.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"j\n" +
+	"\x12mall/v1/mall.proto\x12\vapi.mall.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bbuf/validate/validate.proto\"j\n" +
 	"\bCategory\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tparent_id\x18\x02 \x01(\x03R\bparentId\x12\x12\n" +
@@ -1888,31 +2054,47 @@ const file_mall_v1_mall_proto_rawDesc = "" +
 	"\fmedia_assets\x18\a \x03(\v2\x16.api.mall.v1.MediaInfoR\vmediaAssets\x12 \n" +
 	"\vdescription\x18\b \x01(\tR\vdescription\"#\n" +
 	"\x11GetProductRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"g\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"{\n" +
 	"\x13ListProductsRequest\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\x03R\n" +
-	"categoryId\x12\x1b\n" +
-	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x12\n" +
-	"\x04page\x18\x03 \x01(\x05R\x04page\"[\n" +
+	"categoryId\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1b\n" +
+	"\x04page\x18\x03 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x04page\"[\n" +
 	"\x11ListProductsReply\x120\n" +
 	"\bproducts\x18\x01 \x03(\v2\x14.api.mall.v1.ProductR\bproducts\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\"\xa1\x02\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"\x98\x02\n" +
 	"\x14UpdateProductRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\vcategory_id\x18\x02 \x01(\x03R\n" +
 	"categoryId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
 	"\x05price\x18\x04 \x01(\tR\x05price\x12\x1a\n" +
-	"\bdiscount\x18\x05 \x01(\tR\bdiscount\x12\x14\n" +
-	"\x05stock\x18\x06 \x01(\x05R\x05stock\x12\x1f\n" +
+	"\bdiscount\x18\x05 \x01(\tR\bdiscount\x12\x1f\n" +
 	"\vcover_image\x18\a \x01(\tR\n" +
 	"coverImage\x129\n" +
 	"\fmedia_assets\x18\b \x03(\v2\x16.api.mall.v1.MediaInfoR\vmediaAssets\x12 \n" +
-	"\vdescription\x18\t \x01(\tR\vdescription\"D\n" +
+	"\vdescription\x18\t \x01(\tR\vdescriptionJ\x04\b\x06\x10\aR\x05stock\"O\n" +
 	"\x1aUpdateProductStatusRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\x05R\x06status\"\x1a\n" +
-	"\x18UpdateProductStatusReply\"&\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12!\n" +
+	"\x06status\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x040\x000\x01R\x06status\"\x1a\n" +
+	"\x18UpdateProductStatusReply\"\xab\x01\n" +
+	"\x19AdjustProductStockRequest\x12\x17\n" +
+	"\x02id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\x02id\x12\x1d\n" +
+	"\x05delta\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x028\x00R\x05delta\x12\"\n" +
+	"\x06reason\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x06reason\x122\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tB\t\xbaH\x06r\x04\x10\b\x18@R\x0eidempotencyKey\"\x96\x02\n" +
+	"\x0fStockAdjustment\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1d\n" +
+	"\n" +
+	"product_id\x18\x02 \x01(\x03R\tproductId\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\x03R\aactorId\x12\x14\n" +
+	"\x05delta\x18\x04 \x01(\x05R\x05delta\x12'\n" +
+	"\x0fresulting_stock\x18\x05 \x01(\x05R\x0eresultingStock\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\x12'\n" +
+	"\x0fidempotency_key\x18\a \x01(\tR\x0eidempotencyKey\x129\n" +
+	"\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"&\n" +
 	"\x14DeleteProductRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"\x14\n" +
 	"\x12DeleteProductReply\"\xf2\x02\n" +
@@ -1938,11 +2120,11 @@ const file_mall_v1_mall_proto_rawDesc = "" +
 	"\bstart_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\astartAt\x121\n" +
 	"\x06end_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x05endAtJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04\"!\n" +
 	"\x0fGetEventRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"l\n" +
-	"\x11ListEventsRequest\x12\x1b\n" +
-	"\x06status\x18\x01 \x01(\x05H\x00R\x06status\x88\x01\x01\x12\x1b\n" +
-	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x12\n" +
-	"\x04page\x18\x03 \x01(\x05R\x04pageB\t\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"\x8d\x01\n" +
+	"\x11ListEventsRequest\x12(\n" +
+	"\x06status\x18\x01 \x01(\x05B\v\xbaH\b\x1a\x060\x000\x010\x02H\x00R\x06status\x88\x01\x01\x12&\n" +
+	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\x12\x1b\n" +
+	"\x04page\x18\x03 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x04pageB\t\n" +
 	"\a_status\"=\n" +
 	"\x0fListEventsReply\x12*\n" +
 	"\x06events\x18\x01 \x03(\v2\x12.api.mall.v1.EventR\x06events\"\xac\x02\n" +
@@ -1954,10 +2136,10 @@ const file_mall_v1_mall_proto_rawDesc = "" +
 	"\fmedia_assets\x18\x06 \x03(\v2\x16.api.mall.v1.MediaInfoR\vmediaAssets\x12 \n" +
 	"\vdescription\x18\a \x01(\tR\vdescription\x125\n" +
 	"\bstart_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\astartAt\x121\n" +
-	"\x06end_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x05endAtJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05\"B\n" +
+	"\x06end_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x05endAtJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05\"O\n" +
 	"\x18UpdateEventStatusRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\x05R\x06status\"\x18\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12#\n" +
+	"\x06status\x18\x02 \x01(\x05B\v\xbaH\b\x1a\x060\x000\x010\x02R\x06status\"\x18\n" +
 	"\x16UpdateEventStatusReply\"$\n" +
 	"\x12DeleteEventRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"\x12\n" +
@@ -1967,7 +2149,7 @@ const file_mall_v1_mall_proto_rawDesc = "" +
 	"\x04date\x18\x01 \x01(\tR\x04date\x12\x1d\n" +
 	"\n" +
 	"solar_term\x18\x02 \x01(\tR\tsolarTerm\x12\x16\n" +
-	"\x06advice\x18\x03 \x01(\tR\x06advice2\xa5\x0e\n" +
+	"\x06advice\x18\x03 \x01(\tR\x06advice2\xb2\x0f\n" +
 	"\x04Mall\x12u\n" +
 	"\x10GetTodayWellness\x12$.api.mall.v1.GetTodayWellnessRequest\x1a\x1f.api.mall.v1.TodayWellnessReply\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/wellness/today\x12f\n" +
 	"\x0eCreateCategory\x12\".api.mall.v1.CreateCategoryRequest\x1a\x15.api.mall.v1.Category\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/categories\x12n\n" +
@@ -1980,7 +2162,8 @@ const file_mall_v1_mall_proto_rawDesc = "" +
 	"\fListProducts\x12 .api.mall.v1.ListProductsRequest\x1a\x1e.api.mall.v1.ListProductsReply\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/products\x12f\n" +
 	"\rUpdateProduct\x12!.api.mall.v1.UpdateProductRequest\x1a\x14.api.mall.v1.Product\"\x1c\x82\xd3\xe4\x93\x02\x16:\x01*\x1a\x11/v1/products/{id}\x12\x8a\x01\n" +
 	"\x13UpdateProductStatus\x12'.api.mall.v1.UpdateProductStatusRequest\x1a%.api.mall.v1.UpdateProductStatusReply\"#\x82\xd3\xe4\x93\x02\x1d:\x01*2\x18/v1/products/{id}/status\x12n\n" +
-	"\rDeleteProduct\x12!.api.mall.v1.DeleteProductRequest\x1a\x1f.api.mall.v1.DeleteProductReply\"\x19\x82\xd3\xe4\x93\x02\x13*\x11/v1/products/{id}\x12Y\n" +
+	"\rDeleteProduct\x12!.api.mall.v1.DeleteProductRequest\x1a\x1f.api.mall.v1.DeleteProductReply\"\x19\x82\xd3\xe4\x93\x02\x13*\x11/v1/products/{id}\x12\x8a\x01\n" +
+	"\x12AdjustProductStock\x12&.api.mall.v1.AdjustProductStockRequest\x1a\x1c.api.mall.v1.StockAdjustment\".\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/products/{id}/stock-adjustments\x12Y\n" +
 	"\vCreateEvent\x12\x1f.api.mall.v1.CreateEventRequest\x1a\x12.api.mall.v1.Event\"\x15\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
 	"/v1/events\x12U\n" +
 	"\bGetEvent\x12\x1c.api.mall.v1.GetEventRequest\x1a\x12.api.mall.v1.Event\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/events/{id}\x12^\n" +
@@ -2004,7 +2187,7 @@ func file_mall_v1_mall_proto_rawDescGZIP() []byte {
 	return file_mall_v1_mall_proto_rawDescData
 }
 
-var file_mall_v1_mall_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_mall_v1_mall_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_mall_v1_mall_proto_goTypes = []any{
 	(*Category)(nil),                   // 0: api.mall.v1.Category
 	(*CreateCategoryRequest)(nil),      // 1: api.mall.v1.CreateCategoryRequest
@@ -2022,79 +2205,84 @@ var file_mall_v1_mall_proto_goTypes = []any{
 	(*UpdateProductRequest)(nil),       // 13: api.mall.v1.UpdateProductRequest
 	(*UpdateProductStatusRequest)(nil), // 14: api.mall.v1.UpdateProductStatusRequest
 	(*UpdateProductStatusReply)(nil),   // 15: api.mall.v1.UpdateProductStatusReply
-	(*DeleteProductRequest)(nil),       // 16: api.mall.v1.DeleteProductRequest
-	(*DeleteProductReply)(nil),         // 17: api.mall.v1.DeleteProductReply
-	(*Event)(nil),                      // 18: api.mall.v1.Event
-	(*CreateEventRequest)(nil),         // 19: api.mall.v1.CreateEventRequest
-	(*GetEventRequest)(nil),            // 20: api.mall.v1.GetEventRequest
-	(*ListEventsRequest)(nil),          // 21: api.mall.v1.ListEventsRequest
-	(*ListEventsReply)(nil),            // 22: api.mall.v1.ListEventsReply
-	(*UpdateEventRequest)(nil),         // 23: api.mall.v1.UpdateEventRequest
-	(*UpdateEventStatusRequest)(nil),   // 24: api.mall.v1.UpdateEventStatusRequest
-	(*UpdateEventStatusReply)(nil),     // 25: api.mall.v1.UpdateEventStatusReply
-	(*DeleteEventRequest)(nil),         // 26: api.mall.v1.DeleteEventRequest
-	(*DeleteEventReply)(nil),           // 27: api.mall.v1.DeleteEventReply
-	(*GetTodayWellnessRequest)(nil),    // 28: api.mall.v1.GetTodayWellnessRequest
-	(*TodayWellnessReply)(nil),         // 29: api.mall.v1.TodayWellnessReply
-	(*timestamppb.Timestamp)(nil),      // 30: google.protobuf.Timestamp
+	(*AdjustProductStockRequest)(nil),  // 16: api.mall.v1.AdjustProductStockRequest
+	(*StockAdjustment)(nil),            // 17: api.mall.v1.StockAdjustment
+	(*DeleteProductRequest)(nil),       // 18: api.mall.v1.DeleteProductRequest
+	(*DeleteProductReply)(nil),         // 19: api.mall.v1.DeleteProductReply
+	(*Event)(nil),                      // 20: api.mall.v1.Event
+	(*CreateEventRequest)(nil),         // 21: api.mall.v1.CreateEventRequest
+	(*GetEventRequest)(nil),            // 22: api.mall.v1.GetEventRequest
+	(*ListEventsRequest)(nil),          // 23: api.mall.v1.ListEventsRequest
+	(*ListEventsReply)(nil),            // 24: api.mall.v1.ListEventsReply
+	(*UpdateEventRequest)(nil),         // 25: api.mall.v1.UpdateEventRequest
+	(*UpdateEventStatusRequest)(nil),   // 26: api.mall.v1.UpdateEventStatusRequest
+	(*UpdateEventStatusReply)(nil),     // 27: api.mall.v1.UpdateEventStatusReply
+	(*DeleteEventRequest)(nil),         // 28: api.mall.v1.DeleteEventRequest
+	(*DeleteEventReply)(nil),           // 29: api.mall.v1.DeleteEventReply
+	(*GetTodayWellnessRequest)(nil),    // 30: api.mall.v1.GetTodayWellnessRequest
+	(*TodayWellnessReply)(nil),         // 31: api.mall.v1.TodayWellnessReply
+	(*timestamppb.Timestamp)(nil),      // 32: google.protobuf.Timestamp
 }
 var file_mall_v1_mall_proto_depIdxs = []int32{
 	0,  // 0: api.mall.v1.ListCategoriesReply.categories:type_name -> api.mall.v1.Category
 	7,  // 1: api.mall.v1.Product.media_assets:type_name -> api.mall.v1.MediaInfo
-	30, // 2: api.mall.v1.Product.created_at:type_name -> google.protobuf.Timestamp
+	32, // 2: api.mall.v1.Product.created_at:type_name -> google.protobuf.Timestamp
 	7,  // 3: api.mall.v1.CreateProductRequest.media_assets:type_name -> api.mall.v1.MediaInfo
 	8,  // 4: api.mall.v1.ListProductsReply.products:type_name -> api.mall.v1.Product
 	7,  // 5: api.mall.v1.UpdateProductRequest.media_assets:type_name -> api.mall.v1.MediaInfo
-	7,  // 6: api.mall.v1.Event.media_assets:type_name -> api.mall.v1.MediaInfo
-	30, // 7: api.mall.v1.Event.start_at:type_name -> google.protobuf.Timestamp
-	30, // 8: api.mall.v1.Event.end_at:type_name -> google.protobuf.Timestamp
-	30, // 9: api.mall.v1.Event.created_at:type_name -> google.protobuf.Timestamp
-	7,  // 10: api.mall.v1.CreateEventRequest.media_assets:type_name -> api.mall.v1.MediaInfo
-	30, // 11: api.mall.v1.CreateEventRequest.start_at:type_name -> google.protobuf.Timestamp
-	30, // 12: api.mall.v1.CreateEventRequest.end_at:type_name -> google.protobuf.Timestamp
-	18, // 13: api.mall.v1.ListEventsReply.events:type_name -> api.mall.v1.Event
-	7,  // 14: api.mall.v1.UpdateEventRequest.media_assets:type_name -> api.mall.v1.MediaInfo
-	30, // 15: api.mall.v1.UpdateEventRequest.start_at:type_name -> google.protobuf.Timestamp
-	30, // 16: api.mall.v1.UpdateEventRequest.end_at:type_name -> google.protobuf.Timestamp
-	28, // 17: api.mall.v1.Mall.GetTodayWellness:input_type -> api.mall.v1.GetTodayWellnessRequest
-	1,  // 18: api.mall.v1.Mall.CreateCategory:input_type -> api.mall.v1.CreateCategoryRequest
-	2,  // 19: api.mall.v1.Mall.ListCategories:input_type -> api.mall.v1.ListCategoriesRequest
-	4,  // 20: api.mall.v1.Mall.UpdateCategory:input_type -> api.mall.v1.UpdateCategoryRequest
-	5,  // 21: api.mall.v1.Mall.DeleteCategory:input_type -> api.mall.v1.DeleteCategoryRequest
-	9,  // 22: api.mall.v1.Mall.CreateProduct:input_type -> api.mall.v1.CreateProductRequest
-	10, // 23: api.mall.v1.Mall.GetProduct:input_type -> api.mall.v1.GetProductRequest
-	11, // 24: api.mall.v1.Mall.ListProducts:input_type -> api.mall.v1.ListProductsRequest
-	13, // 25: api.mall.v1.Mall.UpdateProduct:input_type -> api.mall.v1.UpdateProductRequest
-	14, // 26: api.mall.v1.Mall.UpdateProductStatus:input_type -> api.mall.v1.UpdateProductStatusRequest
-	16, // 27: api.mall.v1.Mall.DeleteProduct:input_type -> api.mall.v1.DeleteProductRequest
-	19, // 28: api.mall.v1.Mall.CreateEvent:input_type -> api.mall.v1.CreateEventRequest
-	20, // 29: api.mall.v1.Mall.GetEvent:input_type -> api.mall.v1.GetEventRequest
-	21, // 30: api.mall.v1.Mall.ListEvents:input_type -> api.mall.v1.ListEventsRequest
-	23, // 31: api.mall.v1.Mall.UpdateEvent:input_type -> api.mall.v1.UpdateEventRequest
-	24, // 32: api.mall.v1.Mall.UpdateEventStatus:input_type -> api.mall.v1.UpdateEventStatusRequest
-	26, // 33: api.mall.v1.Mall.DeleteEvent:input_type -> api.mall.v1.DeleteEventRequest
-	29, // 34: api.mall.v1.Mall.GetTodayWellness:output_type -> api.mall.v1.TodayWellnessReply
-	0,  // 35: api.mall.v1.Mall.CreateCategory:output_type -> api.mall.v1.Category
-	3,  // 36: api.mall.v1.Mall.ListCategories:output_type -> api.mall.v1.ListCategoriesReply
-	0,  // 37: api.mall.v1.Mall.UpdateCategory:output_type -> api.mall.v1.Category
-	6,  // 38: api.mall.v1.Mall.DeleteCategory:output_type -> api.mall.v1.DeleteCategoryReply
-	8,  // 39: api.mall.v1.Mall.CreateProduct:output_type -> api.mall.v1.Product
-	8,  // 40: api.mall.v1.Mall.GetProduct:output_type -> api.mall.v1.Product
-	12, // 41: api.mall.v1.Mall.ListProducts:output_type -> api.mall.v1.ListProductsReply
-	8,  // 42: api.mall.v1.Mall.UpdateProduct:output_type -> api.mall.v1.Product
-	15, // 43: api.mall.v1.Mall.UpdateProductStatus:output_type -> api.mall.v1.UpdateProductStatusReply
-	17, // 44: api.mall.v1.Mall.DeleteProduct:output_type -> api.mall.v1.DeleteProductReply
-	18, // 45: api.mall.v1.Mall.CreateEvent:output_type -> api.mall.v1.Event
-	18, // 46: api.mall.v1.Mall.GetEvent:output_type -> api.mall.v1.Event
-	22, // 47: api.mall.v1.Mall.ListEvents:output_type -> api.mall.v1.ListEventsReply
-	18, // 48: api.mall.v1.Mall.UpdateEvent:output_type -> api.mall.v1.Event
-	25, // 49: api.mall.v1.Mall.UpdateEventStatus:output_type -> api.mall.v1.UpdateEventStatusReply
-	27, // 50: api.mall.v1.Mall.DeleteEvent:output_type -> api.mall.v1.DeleteEventReply
-	34, // [34:51] is the sub-list for method output_type
-	17, // [17:34] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	32, // 6: api.mall.v1.StockAdjustment.created_at:type_name -> google.protobuf.Timestamp
+	7,  // 7: api.mall.v1.Event.media_assets:type_name -> api.mall.v1.MediaInfo
+	32, // 8: api.mall.v1.Event.start_at:type_name -> google.protobuf.Timestamp
+	32, // 9: api.mall.v1.Event.end_at:type_name -> google.protobuf.Timestamp
+	32, // 10: api.mall.v1.Event.created_at:type_name -> google.protobuf.Timestamp
+	7,  // 11: api.mall.v1.CreateEventRequest.media_assets:type_name -> api.mall.v1.MediaInfo
+	32, // 12: api.mall.v1.CreateEventRequest.start_at:type_name -> google.protobuf.Timestamp
+	32, // 13: api.mall.v1.CreateEventRequest.end_at:type_name -> google.protobuf.Timestamp
+	20, // 14: api.mall.v1.ListEventsReply.events:type_name -> api.mall.v1.Event
+	7,  // 15: api.mall.v1.UpdateEventRequest.media_assets:type_name -> api.mall.v1.MediaInfo
+	32, // 16: api.mall.v1.UpdateEventRequest.start_at:type_name -> google.protobuf.Timestamp
+	32, // 17: api.mall.v1.UpdateEventRequest.end_at:type_name -> google.protobuf.Timestamp
+	30, // 18: api.mall.v1.Mall.GetTodayWellness:input_type -> api.mall.v1.GetTodayWellnessRequest
+	1,  // 19: api.mall.v1.Mall.CreateCategory:input_type -> api.mall.v1.CreateCategoryRequest
+	2,  // 20: api.mall.v1.Mall.ListCategories:input_type -> api.mall.v1.ListCategoriesRequest
+	4,  // 21: api.mall.v1.Mall.UpdateCategory:input_type -> api.mall.v1.UpdateCategoryRequest
+	5,  // 22: api.mall.v1.Mall.DeleteCategory:input_type -> api.mall.v1.DeleteCategoryRequest
+	9,  // 23: api.mall.v1.Mall.CreateProduct:input_type -> api.mall.v1.CreateProductRequest
+	10, // 24: api.mall.v1.Mall.GetProduct:input_type -> api.mall.v1.GetProductRequest
+	11, // 25: api.mall.v1.Mall.ListProducts:input_type -> api.mall.v1.ListProductsRequest
+	13, // 26: api.mall.v1.Mall.UpdateProduct:input_type -> api.mall.v1.UpdateProductRequest
+	14, // 27: api.mall.v1.Mall.UpdateProductStatus:input_type -> api.mall.v1.UpdateProductStatusRequest
+	18, // 28: api.mall.v1.Mall.DeleteProduct:input_type -> api.mall.v1.DeleteProductRequest
+	16, // 29: api.mall.v1.Mall.AdjustProductStock:input_type -> api.mall.v1.AdjustProductStockRequest
+	21, // 30: api.mall.v1.Mall.CreateEvent:input_type -> api.mall.v1.CreateEventRequest
+	22, // 31: api.mall.v1.Mall.GetEvent:input_type -> api.mall.v1.GetEventRequest
+	23, // 32: api.mall.v1.Mall.ListEvents:input_type -> api.mall.v1.ListEventsRequest
+	25, // 33: api.mall.v1.Mall.UpdateEvent:input_type -> api.mall.v1.UpdateEventRequest
+	26, // 34: api.mall.v1.Mall.UpdateEventStatus:input_type -> api.mall.v1.UpdateEventStatusRequest
+	28, // 35: api.mall.v1.Mall.DeleteEvent:input_type -> api.mall.v1.DeleteEventRequest
+	31, // 36: api.mall.v1.Mall.GetTodayWellness:output_type -> api.mall.v1.TodayWellnessReply
+	0,  // 37: api.mall.v1.Mall.CreateCategory:output_type -> api.mall.v1.Category
+	3,  // 38: api.mall.v1.Mall.ListCategories:output_type -> api.mall.v1.ListCategoriesReply
+	0,  // 39: api.mall.v1.Mall.UpdateCategory:output_type -> api.mall.v1.Category
+	6,  // 40: api.mall.v1.Mall.DeleteCategory:output_type -> api.mall.v1.DeleteCategoryReply
+	8,  // 41: api.mall.v1.Mall.CreateProduct:output_type -> api.mall.v1.Product
+	8,  // 42: api.mall.v1.Mall.GetProduct:output_type -> api.mall.v1.Product
+	12, // 43: api.mall.v1.Mall.ListProducts:output_type -> api.mall.v1.ListProductsReply
+	8,  // 44: api.mall.v1.Mall.UpdateProduct:output_type -> api.mall.v1.Product
+	15, // 45: api.mall.v1.Mall.UpdateProductStatus:output_type -> api.mall.v1.UpdateProductStatusReply
+	19, // 46: api.mall.v1.Mall.DeleteProduct:output_type -> api.mall.v1.DeleteProductReply
+	17, // 47: api.mall.v1.Mall.AdjustProductStock:output_type -> api.mall.v1.StockAdjustment
+	20, // 48: api.mall.v1.Mall.CreateEvent:output_type -> api.mall.v1.Event
+	20, // 49: api.mall.v1.Mall.GetEvent:output_type -> api.mall.v1.Event
+	24, // 50: api.mall.v1.Mall.ListEvents:output_type -> api.mall.v1.ListEventsReply
+	20, // 51: api.mall.v1.Mall.UpdateEvent:output_type -> api.mall.v1.Event
+	27, // 52: api.mall.v1.Mall.UpdateEventStatus:output_type -> api.mall.v1.UpdateEventStatusReply
+	29, // 53: api.mall.v1.Mall.DeleteEvent:output_type -> api.mall.v1.DeleteEventReply
+	36, // [36:54] is the sub-list for method output_type
+	18, // [18:36] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_mall_v1_mall_proto_init() }
@@ -2102,14 +2290,14 @@ func file_mall_v1_mall_proto_init() {
 	if File_mall_v1_mall_proto != nil {
 		return
 	}
-	file_mall_v1_mall_proto_msgTypes[21].OneofWrappers = []any{}
+	file_mall_v1_mall_proto_msgTypes[23].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_mall_v1_mall_proto_rawDesc), len(file_mall_v1_mall_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   30,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

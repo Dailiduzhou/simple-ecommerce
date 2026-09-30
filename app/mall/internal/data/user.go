@@ -5,12 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	stderrors "errors"
-	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -70,9 +71,9 @@ func (r *UserRepo) GetAuthUser(ctx context.Context, id int64) (*biz.User, error)
 	return toBizUser(row), nil
 }
 
-func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error) {
+func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.UserProfile, error) {
 	key := generatedEntityCacheKey(ctx, r.data, r.log, userGenerationKey(id), redisKey("user", id))
-	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.User, error) {
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.UserProfile, error) {
 		row, err := r.data.DB(ctx).GetUserByID(ctx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -80,7 +81,7 @@ func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.User, error)
 		if err != nil {
 			return nil, err
 		}
-		return toBizUser(row), nil
+		return toBizUser(row).Profile(), nil
 	})
 }
 
@@ -94,16 +95,12 @@ func (r *UserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*b
 	if err != nil {
 		return nil, err
 	}
-	user := toBizUser(u)
-	if !inTransaction(ctx) {
-		if key := generatedEntityCacheKey(ctx, r.data, r.log, userGenerationKey(user.ID), redisKey("user", user.ID)); key != "" {
-			r.setCache(ctx, key, user)
-		}
-	}
-	return user, nil
+	// Authentication never publishes a profile snapshot into a generation read
+	// after this SQL query. Profile reads own their cache population.
+	return toBizUser(u), nil
 }
 
-func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*biz.User, error) {
+func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*biz.UserProfile, error) {
 	u, err := r.data.DB(ctx).UpdateUser(ctx, db.UpdateUserParams{
 		ID:       id,
 		Nickname: nickname,
@@ -112,7 +109,7 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName 
 	if err != nil {
 		return nil, err
 	}
-	bizUser := toBizUser(u)
+	bizUser := toBizUser(u).Profile()
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, userGenerationKey(id))
 	return bizUser, nil
 }
@@ -120,38 +117,40 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName 
 func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
 	err := r.data.DB(ctx).DeleteUser(ctx, id)
 	if err != nil {
+		// Physical deletion is supported only for accounts without retained audit
+		// references. FK checks also close the race against a concurrent checkout.
+		var pgErr *pgconn.PgError
+		if stderrors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return errors.Conflict("ACCOUNT_HAS_RETAINED_HISTORY", "account has retained transaction or audit history and cannot be deleted")
+		}
 		return err
 	}
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, userGenerationKey(id))
 	return nil
 }
 
-func (r *UserRepo) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
-	if err := r.data.DB(ctx).UpdateUserPassword(ctx, db.UpdateUserPasswordParams{ID: id, PasswordHash: passwordHash}); err != nil {
+func (r *UserRepo) UpdateUserPassword(ctx context.Context, id, expectedVersion int64, passwordHash string) error {
+	rows, err := r.data.DB(ctx).UpdateUserPassword(ctx, db.UpdateUserPasswordParams{ID: id, PasswordHash: passwordHash, ExpectedVersion: expectedVersion})
+	if err != nil {
 		return err
+	}
+	if rows == 0 {
+		return errors.Conflict("CREDENTIAL_VERSION_CONFLICT", "credentials changed while verifying the old password; sign in again")
 	}
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, userGenerationKey(id))
 	return nil
 }
 
-func (r *UserRepo) getCache(ctx context.Context, key string) (*biz.User, error) {
-	return readJSONCache[*biz.User](ctx, r.data, key)
+func (r *UserRepo) getCache(ctx context.Context, key string) (*biz.UserProfile, error) {
+	return readJSONCache[*biz.UserProfile](ctx, r.data, key)
 }
 
-func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.User) {
+func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.UserProfile) {
 	if user == nil {
 		writeJSONCache(ctx, r.data, r.log, key, user, negativeCacheTTL)
 		return
 	}
-	profile := struct {
-		ID        int64
-		Nickname  string
-		RealName  string
-		Role      string
-		CreatedAt time.Time
-		UpdatedAt time.Time
-	}{user.ID, user.Nickname, user.RealName, user.Role, user.CreatedAt, user.UpdatedAt}
-	writeJSONCache(ctx, r.data, r.log, key, profile, cacheTTL())
+	writeJSONCache(ctx, r.data, r.log, key, user, cacheTTL())
 }
 
 func userGenerationKey(id int64) string {
@@ -160,16 +159,16 @@ func userGenerationKey(id int64) string {
 
 func toBizUser(u db.User) *biz.User {
 	return &biz.User{
-		ID:                u.ID,
-		Nickname:          u.Nickname,
-		RealName:          u.RealName,
-		PhoneHash:         u.PhoneHash,
-		PhoneEncrypt:      u.PhoneEncrypt,
-		PasswordHash:      u.PasswordHash,
-		PasswordChangedAt: u.PasswordChangedAt.Time,
-		Role:              u.Role,
-		CreatedAt:         u.CreatedAt.Time,
-		UpdatedAt:         u.UpdatedAt.Time,
+		ID:           u.ID,
+		Nickname:     u.Nickname,
+		RealName:     u.RealName,
+		PhoneHash:    u.PhoneHash,
+		PhoneEncrypt: u.PhoneEncrypt,
+		PasswordHash: u.PasswordHash,
+		AuthVersion:  u.AuthVersion,
+		Role:         u.Role,
+		CreatedAt:    u.CreatedAt.Time,
+		UpdatedAt:    u.UpdatedAt.Time,
 	}
 }
 
@@ -227,6 +226,9 @@ func (r *ShippingAddressRepo) CreateShippingAddress(ctx context.Context, userID 
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
 		if isDefault {
+			if _, err := q.LockUserForAddress(ctx, userID); err != nil {
+				return err
+			}
 			if old, err := q.GetDefaultShippingAddress(ctx, userID); err == nil {
 				oldDefaultID = old.ID
 			} else if !stderrors.Is(err, pgx.ErrNoRows) {
@@ -321,6 +323,9 @@ func (r *ShippingAddressRepo) SetDefaultShippingAddress(ctx context.Context, id 
 	var oldDefaultID int64
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
+		if _, err := q.LockUserForAddress(ctx, userID); err != nil {
+			return err
+		}
 		if _, err := q.GetShippingAddress(ctx, db.GetShippingAddressParams{ID: id, UserID: userID}); err != nil {
 			if stderrors.Is(err, pgx.ErrNoRows) {
 				return biz.ErrShippingAddressNotFound

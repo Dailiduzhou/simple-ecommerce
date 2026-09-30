@@ -32,7 +32,7 @@ func (u *orderServiceUsecase) CancelOrder(_ context.Context, _ int64, userID int
 
 func TestOrderService_AllOperationsUseAuthenticatedOwner(t *testing.T) {
 	uc := &orderServiceUsecase{order: &biz.Order{ID: 1, UserID: 42, TotalAmount: 10000, Currency: "CNY", Items: []biz.OrderItem{{ProductID: 3, Quantity: 2, UnitPrice: 5000}}}}
-	service := NewOrderService(uc)
+	service := NewOrderService(uc, nil)
 	ctx := authenticatedPaymentContext(42, "user")
 	created, err := service.CreateOrder(ctx, &pb.CreateOrderRequest{AddressId: 9, IdempotencyKey: "checkout-42", Items: []*pb.OrderItemInput{{ProductId: 3, Quantity: 2}}})
 	require.NoError(t, err)
@@ -52,7 +52,7 @@ func TestOrderService_PassesTrimmedIdempotencyKeyToUsecase(t *testing.T) {
 	// Key validation lives in the biz layer; the service only forwards the
 	// trimmed value so the two layers cannot drift apart.
 	uc := &orderServiceUsecase{order: &biz.Order{}}
-	service := NewOrderService(uc)
+	service := NewOrderService(uc, nil)
 	_, err := service.CreateOrder(authenticatedPaymentContext(42, "user"), &pb.CreateOrderRequest{
 		AddressId: 1, IdempotencyKey: "  checkout-42  ", Items: []*pb.OrderItemInput{{ProductId: 1, Quantity: 1}},
 	})

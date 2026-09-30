@@ -38,7 +38,7 @@ func TestDetailNegativeCachesExpire(t *testing.T) {
 			case "product":
 				key = redisKey("product", 42, "g", 0)
 				q.EXPECT().GetProduct(gomock.Any(), int64(42)).Return(db.Product{}, pgx.ErrNoRows).Times(2)
-				r := NewProductRepo(d, log.DefaultLogger)
+				r := NewProductRepo(d, nil, log.DefaultLogger)
 				read = func() {
 					value, err := r.GetProduct(ctx, 42)
 					require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestCacheFallbackAndDatabaseErrors(t *testing.T) {
 			q := mockdb.NewMockQuerier(gomock.NewController(t))
 			mr := miniredis.RunT(t)
 			d := newTestData(t, q, mr)
-			r := NewProductRepo(d, log.DefaultLogger)
+			r := NewProductRepo(d, nil, log.DefaultLogger)
 			ctx := context.Background()
 			switch failure {
 			case "invalid_json":
@@ -134,7 +134,7 @@ func TestGenerationFailureNeverReadsOrWritesGenerationZero(t *testing.T) {
 			var read func()
 			switch entity {
 			case "product", "product_category":
-				r := NewProductRepo(d, log.DefaultLogger)
+				r := NewProductRepo(d, nil, log.DefaultLogger)
 				if entity == "product" {
 					genKey, oldKey = "product:list:gen", "product:list:0:10:0"
 					q.EXPECT().ListProducts(gomock.Any(), db.ListProductsParams{Limit: 10}).Return([]db.Product{}, nil).Times(2)
@@ -172,16 +172,16 @@ func TestGenerationFailureNeverReadsOrWritesGenerationZero(t *testing.T) {
 						require.Empty(t, rows)
 					}
 				} else {
-					genKey, oldKey = "order:user:ongoing:7:gen", "order:user:ongoing:7:0"
-					q.EXPECT().ListOngoingOrdersByUser(gomock.Any(), int64(7)).Return([]db.Order{}, nil).Times(2)
+					genKey, oldKey = "order:user:ongoing:7:gen", "order:user:ongoing:7:0:20:0"
+					q.EXPECT().ListOngoingOrdersByUser(gomock.Any(), db.ListOngoingOrdersByUserParams{UserID: 7, Limit: 20}).Return([]db.Order{}, nil).Times(2)
 					read = func() {
-						rows, err := r.ListOngoingOrdersByUser(ctx, 7)
+						rows, err := r.ListOngoingOrdersByUser(ctx, 7, 20, 0)
 						require.NoError(t, err)
 						require.Empty(t, rows)
 					}
 				}
 			case "payment":
-				genKey, oldKey = "payment:gen", "payment:42:g:0"
+				genKey, oldKey = "payment:42:gen", "payment:42:g:0"
 				q.EXPECT().GetPayment(gomock.Any(), int64(42)).Return(db.Payment{ID: 42}, nil).Times(2)
 				r := &PaymentRepo{data: d, log: log.NewHelper(log.DefaultLogger)}
 				read = func() {
@@ -224,7 +224,7 @@ func TestCacheMutationsWaitForCommitAndSnapshotValues(t *testing.T) {
 			genKey := redisKey(entity, 42, "gen")
 			if entity == "user" {
 				r := NewUserRepo(d, log.DefaultLogger)
-				r.setCache(ctx, oldKey, &biz.User{ID: 42, Nickname: "old"})
+				r.setCache(ctx, oldKey, &biz.UserProfile{ID: 42, Nickname: "old"})
 				q.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).Return(db.User{ID: 42, Nickname: "new", PasswordHash: "secret"}, nil)
 				first := q.EXPECT().GetUserByID(gomock.Any(), int64(42)).Return(db.User{ID: 42, Nickname: "transaction"}, nil)
 				q.EXPECT().GetUserByID(gomock.Any(), int64(42)).Return(db.User{ID: 42, Nickname: "new", PasswordHash: "secret"}, nil).After(first)
@@ -342,7 +342,7 @@ func TestProductSingleflightSeparatesGenerations(t *testing.T) {
 		t.Run(map[bool]string{false: "all", true: "category"}[byCategory], func(t *testing.T) {
 			q := mockdb.NewMockQuerier(gomock.NewController(t))
 			mr := miniredis.RunT(t)
-			r := NewProductRepo(newTestData(t, q, mr), log.DefaultLogger)
+			r := NewProductRepo(newTestData(t, q, mr), nil, log.DefaultLogger)
 			started, release := make(chan struct{}), make(chan struct{})
 			oldDone := make(chan struct{})
 			defer func() {
@@ -512,7 +512,7 @@ func TestLoginAlwaysLoadsCurrentCredentials(t *testing.T) {
 	mr := miniredis.RunT(t)
 	r := NewUserRepo(newTestData(t, q, mr), log.DefaultLogger)
 	ctx := context.Background()
-	r.setCache(ctx, redisKey("user", 42, "g", 0), &biz.User{ID: 42, Nickname: "cached"})
+	r.setCache(ctx, redisKey("user", 42, "g", 0), &biz.UserProfile{ID: 42, Nickname: "cached"})
 	first := q.EXPECT().GetUserByPhoneHash(gomock.Any(), "hash42").Return(db.User{ID: 42, PasswordHash: "password-one"}, nil)
 	q.EXPECT().GetUserByPhoneHash(gomock.Any(), "hash42").Return(db.User{ID: 42, PasswordHash: "password-two"}, nil).After(first)
 	for _, password := range []string{"password-one", "password-two"} {

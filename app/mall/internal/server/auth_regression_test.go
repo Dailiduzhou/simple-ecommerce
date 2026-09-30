@@ -68,10 +68,12 @@ func (*transportCategoryRepo) CreateCategory(context.Context, int64, string, int
 	return &biz.Category{ID: 1, Name: "test"}, nil
 }
 
+// These tests exercise real cost-12 bcrypt under -race. Give the server
+// deadline the same headroom as the client so session persistence is tested.
 func TestAccountRevocationThroughTransports(t *testing.T) {
 	for _, transport := range []string{"http", "grpc"} {
 		t.Run(transport, func(t *testing.T) {
-			repo := &transportAccountRepo{user: &biz.User{ID: 1, Role: "admin"}}
+			repo := &transportAccountRepo{user: &biz.User{ID: 1, Role: "admin", AuthVersion: 1}}
 			mr := miniredis.RunT(t)
 			rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 			t.Cleanup(func() { _ = rdb.Close() })
@@ -84,16 +86,15 @@ func TestAccountRevocationThroughTransports(t *testing.T) {
 			auth := biz.NewAuthUsecase(repo, authRepo, ac)
 			user := service.NewUserService(auth, biz.NewUserUsecase(repo, authRepo, ac, log.DefaultLogger), nil, nil, log.DefaultLogger)
 			mall := service.NewMallService(nil, biz.NewCategoryUsecase(&transportCategoryRepo{}, log.DefaultLogger), nil, nil, log.DefaultLogger)
-			order := service.NewOrderService(nil)
-			payment := service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger)
+			order := service.NewOrderService(nil, nil)
+			payment := service.NewPaymentService(&callbackPaymentUsecase{}, nil, nil, log.DefaultLogger)
 			community := service.NewCommunityService(nil, nil)
 			media := service.NewMediaService(nil)
-			access, e := auth.GenerateAccessToken(1, "admin")
+			pair, e := auth.StartSession(context.Background(), &biz.User{ID: 1, Role: "admin", AuthVersion: 1})
 			require.NoError(t, e)
-			refresh, e := auth.GenerateRefreshToken(1, "admin")
-			require.NoError(t, e)
+			access, refresh := pair.AccessToken, pair.RefreshToken
 			if transport == "http" {
-				srv := NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{}}, ac, auth, mall, user, order, payment, community, media, &communityLimiter{}, log.DefaultLogger)
+				srv := NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{Timeout: durationpb.New(30 * time.Second)}}, ac, auth, mall, user, order, payment, community, media, &communityLimiter{}, log.DefaultLogger)
 				invoke := func(method, path, body string) *httptest.ResponseRecorder {
 					r := httptest.NewRequest(method, path, strings.NewReader(body))
 					r.Header.Set("Authorization", "Bearer "+access)
@@ -145,7 +146,7 @@ func TestAccountRevocationThroughTransports(t *testing.T) {
 				}
 				return
 			}
-			srv := NewGRPCServer(&conf.Server{Grpc: &conf.Server_GRPC{Addr: "127.0.0.1:0"}}, ac, auth, mall, user, order, payment, community, media, &communityLimiter{}, log.DefaultLogger)
+			srv := NewGRPCServer(&conf.Server{Grpc: &conf.Server_GRPC{Addr: "127.0.0.1:0", Timeout: durationpb.New(30 * time.Second)}}, ac, auth, mall, user, order, payment, community, media, &communityLimiter{}, log.DefaultLogger)
 			endpoint, e := srv.Endpoint()
 			require.NoError(t, e)
 			done := make(chan error, 1)
@@ -218,7 +219,7 @@ func TestAuthEndpointsAreThrottledThroughHTTP(t *testing.T) {
 	authRepo := data.NewAuthRepo(rdb, log.DefaultLogger)
 	auth := biz.NewAuthUsecase(&transportAccountRepo{user: &biz.User{ID: 1, Role: "admin"}}, authRepo, ac)
 	user := service.NewUserService(auth, biz.NewUserUsecase(&transportAccountRepo{}, authRepo, ac, log.DefaultLogger), nil, nil, log.DefaultLogger)
-	srv := NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{}}, ac, auth, service.NewMallService(nil, nil, nil, nil, log.DefaultLogger), user, service.NewOrderService(nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, log.DefaultLogger), service.NewCommunityService(nil, nil), service.NewMediaService(nil), limiter, log.DefaultLogger)
+	srv := NewHTTPServer(&conf.Server{Http: &conf.Server_HTTP{Timeout: durationpb.New(30 * time.Second)}}, ac, auth, service.NewMallService(nil, nil, nil, nil, log.DefaultLogger), user, service.NewOrderService(nil, nil), service.NewPaymentService(&callbackPaymentUsecase{}, nil, nil, log.DefaultLogger), service.NewCommunityService(nil, nil), service.NewMediaService(nil), limiter, log.DefaultLogger)
 	invoke := func(path, body, remoteAddr string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", path, strings.NewReader(body))
 		r.RemoteAddr = remoteAddr

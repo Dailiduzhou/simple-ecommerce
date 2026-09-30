@@ -264,6 +264,7 @@ paths:
             parameters:
                 - name: status
                   in: query
+                  description: 'Display events: 0=upcoming, 1=active, 2=ended; omitted means all.'
                   schema:
                     type: integer
                     format: int32
@@ -272,11 +273,14 @@ paths:
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
+                    maximum: 100
                 - name: page
                   in: query
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
             responses:
                 "200":
                     description: OK
@@ -980,6 +984,180 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+    /v1/orders/{id}/complete:
+        post:
+            tags:
+                - Order
+            summary: The order owner or an administrator confirms receipt; only shipped orders.
+            description: The order owner or an administrator confirms receipt; only shipped orders.
+            operationId: Order_CompleteOrder
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.order.v1.CompleteOrderRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.order.v1.OrderFulfillmentAction'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/orders/{id}/fulfillment-actions:
+        get:
+            tags:
+                - Order
+            summary: Owner/admin audit history, bounded to dispatch and completion records.
+            description: Owner/admin audit history, bounded to dispatch and completion records.
+            operationId: Order_ListOrderFulfillmentActions
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.order.v1.ListOrderFulfillmentActionsReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/orders/{id}/ship:
+        post:
+            tags:
+                - Order
+            summary: Administrator dispatch after a settled payment and with no pending refund.
+            description: Administrator dispatch after a settled payment and with no pending refund.
+            operationId: Order_ShipOrder
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.order.v1.ShipOrderRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.order.v1.OrderFulfillmentAction'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/orders/{order_id}/payment:
         get:
             tags:
@@ -1008,6 +1186,81 @@ paths:
                                 $ref: '#/components/schemas/errors.Status'
                 "401":
                     description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/payment-reconciliations:
+        get:
+            tags:
+                - Payment
+            summary: List payment reconciliations
+            operationId: Payment_ListPaymentReconciliations
+            parameters:
+                - name: afterId
+                  in: query
+                  schema:
+                    type: string
+                    format: int64
+                    x-minimum: 0
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                    minimum: 0
+                    maximum: 100
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.ListReconciliationCasesReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
                     content:
                         application/json:
                             schema:
@@ -1324,6 +1577,227 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.payment.v1.PaymentInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/payments/{id}/reconciliation/actions:
+        get:
+            tags:
+                - Payment
+            summary: List payment reconciliation actions
+            operationId: Payment_ListPaymentReconciliationActions
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+                - name: afterId
+                  in: query
+                  schema:
+                    type: string
+                    format: int64
+                    x-minimum: 0
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                    minimum: 0
+                    maximum: 100
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.ListReconciliationActionsReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/payments/{id}/reconciliation/resolve:
+        post:
+            tags:
+                - Payment
+            summary: Resolve payment reconciliation
+            operationId: Payment_ResolvePaymentReconciliation
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.payment.v1.ReconciliationCommandRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.ReconciliationActionInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "408":
+                    description: 请求或资源已超时
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "502":
+                    description: 上游渠道（支付网关）返回失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/payments/{id}/reconciliation/retry:
+        post:
+            tags:
+                - Payment
+            summary: 管理员人工对账；重试、解决与审计写入同一事务。
+            description: 管理员人工对账；重试、解决与审计写入同一事务。解决必须有证据，且不能覆盖资金事实。
+            operationId: Payment_RetryPaymentReconciliation
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.payment.v1.ReconciliationCommandRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.payment.v1.ReconciliationActionInfo'
                 "400":
                     description: 请求不合法：报文格式、参数校验或业务规则校验失败
                     content:
@@ -2271,11 +2745,14 @@ paths:
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
+                    maximum: 100
                 - name: page
                   in: query
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
             responses:
                 "200":
                     description: OK
@@ -2560,6 +3037,70 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/api.mall.v1.UpdateProductStatusReply'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+    /v1/products/{id}/stock-adjustments:
+        post:
+            tags:
+                - Mall
+            summary: Inventory changes are audited deltas; content editing cannot set stock.
+            description: Inventory changes are audited deltas; content editing cannot set stock.
+            operationId: Mall_AdjustProductStock
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.mall.v1.AdjustProductStockRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.mall.v1.StockAdjustment'
                 "400":
                     description: 请求不合法：报文格式、参数校验或业务规则校验失败
                     content:
@@ -3247,7 +3788,10 @@ paths:
         delete:
             tags:
                 - User
-            summary: Delete user
+            summary: Physically deletes accounts without retained transaction/audit history.
+            description: |-
+                Physically deletes accounts without retained transaction/audit history.
+                 Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
             operationId: User_DeleteUser
             parameters:
                 - name: id
@@ -3672,11 +4216,14 @@ paths:
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
+                    maximum: 100
                 - name: page
                   in: query
                   schema:
                     type: integer
                     format: int32
+                    minimum: 0
             responses:
                 "200":
                     description: OK
@@ -3959,6 +4506,27 @@ components:
                 - title
                 - content
                 - expectedVersion
+        api.mall.v1.AdjustProductStockRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+                delta:
+                    type: integer
+                    format: int32
+                reason:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+                idempotencyKey:
+                    type: string
+                    minLength: 8
+                    maxLength: 64
+            required:
+                - reason
+                - idempotencyKey
         api.mall.v1.Category:
             type: object
             properties:
@@ -4003,6 +4571,9 @@ components:
                 endAt:
                     type: string
                     format: date-time
+            description: |-
+                Creates display content only; product.discount is an independent catalogue
+                 discount and is never interpreted as a timed campaign allocation.
         api.mall.v1.CreateProductRequest:
             type: object
             properties:
@@ -4063,6 +4634,9 @@ components:
                 createdAt:
                     type: string
                     format: date-time
+            description: |-
+                Display-only scheduled content, not a checkout promotion. Events do not
+                 reserve promotional inventory, override prices, or enforce purchase quotas.
         api.mall.v1.ListCategoriesReply:
             type: object
             properties:
@@ -4139,6 +4713,31 @@ components:
                         Discounted unit price in minor units computed by the server with the same
                          rounding the order flow uses; rendering it keeps display equal to charge.
                     format: int64
+        api.mall.v1.StockAdjustment:
+            type: object
+            properties:
+                id:
+                    type: string
+                    format: int64
+                productId:
+                    type: string
+                    format: int64
+                actorId:
+                    type: string
+                    format: int64
+                delta:
+                    type: integer
+                    format: int32
+                resultingStock:
+                    type: integer
+                    format: int32
+                reason:
+                    type: string
+                idempotencyKey:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
         api.mall.v1.TodayWellnessReply:
             type: object
             properties:
@@ -4211,9 +4810,6 @@ components:
                     type: string
                 discount:
                     type: string
-                stock:
-                    type: integer
-                    format: int32
                 coverImage:
                     type: string
                 mediaAssets:
@@ -4306,6 +4902,24 @@ components:
                 userId:
                     type: string
                     format: int64
+        api.order.v1.CompleteOrderRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+                idempotencyKey:
+                    type: string
+                    minLength: 8
+                    maxLength: 64
+                reason:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+            required:
+                - idempotencyKey
+                - reason
         api.order.v1.CreateOrderRequest:
             type: object
             properties:
@@ -4328,6 +4942,13 @@ components:
             required:
                 - items
                 - idempotencyKey
+        api.order.v1.ListOrderFulfillmentActionsReply:
+            type: object
+            properties:
+                actions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.order.v1.OrderFulfillmentAction'
         api.order.v1.ListOrdersReply:
             type: object
             properties:
@@ -4338,6 +4959,35 @@ components:
                 total:
                     type: integer
                     format: int32
+        api.order.v1.OrderFulfillmentAction:
+            type: object
+            properties:
+                id:
+                    type: string
+                    format: int64
+                orderId:
+                    type: string
+                    format: int64
+                actorId:
+                    type: string
+                    format: int64
+                action:
+                    type: string
+                fromStatus:
+                    type: string
+                toStatus:
+                    type: string
+                idempotencyKey:
+                    type: string
+                reason:
+                    type: string
+                carrier:
+                    type: string
+                trackingNumber:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
         api.order.v1.OrderInfo:
             type: object
             properties:
@@ -4370,6 +5020,10 @@ components:
                     type: string
                 currency:
                     type: string
+                shipping:
+                    allOf:
+                        - $ref: '#/components/schemas/api.order.v1.OrderShippingSnapshot'
+                    description: Immutable checkout snapshot; address_id is only the historical source ID.
         api.order.v1.OrderItem:
             type: object
             properties:
@@ -4400,6 +5054,49 @@ components:
             required:
                 - productId
                 - quantity
+        api.order.v1.OrderShippingSnapshot:
+            type: object
+            properties:
+                receiverName:
+                    type: string
+                receiverPhone:
+                    type: string
+                province:
+                    type: string
+                city:
+                    type: string
+                district:
+                    type: string
+                detailAddress:
+                    type: string
+        api.order.v1.ShipOrderRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+                idempotencyKey:
+                    type: string
+                    minLength: 8
+                    maxLength: 64
+                reason:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+                carrier:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                trackingNumber:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+            required:
+                - idempotencyKey
+                - reason
+                - carrier
+                - trackingNumber
         api.payment.v1.ClosePaymentReply:
             type: object
             properties:
@@ -4483,6 +5180,20 @@ components:
             required:
                 - orderNo
                 - method
+        api.payment.v1.ListReconciliationActionsReply:
+            type: object
+            properties:
+                actions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.payment.v1.ReconciliationActionInfo'
+        api.payment.v1.ListReconciliationCasesReply:
+            type: object
+            properties:
+                cases:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/api.payment.v1.ReconciliationCaseInfo'
         api.payment.v1.MQJobError:
             type: object
             properties:
@@ -4572,6 +5283,9 @@ components:
                     type: string
                 reconciliationReason:
                     type: string
+                reconciliationVersion:
+                    type: string
+                    format: int64
         api.payment.v1.QueryPaymentReply:
             type: object
             properties:
@@ -4587,6 +5301,76 @@ components:
                     format: int64
                 currency:
                     type: string
+        api.payment.v1.ReconciliationActionInfo:
+            type: object
+            properties:
+                id:
+                    type: string
+                    format: int64
+                paymentId:
+                    type: string
+                    format: int64
+                actorId:
+                    type: string
+                    format: int64
+                action:
+                    type: string
+                fromStatus:
+                    type: string
+                toStatus:
+                    type: string
+                fromVersion:
+                    type: string
+                    format: int64
+                toVersion:
+                    type: string
+                    format: int64
+                idempotencyKey:
+                    type: string
+                reason:
+                    type: string
+                evidence:
+                    type: string
+                jobId:
+                    type: string
+                    format: int64
+                createdAt:
+                    type: string
+                    format: date-time
+        api.payment.v1.ReconciliationCaseInfo:
+            type: object
+            properties:
+                payment:
+                    $ref: '#/components/schemas/api.payment.v1.PaymentInfo'
+                detail:
+                    type: string
+        api.payment.v1.ReconciliationCommandRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+                expectedVersion:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+                idempotencyKey:
+                    type: string
+                    minLength: 8
+                    maxLength: 64
+                reason:
+                    type: string
+                    minLength: 1
+                    maxLength: 255
+                evidence:
+                    type: string
+                    description: 必填于解决命令；渠道查验凭据或补偿记录，不应包含个人敏感信息。
+                    maxLength: 2000
+            required:
+                - expectedVersion
+                - idempotencyKey
+                - reason
         api.payment.v1.RefundPaymentReply:
             type: object
             properties: {}

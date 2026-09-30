@@ -13,10 +13,13 @@ import (
 
 type OrderService struct {
 	pb.UnimplementedOrderServer
-	orderUc biz.OrderUsecase
+	orderUc     biz.OrderUsecase
+	fulfillment *biz.OrderFulfillmentUsecase
 }
 
-func NewOrderService(orderUc biz.OrderUsecase) *OrderService { return &OrderService{orderUc: orderUc} }
+func NewOrderService(orderUc biz.OrderUsecase, fulfillment *biz.OrderFulfillmentUsecase) *OrderService {
+	return &OrderService{orderUc: orderUc, fulfillment: fulfillment}
+}
 
 func (s *OrderService) CreateOrder(ctx context.Context, req *pb.CreateOrderRequest) (*pb.OrderInfo, error) {
 	claims, err := authenticatedClaims(ctx)
@@ -72,17 +75,11 @@ func (s *OrderService) ListOrders(ctx context.Context, req *pb.ListOrdersRequest
 	if err := requireResourceOwner(claims, req.UserId); err != nil {
 		return nil, err
 	}
-	page, size := req.Page, req.PageSize
-	if page <= 0 {
-		page = 1
+	pagination, err := biz.NewPage(req.Page, req.PageSize)
+	if err != nil {
+		return nil, err
 	}
-	if size <= 0 {
-		size = 20
-	}
-	if size > 100 {
-		size = 100
-	}
-	orders, total, err := s.orderUc.ListOrders(ctx, &biz.ListOrdersReq{UserID: claims.UserID, Ongoing: req.Ongoing, Limit: size, Offset: (page - 1) * size})
+	orders, total, err := s.orderUc.ListOrders(ctx, &biz.ListOrdersReq{UserID: claims.UserID, Ongoing: req.Ongoing, Limit: pagination.Limit, Offset: pagination.Offset})
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +116,10 @@ func toProtoOrder(order *biz.Order) *pb.OrderInfo {
 		CreatedAt: timestamppb.New(order.CreatedAt), UpdatedAt: timestamppb.New(order.UpdatedAt), Items: make([]*pb.OrderItem, len(order.Items)), OrderNo: order.OutTradeNo, Currency: order.Currency}
 	for i, item := range order.Items {
 		result.Items[i] = &pb.OrderItem{ProductId: item.ProductID, ProductName: item.ProductName, CoverImage: item.CoverImage, Quantity: item.Quantity, UnitPrice: minorAmountString(item.UnitPrice)}
+	}
+	if address := order.Shipping; address != nil {
+		result.Shipping = &pb.OrderShippingSnapshot{ReceiverName: address.ReceiverName, ReceiverPhone: address.ReceiverPhone,
+			Province: address.Province, City: address.City, District: address.District, DetailAddress: address.DetailAddress}
 	}
 	return result
 }

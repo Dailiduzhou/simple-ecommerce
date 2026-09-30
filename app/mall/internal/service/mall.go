@@ -49,11 +49,11 @@ func (s *MallService) GetProduct(ctx context.Context, req *pb.GetProductRequest)
 
 func (s *MallService) ListProducts(ctx context.Context, req *pb.ListProductsRequest) (*pb.ListProductsReply, error) {
 	pageSize := req.PageSize
-	if pageSize <= 0 {
+	if pageSize == 0 {
 		pageSize = 10
 	}
 	page := req.Page
-	if page <= 0 {
+	if page == 0 {
 		page = 1
 	}
 
@@ -83,7 +83,7 @@ func (s *MallService) UpdateProduct(ctx context.Context, req *pb.UpdateProductRe
 	}
 	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
-	p, err := s.productUc.UpdateProduct(ctx, req.Id, req.CategoryId, req.Name, req.Price, req.Discount, req.Stock, req.CoverImage, mediaAssets, req.Description)
+	p, err := s.productUc.UpdateProduct(ctx, req.Id, req.CategoryId, req.Name, req.Price, req.Discount, req.CoverImage, mediaAssets, req.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +102,20 @@ func (s *MallService) UpdateProductStatus(ctx context.Context, req *pb.UpdatePro
 		return nil, err
 	}
 	return &pb.UpdateProductStatusReply{}, nil
+}
+
+func (s *MallService) AdjustProductStock(ctx context.Context, req *pb.AdjustProductStockRequest) (*pb.StockAdjustment, error) {
+	claims, err := requireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	adjustment, err := s.productUc.AdjustStock(ctx, biz.StockAdjustmentInput{ProductID: req.Id, ActorID: claims.UserID, Delta: req.Delta, Reason: req.Reason, IdempotencyKey: req.IdempotencyKey})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.StockAdjustment{Id: adjustment.ID, ProductId: adjustment.ProductID, ActorId: adjustment.ActorID,
+		Delta: adjustment.Delta, ResultingStock: adjustment.ResultingStock, Reason: adjustment.Reason,
+		IdempotencyKey: adjustment.IdempotencyKey, CreatedAt: timestamppb.New(adjustment.CreatedAt)}, nil
 }
 
 func (s *MallService) DeleteProduct(ctx context.Context, req *pb.DeleteProductRequest) (*pb.DeleteProductReply, error) {
@@ -199,11 +213,11 @@ func (s *MallService) GetEvent(ctx context.Context, req *pb.GetEventRequest) (*p
 
 func (s *MallService) ListEvents(ctx context.Context, req *pb.ListEventsRequest) (*pb.ListEventsReply, error) {
 	pageSize := req.PageSize
-	if pageSize <= 0 {
+	if pageSize == 0 {
 		pageSize = 10
 	}
 	page := req.Page
-	if page <= 0 {
+	if page == 0 {
 		page = 1
 	}
 
@@ -277,17 +291,17 @@ func toProtoProduct(p *biz.Product) (*pb.Product, error) {
 		return nil, err
 	}
 	proto := &pb.Product{
-		Id:                 p.ID,
-		CategoryId:         p.CategoryID,
-		Name:               p.Name,
-		Price:              p.Price.String(),
-		Discount:           p.Discount.String(),
+		Id:                  p.ID,
+		CategoryId:          p.CategoryID,
+		Name:                p.Name,
+		Price:               p.Price.String(),
+		Discount:            p.Discount.String(),
 		EffectivePriceMinor: effectiveMinor,
-		Stock:              p.Stock,
-		Status:             int32(p.Status),
-		Description:        p.Description,
-		CoverImage:         coverImageURL(p.CoverImage),
-		MediaAssets:        mediaInfoToProto(p.MediaAssets),
+		Stock:               p.Stock,
+		Status:              int32(p.Status),
+		Description:         p.Description,
+		CoverImage:          coverImageURL(p.CoverImage),
+		MediaAssets:         mediaInfoToProto(p.MediaAssets),
 	}
 	if !p.CreatedAt.IsZero() {
 		proto.CreatedAt = timestamppb.New(p.CreatedAt)
