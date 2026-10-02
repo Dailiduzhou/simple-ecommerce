@@ -33,6 +33,18 @@ service Order {
       body: "*"
     };
   }
+  // Administrator dispatch after a settled payment and with no pending refund.
+  rpc ShipOrder (ShipOrderRequest) returns (OrderFulfillmentAction) {
+    option (google.api.http) = {post: "/v1/orders/{id}/ship" body: "*"};
+  }
+  // The order owner or an administrator confirms receipt; only shipped orders.
+  rpc CompleteOrder (CompleteOrderRequest) returns (OrderFulfillmentAction) {
+    option (google.api.http) = {post: "/v1/orders/{id}/complete" body: "*"};
+  }
+  // Owner/admin audit history, bounded to dispatch and completion records.
+  rpc ListOrderFulfillmentActions (ListOrderFulfillmentActionsRequest) returns (ListOrderFulfillmentActionsReply) {
+    option (google.api.http) = {get: "/v1/orders/{id}/fulfillment-actions"};
+  }
 }
 
 message OrderItem {
@@ -55,6 +67,17 @@ message OrderInfo {
   google.protobuf.Timestamp updated_at = 9;
   string order_no = 10;
   string currency = 11;
+  // Immutable checkout snapshot; address_id is only the historical source ID.
+  OrderShippingSnapshot shipping = 12;
+}
+
+message OrderShippingSnapshot {
+  string receiver_name = 1;
+  string receiver_phone = 2;
+  string province = 3;
+  string city = 4;
+  string district = 5;
+  string detail_address = 6;
 }
 
 message CreateOrderRequest {
@@ -77,8 +100,8 @@ message GetOrderRequest {
 message ListOrdersRequest {
   int64 user_id    = 1;
   bool  ongoing    = 2; // true 只查未完成
-  int32 page_size  = 3;
-  int32 page       = 4;
+  int32 page_size  = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
+  int32 page       = 4 [(buf.validate.field).int32.gte = 0];
 }
 message ListOrdersReply {
   repeated OrderInfo orders = 1;
@@ -90,3 +113,35 @@ message CancelOrderRequest {
   int64 user_id = 2;
 }
 message CancelOrderReply {}
+
+message ShipOrderRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+  string idempotency_key = 2 [(buf.validate.field).string = {min_len: 8, max_len: 64}];
+  string reason = 3 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  string carrier = 4 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+  string tracking_number = 5 [(buf.validate.field).string = {min_len: 1, max_len: 128}];
+}
+message CompleteOrderRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+  string idempotency_key = 2 [(buf.validate.field).string = {min_len: 8, max_len: 64}];
+  string reason = 3 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+}
+message OrderFulfillmentAction {
+  int64 id = 1;
+  int64 order_id = 2;
+  int64 actor_id = 3;
+  string action = 4;
+  string from_status = 5;
+  string to_status = 6;
+  string idempotency_key = 7;
+  string reason = 8;
+  string carrier = 9;
+  string tracking_number = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+message ListOrderFulfillmentActionsRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+}
+message ListOrderFulfillmentActionsReply {
+  repeated OrderFulfillmentAction actions = 1;
+}

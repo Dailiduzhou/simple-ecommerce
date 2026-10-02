@@ -815,6 +815,8 @@ func (x *CreateShippingAddressRequest) GetIsDefault() bool {
 type ListShippingAddressesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"` // 默认 20
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -852,6 +854,20 @@ func (*ListShippingAddressesRequest) Descriptor() ([]byte, []int) {
 func (x *ListShippingAddressesRequest) GetUserId() int64 {
 	if x != nil {
 		return x.UserId
+	}
+	return 0
+}
+
+func (x *ListShippingAddressesRequest) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *ListShippingAddressesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
 	}
 	return 0
 }
@@ -1883,9 +1899,11 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\vaddress_tag\x18\b \x01(\tR\n" +
 	"addressTag\x12\x1d\n" +
 	"\n" +
-	"is_default\x18\t \x01(\bR\tisDefault\"7\n" +
+	"is_default\x18\t \x01(\bR\tisDefault\"|\n" +
 	"\x1cListShippingAddressesRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\x03R\x06userId\"X\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1b\n" +
+	"\x04page\x18\x02 \x01(\x05B\a\xbaH\x04\x1a\x02(\x00R\x04page\x12&\n" +
+	"\tpage_size\x18\x03 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\bpageSize\"X\n" +
 	"\x1aListShippingAddressesReply\x12:\n" +
 	"\taddresses\x18\x01 \x03(\v2\x1c.api.user.v1.ShippingAddressR\taddresses\"\xa7\x02\n" +
 	"\x1cUpdateShippingAddressRequest\x12\x0e\n" +
