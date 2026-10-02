@@ -106,11 +106,17 @@ const listSubCategories = `-- name: ListSubCategories :many
 SELECT id, parent_id, name, sort_order, created_at, updated_at
 FROM categories
 WHERE parent_id = $1
-ORDER BY sort_order, id
+ORDER BY sort_order, id LIMIT $2 OFFSET $3
 `
 
-func (q *Queries) ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error) {
-	rows, err := q.db.Query(ctx, listSubCategories, parentID)
+type ListSubCategoriesParams struct {
+	ParentID pgtype.Int8
+	Limit    int32
+	Offset   int32
+}
+
+func (q *Queries) ListSubCategories(ctx context.Context, arg ListSubCategoriesParams) ([]Category, error) {
+	rows, err := q.db.Query(ctx, listSubCategories, arg.ParentID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -140,11 +146,16 @@ const listTopCategories = `-- name: ListTopCategories :many
 SELECT id, parent_id, name, sort_order, created_at, updated_at
 FROM categories
 WHERE parent_id IS NULL
-ORDER BY sort_order, id
+ORDER BY sort_order, id LIMIT $1 OFFSET $2
 `
 
-func (q *Queries) ListTopCategories(ctx context.Context) ([]Category, error) {
-	rows, err := q.db.Query(ctx, listTopCategories)
+type ListTopCategoriesParams struct {
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListTopCategories(ctx context.Context, arg ListTopCategoriesParams) ([]Category, error) {
+	rows, err := q.db.Query(ctx, listTopCategories, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

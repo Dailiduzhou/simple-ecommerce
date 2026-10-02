@@ -163,15 +163,52 @@ func (q *Queries) GetShippingAddress(ctx context.Context, arg GetShippingAddress
 	return i, err
 }
 
+const getShippingAddressForSnapshot = `-- name: GetShippingAddressForSnapshot :one
+SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at FROM shipping_addresses WHERE id=$1 AND user_id=$2 FOR SHARE
+`
+
+type GetShippingAddressForSnapshotParams struct {
+	ID     int64
+	UserID int64
+}
+
+// Prevent update/delete until the order has copied this exact address row.
+func (q *Queries) GetShippingAddressForSnapshot(ctx context.Context, arg GetShippingAddressForSnapshotParams) (ShippingAddress, error) {
+	row := q.db.QueryRow(ctx, getShippingAddressForSnapshot, arg.ID, arg.UserID)
+	var i ShippingAddress
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiverName,
+		&i.ReceiverPhoneHash,
+		&i.ReceiverPhoneEncrypt,
+		&i.Province,
+		&i.City,
+		&i.District,
+		&i.DetailAddress,
+		&i.AddressTag,
+		&i.IsDefault,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listShippingAddressesByUser = `-- name: ListShippingAddressesByUser :many
 SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at
 FROM shipping_addresses
 WHERE user_id = $1
-ORDER BY is_default DESC, id DESC
+ORDER BY is_default DESC, id DESC LIMIT $2 OFFSET $3
 `
 
-func (q *Queries) ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error) {
-	rows, err := q.db.Query(ctx, listShippingAddressesByUser, userID)
+type ListShippingAddressesByUserParams struct {
+	UserID int64
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListShippingAddressesByUser(ctx context.Context, arg ListShippingAddressesByUserParams) ([]ShippingAddress, error) {
+	rows, err := q.db.Query(ctx, listShippingAddressesByUser, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
