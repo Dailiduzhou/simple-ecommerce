@@ -46,10 +46,16 @@ type UserHTTPServer interface {
 	CreateShippingAddress(context.Context, *CreateShippingAddressRequest) (*ShippingAddress, error)
 	DeleteBrowsingHistoryItem(context.Context, *DeleteBrowsingHistoryItemRequest) (*DeleteBrowsingHistoryItemReply, error)
 	DeleteShippingAddress(context.Context, *DeleteShippingAddressRequest) (*DeleteShippingAddressReply, error)
+	// DeleteUser Physically deletes accounts without retained transaction/audit history.
+	// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
 	DeleteUser(context.Context, *DeleteUserRequest) (*DeleteUserReply, error)
 	GetUser(context.Context, *GetUserRequest) (*UserInfo, error)
 	ListBrowsingHistory(context.Context, *ListBrowsingHistoryRequest) (*ListBrowsingHistoryReply, error)
 	ListShippingAddresses(context.Context, *ListShippingAddressesRequest) (*ListShippingAddressesReply, error)
+	// Login Password checks share an account quota across all IPs (default burst 5,
+	// one check replenished every 30 seconds). Rejections do not extend the wait.
+	// HTTP 429 / USER_LOGIN_LOCKED includes metadata.retry_after_seconds;
+	// credential checks also fail closed with 503 when the quota store is unavailable.
 	Login(context.Context, *LoginRequest) (*LoginReply, error)
 	Logout(context.Context, *LogoutRequest) (*LogoutReply, error)
 	RecordProductView(context.Context, *RecordProductViewRequest) (*RecordProductViewReply, error)
@@ -470,10 +476,16 @@ type UserHTTPClient interface {
 	CreateShippingAddress(ctx context.Context, req *CreateShippingAddressRequest, opts ...http.CallOption) (rsp *ShippingAddress, err error)
 	DeleteBrowsingHistoryItem(ctx context.Context, req *DeleteBrowsingHistoryItemRequest, opts ...http.CallOption) (rsp *DeleteBrowsingHistoryItemReply, err error)
 	DeleteShippingAddress(ctx context.Context, req *DeleteShippingAddressRequest, opts ...http.CallOption) (rsp *DeleteShippingAddressReply, err error)
+	// DeleteUser Physically deletes accounts without retained transaction/audit history.
+	// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
 	DeleteUser(ctx context.Context, req *DeleteUserRequest, opts ...http.CallOption) (rsp *DeleteUserReply, err error)
 	GetUser(ctx context.Context, req *GetUserRequest, opts ...http.CallOption) (rsp *UserInfo, err error)
 	ListBrowsingHistory(ctx context.Context, req *ListBrowsingHistoryRequest, opts ...http.CallOption) (rsp *ListBrowsingHistoryReply, err error)
 	ListShippingAddresses(ctx context.Context, req *ListShippingAddressesRequest, opts ...http.CallOption) (rsp *ListShippingAddressesReply, err error)
+	// Login Password checks share an account quota across all IPs (default burst 5,
+	// one check replenished every 30 seconds). Rejections do not extend the wait.
+	// HTTP 429 / USER_LOGIN_LOCKED includes metadata.retry_after_seconds;
+	// credential checks also fail closed with 503 when the quota store is unavailable.
 	Login(ctx context.Context, req *LoginRequest, opts ...http.CallOption) (rsp *LoginReply, err error)
 	Logout(ctx context.Context, req *LogoutRequest, opts ...http.CallOption) (rsp *LogoutReply, err error)
 	RecordProductView(ctx context.Context, req *RecordProductViewRequest, opts ...http.CallOption) (rsp *RecordProductViewReply, err error)
@@ -560,6 +572,8 @@ func (c *UserHTTPClientImpl) DeleteShippingAddress(ctx context.Context, in *Dele
 	return &out, nil
 }
 
+// DeleteUser Physically deletes accounts without retained transaction/audit history.
+// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
 func (c *UserHTTPClientImpl) DeleteUser(ctx context.Context, in *DeleteUserRequest, opts ...http.CallOption) (*DeleteUserReply, error) {
 	var out DeleteUserReply
 	pattern := "/v1/users/{id}"
@@ -612,6 +626,10 @@ func (c *UserHTTPClientImpl) ListShippingAddresses(ctx context.Context, in *List
 	return &out, nil
 }
 
+// Login Password checks share an account quota across all IPs (default burst 5,
+// one check replenished every 30 seconds). Rejections do not extend the wait.
+// HTTP 429 / USER_LOGIN_LOCKED includes metadata.retry_after_seconds;
+// credential checks also fail closed with 503 when the quota store is unavailable.
 func (c *UserHTTPClientImpl) Login(ctx context.Context, in *LoginRequest, opts ...http.CallOption) (*LoginReply, error) {
 	var out LoginReply
 	pattern := "/v1/users/login"
