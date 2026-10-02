@@ -37,7 +37,7 @@ func TestLastStockIdempotencyIntegration(t *testing.T) {
 			<-start
 			order, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{UserID: f.userID, AddressID: f.addressID, Currency: "CNY",
 				OutTradeNo: fmt.Sprintf("%s_order_%d", f.prefix, i), IdempotencyKey: f.prefix + "_key", RequestHash: f.prefix + "_hash",
-				ExpiresAt: time.Now().Add(30 * time.Minute), Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}}})
+				PaymentTimeout: 30 * time.Minute, Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}}})
 			results <- outcome{order, err}
 		}(i)
 	}
@@ -102,7 +102,7 @@ func TestFailedRefundRetryCrashCompensationIntegration(t *testing.T) {
 	orderID, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
 	// seedPayment defaults to a pending order. A successful payment being
 	// refunded must instead belong to a paid order with reserved stock.
-	_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status='paid' WHERE id=$1`, orderID)
+	_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status='paid', paid_payment_id=$2 WHERE id=$1`, orderID, paymentID)
 	require.NoError(t, err)
 	_, err = f.pool.Exec(f.ctx, `INSERT INTO order_items (order_id, product_id, quantity, unit_price_minor, product_name_snapshot) VALUES ($1,$2,1,12345,'snapshot')`, orderID, f.productID)
 	require.NoError(t, err)

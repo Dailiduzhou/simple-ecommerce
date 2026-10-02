@@ -71,7 +71,7 @@ func TestApplyPayQuery_SuccessUsesPaymentAndOrderCAS(t *testing.T) {
 	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPendingPayment}, nil)
 	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{payment}, nil)
 	q.EXPECT().RecordPaymentSuccess(gomock.Any(), db.RecordPaymentSuccessParams{ID: 1, ThirdPartyTxID: pgtype.Text{String: "tx_1", Valid: true}}).Return(succeeded, nil)
-	q.EXPECT().MarkOrderPaid(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
+	q.EXPECT().MarkOrderPaid(gomock.Any(), db.MarkOrderPaidParams{ID: 2, PaidPaymentID: pgtype.Int8{Int64: 1, Valid: true}}).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
 	q.EXPECT().GetOrder(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
 	d := newTestData(t, q, redisServer)
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
@@ -175,8 +175,7 @@ func TestApplyPayQuery_PayErrorOnClosePendingFailsPaymentAndCancelsOrder(t *test
 	q.EXPECT().RestoreOrderItemStock(gomock.Any(), int64(2)).Return(nil)
 	q.EXPECT().MarkOrderCancelled(gomock.Any(), int64(2)).Return(db.Order{ID: 2, Status: biz.OrderStatusCancelled}, nil)
 	q.EXPECT().GetOrder(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusCancelled}, nil)
-	q.EXPECT().ListOrderItems(gomock.Any(), int64(2)).Return([]db.OrderItem{{OrderID: 2, ProductID: 7}}, nil)
-	q.EXPECT().GetProduct(gomock.Any(), int64(7)).Return(db.Product{ID: 7, CategoryID: 5}, nil)
+	q.EXPECT().ListOrderProductCacheTargets(gomock.Any(), int64(2)).Return([]db.ListOrderProductCacheTargetsRow{{ID: 7, CategoryID: 5}}, nil)
 	d := newTestData(t, q, redisServer)
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
 	require.NoError(t, repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat", Trigger: "close_pay"}, result))
@@ -239,8 +238,7 @@ func TestOrderExpiry_CancelInvalidatesProductCaches(t *testing.T) {
 	q.EXPECT().MarkOrderCancelling(gomock.Any(), int64(2)).Return(db.Order{ID: 2, Status: biz.OrderStatusCancelling}, nil)
 	q.EXPECT().RestoreOrderItemStock(gomock.Any(), int64(2)).Return(nil)
 	q.EXPECT().MarkOrderCancelled(gomock.Any(), int64(2)).Return(db.Order{ID: 2, Status: biz.OrderStatusCancelled}, nil)
-	q.EXPECT().ListOrderItems(gomock.Any(), int64(2)).Return([]db.OrderItem{{OrderID: 2, ProductID: 7}}, nil)
-	q.EXPECT().GetProduct(gomock.Any(), int64(7)).Return(db.Product{ID: 7, CategoryID: 5}, nil)
+	q.EXPECT().ListOrderProductCacheTargets(gomock.Any(), int64(2)).Return([]db.ListOrderProductCacheTargetsRow{{ID: 7, CategoryID: 5}}, nil)
 	d := newTestData(t, q, redisServer)
 	repo := NewOrderExpiryRepo(d, testTxManager{q: q}, nil, log.DefaultLogger)
 	require.NoError(t, repo.ExpireOrder(context.Background(), 2))
@@ -254,9 +252,9 @@ func TestApplyPayQuery_RefundSettlesPendingRefundRecord(t *testing.T) {
 	payment := statePayment(biz.PaymentStatusSuccess)
 	result := stateResult(10000)
 	result.TradeState = biz.TradeStateRefund
-	refund := db.OrderRefund{ID: 11, OrderID: 2, UserID: 3, OutRefundNo: "rfnd_11", Status: biz.PaymentRefundStatusPending}
+	refund := db.OrderRefund{ID: 11, PaymentID: pgtype.Int8{Int64: 1, Valid: true}, OrderID: 2, UserID: 3, TotalAmountMinor: 10000, RefundAmountMinor: 10000, Currency: "CNY", Purpose: string(biz.RefundOrderCancel), OutRefundNo: "rfnd_11", Status: biz.PaymentRefundStatusPending}
 	q.EXPECT().GetPayment(gomock.Any(), int64(1)).Return(payment, nil)
-	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
+	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid, PaidPaymentID: pgtype.Int8{Int64: 1, Valid: true}}, nil)
 	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{payment}, nil)
 	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), gomock.Any()).Return(refund, nil)
 	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.MarkOrderRefundSuccessParams) (db.OrderRefund, error) {
@@ -265,9 +263,12 @@ func TestApplyPayQuery_RefundSettlesPendingRefundRecord(t *testing.T) {
 		settled.Status = biz.PaymentRefundStatusSuccess
 		return settled, nil
 	})
-	q.EXPECT().UpdatePaymentRefunded(gomock.Any(), int64(1)).Return(int64(1), nil)
+	settledPayment := payment
+	settledPayment.Status = biz.PaymentStatusRefunded
+	q.EXPECT().ConfirmPaymentRefunded(gomock.Any(), int64(1)).Return(settledPayment, nil)
 	q.EXPECT().MarkOrderRefunded(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusRefunded, IsCompleted: true}, nil)
 	q.EXPECT().RestoreOrderItemStock(gomock.Any(), int64(2)).Return(nil)
+	q.EXPECT().ListOrderProductCacheTargets(gomock.Any(), int64(2)).Return(nil, nil)
 	q.EXPECT().GetOrder(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPaid}, nil)
 	d := newTestData(t, q, redisServer)
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
@@ -386,12 +387,7 @@ func TestApplyPayQuery_RefundConflictOutsidePaidOrderRollsBack(t *testing.T) {
 	q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2, UserID: 3, Status: biz.OrderStatusPendingPayment}, nil)
 	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{payment}, nil)
 	q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), gomock.Any()).Return(refund, nil)
-	q.EXPECT().MarkOrderRefundSuccess(gomock.Any(), gomock.Any()).Return(refund, nil)
-	q.EXPECT().UpdatePaymentRefunded(gomock.Any(), int64(1)).Return(int64(1), nil)
-	// The order is not in 'paid' (for example it was already cancelled), so
-	// the whole refund settlement rolls back for a visible conflict instead
-	// of half-settling the story.
-	q.EXPECT().MarkOrderRefunded(gomock.Any(), int64(2)).Return(db.Order{}, pgx.ErrNoRows)
+	// Reject the inconsistent plan before settlement writes.
 	d := newTestData(t, q, redisServer)
 	repo := NewPaymentRepo(d, testTxManager{q: q}, log.DefaultLogger)
 	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, result)

@@ -37,6 +37,7 @@ func TestReviewPaymentMutationDoesNotPublishOldSnapshot(t *testing.T) {
 	d := newTestData(t, q, mr)
 	ctx := context.Background()
 	pending := statePayment(biz.PaymentStatusPending)
+	q.EXPECT().OrderIsExpired(gomock.Any(), pending.OrderID).Return(false, nil)
 	q.EXPECT().GetOrderForUpdate(gomock.Any(), pending.OrderID).Return(db.Order{ID: pending.OrderID, UserID: pending.UserID, TotalAmountMinor: pending.AmountMinor, Currency: pending.Currency, Status: biz.OrderStatusPendingPayment}, nil)
 	q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), pending.OrderID).Return([]db.Payment{pending}, nil)
 	var r *PaymentRepo
