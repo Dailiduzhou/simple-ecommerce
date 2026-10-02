@@ -12,13 +12,13 @@ WHERE id = $1;
 SELECT *
 FROM categories
 WHERE parent_id IS NULL
-ORDER BY sort_order, id;
+ORDER BY sort_order, id LIMIT $1 OFFSET $2;
 
 -- name: ListSubCategories :many
 SELECT *
 FROM categories
 WHERE parent_id = $1
-ORDER BY sort_order, id;
+ORDER BY sort_order, id LIMIT $2 OFFSET $3;
 
 -- name: UpdateCategory :one
 UPDATE categories
