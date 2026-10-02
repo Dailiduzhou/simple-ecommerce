@@ -89,6 +89,70 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderIte
 	return items, nil
 }
 
+const listOrderItemsByOrderIDs = `-- name: ListOrderItemsByOrderIDs :many
+SELECT id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at FROM order_items WHERE order_id=ANY($1::bigint[])
+ORDER BY order_id, id
+`
+
+func (q *Queries) ListOrderItemsByOrderIDs(ctx context.Context, dollar_1 []int64) ([]OrderItem, error) {
+	rows, err := q.db.Query(ctx, listOrderItemsByOrderIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrderItem
+	for rows.Next() {
+		var i OrderItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrderID,
+			&i.ProductID,
+			&i.Quantity,
+			&i.UnitPriceMinor,
+			&i.ProductNameSnapshot,
+			&i.CoverImageSnapshot,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrderProductCacheTargets = `-- name: ListOrderProductCacheTargets :many
+SELECT DISTINCT p.id, p.category_id FROM products p
+JOIN order_items oi ON oi.product_id = p.id WHERE oi.order_id = $1
+`
+
+type ListOrderProductCacheTargetsRow struct {
+	ID         int64
+	CategoryID int64
+}
+
+func (q *Queries) ListOrderProductCacheTargets(ctx context.Context, orderID int64) ([]ListOrderProductCacheTargetsRow, error) {
+	rows, err := q.db.Query(ctx, listOrderProductCacheTargets, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrderProductCacheTargetsRow
+	for rows.Next() {
+		var i ListOrderProductCacheTargetsRow
+		if err := rows.Scan(&i.ID, &i.CategoryID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const restoreOrderItemStock = `-- name: RestoreOrderItemStock :exec
 UPDATE products p
 SET stock = p.stock + oi.quantity,

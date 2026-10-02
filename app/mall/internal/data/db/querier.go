@@ -17,6 +17,7 @@ type Querier interface {
 	// second key is hashint8(media id), giving one session-level lock per media row
 	// that survives COMMIT/ROLLBACK and is released on unlock or session end.
 	AcquireMediaIOLock(ctx context.Context, dollar_1 int64) error
+	AdjustProductStock(ctx context.Context, arg AdjustProductStockParams) (Product, error)
 	BeginPaymentNotificationProcessing(ctx context.Context, id int64) (PaymentNotification, error)
 	BindPostImage(ctx context.Context, arg BindPostImageParams) error
 	CanReadMedia(ctx context.Context, arg CanReadMediaParams) (bool, error)
@@ -28,6 +29,7 @@ type Querier interface {
 	// Any product row still owns a foreign key to the category; soft-deleted rows
 	// count too, because the FK is not conditional on deleted_at.
 	CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error)
+	CountOngoingOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CountProducts(ctx context.Context) (int64, error)
 	CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error)
@@ -37,6 +39,7 @@ type Querier interface {
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
 	CreateMediaAsset(ctx context.Context, arg CreateMediaAssetParams) (MediaAsset, error)
 	CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error)
+	CreateOrderFulfillmentAction(ctx context.Context, arg CreateOrderFulfillmentActionParams) (OrderFulfillmentAction, error)
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error)
 	CreateOrderRefund(ctx context.Context, arg CreateOrderRefundParams) (OrderRefund, error)
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
@@ -45,10 +48,13 @@ type Querier interface {
 	CreatePaymentWithOutTradeNo(ctx context.Context, arg CreatePaymentWithOutTradeNoParams) (Payment, error)
 	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
 	CreateProduct(ctx context.Context, arg CreateProductParams) (Product, error)
+	CreateReconciliationAction(ctx context.Context, arg CreateReconciliationActionParams) (PaymentReconciliationAction, error)
 	CreateShippingAddress(ctx context.Context, arg CreateShippingAddressParams) (ShippingAddress, error)
+	CreateStockAdjustment(ctx context.Context, arg CreateStockAdjustmentParams) (StockAdjustment, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DecrProductStock(ctx context.Context, arg DecrProductStockParams) (int32, error)
 	DeleteBrowsingHistoryItem(ctx context.Context, arg DeleteBrowsingHistoryItemParams) error
+	DeleteCacheInvalidations(ctx context.Context, dollar_1 []int64) error
 	// 单条语句完成"没有子类、没有被商品引用"检查与删除：避免应用层
 	// check-then-delete 的 TOCTOU 竞争。返回 0 行表示未删除。
 	DeleteCategoryIfUnused(ctx context.Context, id int64) (int64, error)
@@ -82,6 +88,7 @@ type Querier interface {
 	// every other order-payment transaction (ApplyPayQuery, ExpireOrder,
 	// CancelOrderByUser); the inverted order would deadlock against them.
 	GetOrderForUpdateByPaymentID(ctx context.Context, id int64) (Order, error)
+	GetOrderFulfillmentAction(ctx context.Context, arg GetOrderFulfillmentActionParams) (OrderFulfillmentAction, error)
 	GetOrderRefundByPaymentID(ctx context.Context, paymentID pgtype.Int8) (OrderRefund, error)
 	GetPayment(ctx context.Context, id int64) (Payment, error)
 	GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (Payment, error)
@@ -94,7 +101,11 @@ type Querier interface {
 	GetPostStats(ctx context.Context, arg GetPostStatsParams) ([]GetPostStatsRow, error)
 	GetProduct(ctx context.Context, id int64) (Product, error)
 	GetProductForOrder(ctx context.Context, id int64) (Product, error)
+	GetReconciliationAction(ctx context.Context, arg GetReconciliationActionParams) (PaymentReconciliationAction, error)
 	GetShippingAddress(ctx context.Context, arg GetShippingAddressParams) (ShippingAddress, error)
+	// Prevent update/delete until the order has copied this exact address row.
+	GetShippingAddressForSnapshot(ctx context.Context, arg GetShippingAddressForSnapshotParams) (ShippingAddress, error)
+	GetStockAdjustment(ctx context.Context, arg GetStockAdjustmentParams) (StockAdjustment, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error)
 	GetVisiblePost(ctx context.Context, id int64) (GetVisiblePostRow, error)
@@ -106,8 +117,12 @@ type Querier interface {
 	ListCommentReplies(ctx context.Context, arg ListCommentRepliesParams) ([]ListCommentRepliesRow, error)
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
 	ListEventsByStatus(ctx context.Context, arg ListEventsByStatusParams) ([]Event, error)
-	ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]Order, error)
+	ListOngoingOrdersByUser(ctx context.Context, arg ListOngoingOrdersByUserParams) ([]Order, error)
+	// The unique order/action constraint and action CHECK bound each order to two records.
+	ListOrderFulfillmentActions(ctx context.Context, orderID int64) ([]OrderFulfillmentAction, error)
 	ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error)
+	ListOrderItemsByOrderIDs(ctx context.Context, dollar_1 []int64) ([]OrderItem, error)
+	ListOrderProductCacheTargets(ctx context.Context, orderID int64) ([]ListOrderProductCacheTargetsRow, error)
 	ListOrdersByUser(ctx context.Context, arg ListOrdersByUserParams) ([]Order, error)
 	// Backstop for expire_order jobs that were discarded after exhausting retries;
 	// the partial index idx_orders_pending_expiry keeps this scan cheap.
@@ -117,12 +132,15 @@ type Querier interface {
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]Product, error)
 	// 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
 	ListProductsByCategory(ctx context.Context, arg ListProductsByCategoryParams) ([]Product, error)
+	ListReconciliationActions(ctx context.Context, arg ListReconciliationActionsParams) ([]PaymentReconciliationAction, error)
+	ListReconciliationCases(ctx context.Context, arg ListReconciliationCasesParams) ([]Payment, error)
 	ListRootComments(ctx context.Context, arg ListRootCommentsParams) ([]ListRootCommentsRow, error)
-	ListShippingAddressesByUser(ctx context.Context, userID int64) ([]ShippingAddress, error)
+	ListShippingAddressesByUser(ctx context.Context, arg ListShippingAddressesByUserParams) ([]ShippingAddress, error)
 	ListStalePendingRefunds(ctx context.Context, arg ListStalePendingRefundsParams) ([]OrderRefund, error)
-	ListSubCategories(ctx context.Context, parentID pgtype.Int8) ([]Category, error)
-	ListTopCategories(ctx context.Context) ([]Category, error)
+	ListSubCategories(ctx context.Context, arg ListSubCategoriesParams) ([]Category, error)
+	ListTopCategories(ctx context.Context, arg ListTopCategoriesParams) ([]Category, error)
 	ListUpcomingEvents(ctx context.Context, arg ListUpcomingEventsParams) ([]Event, error)
+	LockCacheInvalidations(ctx context.Context, limit int32) ([]CacheInvalidation, error)
 	LockCommunityUser(ctx context.Context, id int64) (User, error)
 	// Each class gets its own bounded budget: arbitrarily many failed deletions
 	// cannot consume the slots needed to transition fresh expirations.
@@ -137,18 +155,23 @@ type Querier interface {
 	// Expired unbound resources are handled by full cleanup, not a second job.
 	LockStagingCleanupMedia(ctx context.Context, limit int32) ([]LockStagingCleanupMediaRow, error)
 	LockUserCommunityPosts(ctx context.Context, authorID pgtype.Int8) ([]Post, error)
+	// Serialize default-address switches even when the user has no default yet.
+	// Allow checkout's user FK KEY SHARE lock while it holds an address FOR SHARE.
+	LockUserForAddress(ctx context.Context, id int64) (int64, error)
 	LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]MediaAsset, error)
 	MarkMediaDeleted(ctx context.Context, id int64) error
 	MarkMediaDeleting(ctx context.Context, id int64) (int64, error)
 	MarkMediaStagingCleaned(ctx context.Context, id int64) error
 	MarkOrderCancelled(ctx context.Context, id int64) (Order, error)
 	MarkOrderCancelling(ctx context.Context, id int64) (Order, error)
-	MarkOrderPaid(ctx context.Context, id int64) (Order, error)
+	MarkOrderCompleted(ctx context.Context, id int64) (Order, error)
+	MarkOrderPaid(ctx context.Context, arg MarkOrderPaidParams) (Order, error)
 	MarkOrderRefundSuccess(ctx context.Context, arg MarkOrderRefundSuccessParams) (OrderRefund, error)
 	// A fully refunded paid order reaches its terminal state. The CAS guard keeps
 	// non-paid orders out (e.g. already cancelled), so a refund can never silently
 	// rewrite an order that is not in the refundable state.
 	MarkOrderRefunded(ctx context.Context, id int64) (Order, error)
+	MarkOrderShipped(ctx context.Context, id int64) (Order, error)
 	MarkPaymentClosePending(ctx context.Context, id int64) (Payment, error)
 	MarkPaymentClosed(ctx context.Context, id int64) (Payment, error)
 	MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedParams) (Payment, error)
@@ -168,8 +191,10 @@ type Querier interface {
 	// returning a possibly locked session to the pool.
 	ReleaseMediaIOLock(ctx context.Context, dollar_1 int64) (bool, error)
 	RequirePaymentReconciliation(ctx context.Context, arg RequirePaymentReconciliationParams) (Payment, error)
+	ResolvePaymentReconciliation(ctx context.Context, arg ResolvePaymentReconciliationParams) (ResolvePaymentReconciliationRow, error)
 	RestoreOrderItemStock(ctx context.Context, orderID int64) error
 	RetryOrderRefund(ctx context.Context, id int64) (OrderRefund, error)
+	RetryPaymentReconciliation(ctx context.Context, arg RetryPaymentReconciliationParams) (Payment, error)
 	SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) error
 	SetPaymentNotificationRiverJob(ctx context.Context, arg SetPaymentNotificationRiverJobParams) error
 	SoftDeleteEvent(ctx context.Context, id int64) error
@@ -182,16 +207,14 @@ type Querier interface {
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
 	UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event, error)
-	UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) error
+	UpdateEventStatus(ctx context.Context, arg UpdateEventStatusParams) (Event, error)
 	UpdatePaymentRefunded(ctx context.Context, id int64) (int64, error)
 	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 	UpdateProduct(ctx context.Context, arg UpdateProductParams) (Product, error)
-	UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) error
+	UpdateProductStatus(ctx context.Context, arg UpdateProductStatusParams) (Product, error)
 	UpdateShippingAddress(ctx context.Context, arg UpdateShippingAddressParams) (ShippingAddress, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
-	// password_changed_at is truncated to whole seconds so it can be compared
-	// against the second-resolution iat claim of already-issued JWTs.
-	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
+	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (int64, error)
 	UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error
 }
 

@@ -22,7 +22,7 @@ SET prepay_lease_token = $2,
 WHERE id = $1
   AND status = 'creating'
   AND (prepay_lease_until IS NULL OR prepay_lease_until < CURRENT_TIMESTAMP)
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 type ClaimPaymentPrepayParams struct {
@@ -49,6 +49,7 @@ func (q *Queries) ClaimPaymentPrepay(ctx context.Context, arg ClaimPaymentPrepay
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -73,7 +74,7 @@ INSERT INTO payments (
   out_trade_no
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 type CreatePaymentParams struct {
@@ -114,6 +115,7 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -138,7 +140,7 @@ INSERT INTO payments (
   out_trade_no
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 type CreatePaymentWithOutTradeNoParams struct {
@@ -179,6 +181,7 @@ func (q *Queries) CreatePaymentWithOutTradeNo(ctx context.Context, arg CreatePay
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -201,7 +204,7 @@ SET status = 'failed',
 WHERE id = $1
   AND status = 'creating'
   AND prepay_lease_token = $2
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 type FailPaymentPrepayParams struct {
@@ -228,6 +231,7 @@ func (q *Queries) FailPaymentPrepay(ctx context.Context, arg FailPaymentPrepayPa
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -252,7 +256,7 @@ SET status = 'pending',
 WHERE id = $1
   AND status = 'creating'
   AND prepay_lease_token = $2
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 type FinalizePaymentPrepayParams struct {
@@ -285,6 +289,7 @@ func (q *Queries) FinalizePaymentPrepay(ctx context.Context, arg FinalizePayment
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -298,7 +303,7 @@ func (q *Queries) FinalizePaymentPrepay(ctx context.Context, arg FinalizePayment
 }
 
 const getActivePaymentByOrder = `-- name: GetActivePaymentByOrder :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments
 WHERE order_id = $1
   AND status IN ('creating', 'pending', 'close_pending')
@@ -324,6 +329,7 @@ func (q *Queries) GetActivePaymentByOrder(ctx context.Context, orderID int64) (P
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -337,7 +343,7 @@ func (q *Queries) GetActivePaymentByOrder(ctx context.Context, orderID int64) (P
 }
 
 const getActivePaymentByOrderChannel = `-- name: GetActivePaymentByOrderChannel :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments
 WHERE order_id = $1
   AND pay_channel = $2
@@ -369,6 +375,7 @@ func (q *Queries) GetActivePaymentByOrderChannel(ctx context.Context, arg GetAct
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -382,7 +389,7 @@ func (q *Queries) GetActivePaymentByOrderChannel(ctx context.Context, arg GetAct
 }
 
 const getLatestPaymentByOrder = `-- name: GetLatestPaymentByOrder :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments
 WHERE order_id = $1
 ORDER BY created_at DESC, id DESC
@@ -407,6 +414,7 @@ func (q *Queries) GetLatestPaymentByOrder(ctx context.Context, orderID int64) (P
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -435,7 +443,7 @@ func (q *Queries) GetOrderExpiryByPaymentID(ctx context.Context, id int64) (pgty
 }
 
 const getPayment = `-- name: GetPayment :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments
 WHERE id = $1
 `
@@ -458,6 +466,7 @@ func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -471,7 +480,7 @@ func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
 }
 
 const getPaymentByOutTradeNo = `-- name: GetPaymentByOutTradeNo :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments
 WHERE out_trade_no = $1
 `
@@ -494,6 +503,7 @@ func (q *Queries) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string)
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -507,7 +517,7 @@ func (q *Queries) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string)
 }
 
 const getPaymentByThirdPartyTxID = `-- name: GetPaymentByThirdPartyTxID :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments
 WHERE third_party_tx_id = $1
 `
@@ -530,6 +540,7 @@ func (q *Queries) GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -543,7 +554,7 @@ func (q *Queries) GetPaymentByThirdPartyTxID(ctx context.Context, thirdPartyTxID
 }
 
 const getPaymentForUpdate = `-- name: GetPaymentForUpdate :one
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments
 WHERE id = $1
 FOR UPDATE
@@ -567,6 +578,7 @@ func (q *Queries) GetPaymentForUpdate(ctx context.Context, id int64) (Payment, e
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -580,7 +592,7 @@ func (q *Queries) GetPaymentForUpdate(ctx context.Context, id int64) (Payment, e
 }
 
 const listPaymentsByOrderForUpdate = `-- name: ListPaymentsByOrderForUpdate :many
-SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+SELECT id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 FROM payments
 WHERE order_id = $1
 ORDER BY created_at DESC, id DESC
@@ -611,6 +623,7 @@ func (q *Queries) ListPaymentsByOrderForUpdate(ctx context.Context, orderID int6
 			&i.ActionPayload,
 			&i.PaidAt,
 			&i.ReconciliationStatus,
+			&i.ReconciliationVersion,
 			&i.ReconciliationReason,
 			&i.ReconciliationDetail,
 			&i.PrepayLeaseToken,
@@ -636,7 +649,7 @@ SET status = 'close_pending',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status IN ('creating', 'pending')
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 func (q *Queries) MarkPaymentClosePending(ctx context.Context, id int64) (Payment, error) {
@@ -657,6 +670,7 @@ func (q *Queries) MarkPaymentClosePending(ctx context.Context, id int64) (Paymen
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -677,7 +691,7 @@ SET status = 'closed',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status IN ('creating', 'pending', 'close_pending')
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 func (q *Queries) MarkPaymentClosed(ctx context.Context, id int64) (Payment, error) {
@@ -698,6 +712,7 @@ func (q *Queries) MarkPaymentClosed(ctx context.Context, id int64) (Payment, err
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -719,7 +734,7 @@ SET status = 'failed',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status IN ('creating', 'pending', 'close_pending')
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 type MarkPaymentFailedParams struct {
@@ -745,6 +760,7 @@ func (q *Queries) MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedPa
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -792,7 +808,7 @@ SET status = 'success',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status NOT IN ('success', 'refunded')
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 type RecordPaymentSuccessParams struct {
@@ -818,6 +834,7 @@ func (q *Queries) RecordPaymentSuccess(ctx context.Context, arg RecordPaymentSuc
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -833,12 +850,13 @@ func (q *Queries) RecordPaymentSuccess(ctx context.Context, arg RecordPaymentSuc
 const requirePaymentReconciliation = `-- name: RequirePaymentReconciliation :one
 UPDATE payments
 SET reconciliation_status = 'required',
+    reconciliation_version = reconciliation_version + 1,
     reconciliation_reason = $2,
     reconciliation_detail = $3,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-  AND reconciliation_status NOT IN ('processing', 'resolved')
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+  AND (reconciliation_status <> 'required' OR reconciliation_reason IS DISTINCT FROM $2 OR reconciliation_detail IS DISTINCT FROM $3)
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 type RequirePaymentReconciliationParams struct {
@@ -865,6 +883,7 @@ func (q *Queries) RequirePaymentReconciliation(ctx context.Context, arg RequireP
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
