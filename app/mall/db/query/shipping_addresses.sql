@@ -24,7 +24,11 @@ WHERE id = $1
 SELECT *
 FROM shipping_addresses
 WHERE user_id = $1
-ORDER BY is_default DESC, id DESC;
+ORDER BY is_default DESC, id DESC LIMIT $2 OFFSET $3;
+
+-- name: GetShippingAddressForSnapshot :one
+-- Prevent update/delete until the order has copied this exact address row.
+SELECT * FROM shipping_addresses WHERE id=$1 AND user_id=$2 FOR SHARE;
 
 -- name: GetDefaultShippingAddress :one
 SELECT *
