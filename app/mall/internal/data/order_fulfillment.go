@@ -19,6 +19,14 @@ func (r *OrderRepo) ApplyFulfillment(ctx context.Context, actor biz.Actor, input
 	var changed db.Order
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := r.data.DB(ctx)
+		// The audit action references its actor. Lock that user before the order
+		// so concurrent account deletion cannot invert the FK lock order.
+		if _, err := q.LockUserForReference(ctx, actor.ID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrOrderNotFound
+			}
+			return err
+		}
 		order, err := q.GetOrderForUpdate(ctx, input.OrderID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return biz.ErrOrderNotFound

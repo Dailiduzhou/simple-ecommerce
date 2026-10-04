@@ -71,6 +71,14 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		if !stderrors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		// Account deletion locks the user before cascading to addresses. Take
+		// the order's user FK lock first so checkout follows the same order.
+		if _, err := q.LockUserForReference(ctx, args.UserID); err != nil {
+			if stderrors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrAddressNotFound
+			}
+			return err
+		}
 		address, err := q.GetShippingAddressForSnapshot(ctx, db.GetShippingAddressForSnapshotParams{ID: args.AddressID, UserID: args.UserID})
 		if err != nil {
 			if stderrors.Is(err, pgx.ErrNoRows) {

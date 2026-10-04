@@ -158,6 +158,9 @@ type Querier interface {
 	// Serialize default-address switches even when the user has no default yet.
 	// Allow checkout's user FK KEY SHARE lock while it holds an address FOR SHARE.
 	LockUserForAddress(ctx context.Context, id int64) (int64, error)
+	// Take the user FK lock before dependent rows, matching account deletion's
+	// lock order while allowing non-key user updates and default-address switches.
+	LockUserForReference(ctx context.Context, id int64) (int64, error)
 	LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]MediaAsset, error)
 	MarkMediaDeleted(ctx context.Context, id int64) error
 	MarkMediaDeleting(ctx context.Context, id int64) (int64, error)

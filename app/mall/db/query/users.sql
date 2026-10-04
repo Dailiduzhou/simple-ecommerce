@@ -18,6 +18,11 @@ WHERE phone_hash = $1;
 -- Allow checkout's user FK KEY SHARE lock while it holds an address FOR SHARE.
 SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE;
 
+-- name: LockUserForReference :one
+-- Take the user FK lock before dependent rows, matching account deletion's
+-- lock order while allowing non-key user updates and default-address switches.
+SELECT id FROM users WHERE id=$1 FOR KEY SHARE;
+
 -- name: UpdateUser :one
 UPDATE users
 SET nickname = $2,
