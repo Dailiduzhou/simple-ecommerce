@@ -58,7 +58,7 @@ func TestUserRepo_GetUserByID_Singleflight(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 
-	results := make([]*biz.User, concurrency)
+	results := make([]*biz.UserProfile, concurrency)
 	errs := make([]error, concurrency)
 
 	for i := range concurrency {
@@ -254,11 +254,10 @@ func TestUserRepo_UpdateUser_RefreshesCaches(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewUserRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), redisKey("user", 5, "g", 0), &biz.User{
-		ID:        5,
-		Nickname:  "old",
-		PhoneHash: "hash5",
-		Role:      "user",
+	repo.setCache(context.Background(), redisKey("user", 5, "g", 0), &biz.UserProfile{
+		ID:       5,
+		Nickname: "old",
+		Role:     "user",
 	})
 
 	mockQ.EXPECT().
@@ -300,11 +299,10 @@ func TestUserRepo_DeleteUser_ClearsCaches(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewUserRepo(d, log.DefaultLogger)
-	repo.setCache(context.Background(), redisKey("user", 6, "g", 0), &biz.User{
-		ID:        6,
-		Nickname:  "delete_me",
-		PhoneHash: "hash6",
-		Role:      "user",
+	repo.setCache(context.Background(), redisKey("user", 6, "g", 0), &biz.UserProfile{
+		ID:       6,
+		Nickname: "delete_me",
+		Role:     "user",
 	})
 
 	mockQ.EXPECT().
@@ -328,12 +326,12 @@ func TestUserRepo_UpdateUserPasswordAdvancesTheProfileGeneration(t *testing.T) {
 	ctx := context.Background()
 
 	mockQ.EXPECT().
-		UpdateUserPassword(gomock.Any(), db.UpdateUserPasswordParams{ID: 5, PasswordHash: "new-hash"}).
+		UpdateUserPassword(gomock.Any(), db.UpdateUserPasswordParams{ID: 5, ExpectedVersion: 1, PasswordHash: "new-hash"}).
 		Times(1).
-		Return(nil)
+		Return(int64(1), nil)
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewUserRepo(d, log.DefaultLogger)
-	require.NoError(t, repo.UpdateUserPassword(ctx, 5, "new-hash"))
+	require.NoError(t, repo.UpdateUserPassword(ctx, 5, 1, "new-hash"))
 	require.Equal(t, "1", d.rdb.Get(ctx, userGenerationKey(5)).Val())
 }

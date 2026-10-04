@@ -167,10 +167,11 @@ type Auth struct {
 	PhoneSecret         string                 `protobuf:"bytes,5,opt,name=phone_secret,json=phoneSecret,proto3" json:"phone_secret,omitempty"`
 	// Per-minute budget for anonymous login/register/refresh requests. Zero means the default.
 	AuthRequestsPerMinute int32 `protobuf:"varint,6,opt,name=auth_requests_per_minute,json=authRequestsPerMinute,proto3" json:"auth_requests_per_minute,omitempty"`
-	// Failed-login attempts before an account is temporarily locked. Zero means the default.
-	LoginMaxAttempts int32 `protobuf:"varint,7,opt,name=login_max_attempts,json=loginMaxAttempts,proto3" json:"login_max_attempts,omitempty"`
-	// How long a login lockout lasts from the first recorded failure.
-	LoginLockoutDuration *durationpb.Duration `protobuf:"bytes,8,opt,name=login_lockout_duration,json=loginLockoutDuration,proto3" json:"login_lockout_duration,omitempty"`
+	// Account-wide password-check burst shared by all IPs. Zero defaults to 5.
+	LoginAccountBurst int32 `protobuf:"varint,7,opt,name=login_account_burst,json=loginAccountBurst,proto3" json:"login_account_burst,omitempty"`
+	// Refill one password check per interval (1s to 60s); zero defaults to 30s.
+	// Rejected requests do not extend the wait. Successful logins also consume quota.
+	LoginAccountInterval *durationpb.Duration `protobuf:"bytes,8,opt,name=login_account_interval,json=loginAccountInterval,proto3" json:"login_account_interval,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -247,16 +248,16 @@ func (x *Auth) GetAuthRequestsPerMinute() int32 {
 	return 0
 }
 
-func (x *Auth) GetLoginMaxAttempts() int32 {
+func (x *Auth) GetLoginAccountBurst() int32 {
 	if x != nil {
-		return x.LoginMaxAttempts
+		return x.LoginAccountBurst
 	}
 	return 0
 }
 
-func (x *Auth) GetLoginLockoutDuration() *durationpb.Duration {
+func (x *Auth) GetLoginAccountInterval() *durationpb.Duration {
 	if x != nil {
-		return x.LoginLockoutDuration
+		return x.LoginAccountInterval
 	}
 	return nil
 }
@@ -1239,16 +1240,16 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\tcommunity\x18\x06 \x01(\v2\x15.kratos.api.CommunityR\tcommunity\x12-\n" +
 	"\astorage\x18\a \x01(\v2\x13.kratos.api.StorageR\astorage\"$\n" +
 	"\tSnowflake\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\"\xdf\x03\n" +
+	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\"\xe1\x03\n" +
 	"\x04Auth\x12.\n" +
 	"\x13access_token_secret\x18\x01 \x01(\tR\x11accessTokenSecret\x12K\n" +
 	"\x14access_token_timeout\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x12accessTokenTimeout\x120\n" +
 	"\x14refresh_token_secret\x18\x03 \x01(\tR\x12refreshTokenSecret\x12M\n" +
 	"\x15refresh_token_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x13refreshTokenTimeout\x12!\n" +
 	"\fphone_secret\x18\x05 \x01(\tR\vphoneSecret\x127\n" +
-	"\x18auth_requests_per_minute\x18\x06 \x01(\x05R\x15authRequestsPerMinute\x12,\n" +
-	"\x12login_max_attempts\x18\a \x01(\x05R\x10loginMaxAttempts\x12O\n" +
-	"\x16login_lockout_duration\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginLockoutDuration\"\xe2\x02\n" +
+	"\x18auth_requests_per_minute\x18\x06 \x01(\x05R\x15authRequestsPerMinute\x12.\n" +
+	"\x13login_account_burst\x18\a \x01(\x05R\x11loginAccountBurst\x12O\n" +
+	"\x16login_account_interval\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginAccountInterval\"\xe2\x02\n" +
 	"\x06Server\x12+\n" +
 	"\x04http\x18\x01 \x01(\v2\x17.kratos.api.Server.HTTPR\x04http\x12+\n" +
 	"\x04grpc\x18\x02 \x01(\v2\x17.kratos.api.Server.GRPCR\x04grpc\x1a\x92\x01\n" +
@@ -1369,7 +1370,7 @@ var file_conf_conf_proto_depIdxs = []int32{
 	10, // 6: kratos.api.Bootstrap.storage:type_name -> kratos.api.Storage
 	15, // 7: kratos.api.Auth.access_token_timeout:type_name -> google.protobuf.Duration
 	15, // 8: kratos.api.Auth.refresh_token_timeout:type_name -> google.protobuf.Duration
-	15, // 9: kratos.api.Auth.login_lockout_duration:type_name -> google.protobuf.Duration
+	15, // 9: kratos.api.Auth.login_account_interval:type_name -> google.protobuf.Duration
 	11, // 10: kratos.api.Server.http:type_name -> kratos.api.Server.HTTP
 	12, // 11: kratos.api.Server.grpc:type_name -> kratos.api.Server.GRPC
 	13, // 12: kratos.api.Data.database:type_name -> kratos.api.Data.Database

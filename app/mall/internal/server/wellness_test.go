@@ -11,6 +11,7 @@ import (
 	"time"
 
 	pb "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
+	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/service"
@@ -31,8 +32,14 @@ type wellnessAuthStub struct {
 	accountErr error
 }
 
-func (u *wellnessAuthStub) IsTokenBlacklisted(context.Context, string) (bool, error) {
-	return u.revoked, u.err
+func (u *wellnessAuthStub) ValidateSession(context.Context, *biz.EcommerceClaims) error {
+	if u.revoked {
+		return userv1.ErrorUnauthorized("revoked")
+	}
+	if u.err != nil {
+		return userv1.ErrorUnauthorized("session store unavailable")
+	}
+	return nil
 }
 
 func (u *wellnessAuthStub) ValidateAccount(context.Context, *biz.EcommerceClaims) error {
@@ -80,8 +87,8 @@ func TestTodayWellnessHTTPAuthenticationAndJSON(t *testing.T) {
 			srv := NewHTTPServer(
 				&conf.Server{Http: &conf.Server_HTTP{}}, &conf.Auth{AccessTokenSecret: secret}, &tt.auth,
 				service.NewMallService(nil, nil, nil, uc, log.DefaultLogger),
-				service.NewUserService(nil, nil, nil, nil, log.DefaultLogger), service.NewOrderService(nil),
-				service.NewPaymentService(nil, nil, log.DefaultLogger),
+				service.NewUserService(nil, nil, nil, nil, log.DefaultLogger), service.NewOrderService(nil, nil),
+				service.NewPaymentService(nil, nil, nil, log.DefaultLogger),
 				service.NewCommunityService(nil, nil), service.NewMediaService(nil), &communityLimiter{}, log.DefaultLogger,
 			)
 			// Unknown query fields must not override the server's date or user.
@@ -118,8 +125,8 @@ func TestTodayWellnessGRPCRequiresLogin(t *testing.T) {
 	srv := NewGRPCServer(
 		&conf.Server{Grpc: &conf.Server_GRPC{Addr: "127.0.0.1:0"}}, &conf.Auth{AccessTokenSecret: secret}, &wellnessAuthStub{},
 		service.NewMallService(nil, nil, nil, biz.NewWellnessUsecase(), log.DefaultLogger),
-		service.NewUserService(nil, nil, nil, nil, log.DefaultLogger), service.NewOrderService(nil),
-		service.NewPaymentService(nil, nil, log.DefaultLogger),
+		service.NewUserService(nil, nil, nil, nil, log.DefaultLogger), service.NewOrderService(nil, nil),
+		service.NewPaymentService(nil, nil, nil, log.DefaultLogger),
 		service.NewCommunityService(nil, nil), service.NewMediaService(nil), &communityLimiter{}, log.DefaultLogger,
 	)
 	endpoint, err := srv.Endpoint()

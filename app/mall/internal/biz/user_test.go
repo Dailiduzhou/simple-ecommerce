@@ -11,6 +11,7 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
 	"github.com/Dailiduzhou/simple-ecommerce/pkg/pwdhash"
+	kerrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
@@ -30,19 +31,21 @@ func (r *fakeUserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phon
 	return r.createUser(ctx, nickname, phoneHash, phoneEncrypt, passwordHash)
 }
 
-func (r *fakeUserRepo) GetUserByID(ctx context.Context, id int64) (*User, error) {
-	return r.getUserByID(ctx, id)
+func (r *fakeUserRepo) GetUserByID(ctx context.Context, id int64) (*UserProfile, error) {
+	u, err := r.getUserByID(ctx, id)
+	return u.Profile(), err
 }
 
 func (r *fakeUserRepo) GetUserByPhoneHash(ctx context.Context, phoneHash string) (*User, error) {
 	return r.getUserByPhoneHash(ctx, phoneHash)
 }
 
-func (r *fakeUserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*User, error) {
-	return r.updateUser(ctx, id, nickname, realName)
+func (r *fakeUserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName string) (*UserProfile, error) {
+	u, err := r.updateUser(ctx, id, nickname, realName)
+	return u.Profile(), err
 }
 
-func (r *fakeUserRepo) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+func (r *fakeUserRepo) UpdateUserPassword(ctx context.Context, id, expectedVersion int64, passwordHash string) error {
 	if r.updateUserPassword == nil {
 		return nil
 	}
@@ -57,50 +60,27 @@ func testUserAuth() *conf.Auth {
 	return &conf.Auth{PhoneSecret: "phone-secret"}
 }
 
-// fakeAuthRepo records lockout interactions so tests can assert the failure
-// and clear behaviour around Login.
+// fakeAuthRepo records quota reservations before credential reads.
 type fakeAuthRepo struct {
-	loginFailures      func(ctx context.Context, phoneHash string) (int64, error)
-	recordLoginFailure func(ctx context.Context, phoneHash string, window time.Duration) error
-	clearLoginFailures func(ctx context.Context, phoneHash string) error
-	mu                 sync.Mutex
-	recorded           []string
-	cleared            []string
+	reserveLoginAttempt func(context.Context, string, int64, time.Duration) (time.Duration, error)
+	mu                  sync.Mutex
+	recorded            []string
 }
 
-func (r *fakeAuthRepo) ConsumeRefresh(context.Context, string, time.Duration) (bool, error) {
+func (r *fakeAuthRepo) ConsumeSessionRefresh(context.Context, string, int64, string, time.Duration) (bool, error) {
 	return true, nil
 }
-
-func (r *fakeAuthRepo) SetBlacklist(context.Context, string, time.Duration) error { return nil }
-
-func (r *fakeAuthRepo) IsBlacklisted(context.Context, string) (bool, error) { return false, nil }
-
-func (r *fakeAuthRepo) LoginFailures(ctx context.Context, phoneHash string) (int64, error) {
-	if r.loginFailures != nil {
-		return r.loginFailures(ctx, phoneHash)
+func (r *fakeAuthRepo) CreateSession(context.Context, string, int64, time.Duration) error { return nil }
+func (r *fakeAuthRepo) SessionActive(context.Context, string, int64) (bool, error)        { return true, nil }
+func (r *fakeAuthRepo) RevokeSession(context.Context, string, int64) (bool, error)        { return true, nil }
+func (r *fakeAuthRepo) ReserveLoginAttempt(ctx context.Context, hash string, burst int64, interval time.Duration) (time.Duration, error) {
+	if r.reserveLoginAttempt != nil {
+		return r.reserveLoginAttempt(ctx, hash, burst, interval)
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.recorded = append(r.recorded, hash)
 	return 0, nil
-}
-
-func (r *fakeAuthRepo) RecordLoginFailure(ctx context.Context, phoneHash string, window time.Duration) error {
-	if r.recordLoginFailure != nil {
-		return r.recordLoginFailure(ctx, phoneHash, window)
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.recorded = append(r.recorded, phoneHash)
-	return nil
-}
-
-func (r *fakeAuthRepo) ClearLoginFailures(ctx context.Context, phoneHash string) error {
-	if r.clearLoginFailures != nil {
-		return r.clearLoginFailures(ctx, phoneHash)
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.cleared = append(r.cleared, phoneHash)
-	return nil
 }
 
 func (r *fakeAuthRepo) recordedCount() int {
@@ -192,7 +172,7 @@ func TestUserUsecase_Login_UserNotFound(t *testing.T) {
 	// An unregistered phone must look exactly like a wrong password, so it
 	// cannot be used to enumerate accounts.
 	assert.True(t, userv1.IsInvalidCredentials(err))
-	assert.Equal(t, 1, auth.recordedCount(), "unknown phone still counts toward lockout")
+	assert.Equal(t, 1, auth.recordedCount(), "unknown phone still counts toward the account quota")
 }
 
 func TestUserUsecase_Login_InvalidPassword(t *testing.T) {
@@ -211,7 +191,7 @@ func TestUserUsecase_Login_InvalidPassword(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, u)
 	assert.True(t, userv1.IsInvalidCredentials(err))
-	assert.Equal(t, 1, auth.recordedCount(), "wrong password counts toward lockout")
+	assert.Equal(t, 1, auth.recordedCount(), "wrong password counts toward the account quota")
 }
 
 // The two failure paths must be indistinguishable: same error reason and the
@@ -239,92 +219,57 @@ func TestUserUsecase_Login_FailuresAreIndistinguishable(t *testing.T) {
 	assert.Equal(t, wrongPassword.Error(), unknownPhone.Error())
 }
 
-// A third party who knows a phone number must not be able to lock its owner
-// out: the throttled path only answers wrong guesses with 429, while the
-// correct password still signs in and clears the counter.
-func TestUserUsecase_Login_LockoutNeverBlocksTheCorrectPassword(t *testing.T) {
-	passwordHash, err := pwdhash.HashPassword("secret-pass")
+func TestUserUsecase_Login_QuotaDeniesBeforeCredentialsAndRecovers(t *testing.T) {
+	hash, err := pwdhash.HashPassword("secret-pass")
 	require.NoError(t, err)
-	locked := int64(5)
-	repo := &fakeUserRepo{
-		getUserByPhoneHash: func(ctx context.Context, phoneHash string) (*User, error) {
-			return &User{ID: 2, PasswordHash: passwordHash}, nil
-		},
-	}
-	auth := &fakeAuthRepo{
-		loginFailures: func(ctx context.Context, phoneHash string) (int64, error) {
-			return locked, nil
-		},
-	}
+	reads := 0
+	repo := &fakeUserRepo{getUserByPhoneHash: func(context.Context, string) (*User, error) {
+		reads++
+		return &User{ID: 2, PasswordHash: hash}, nil
+	}}
+	wait := 1500 * time.Millisecond
+	auth := &fakeAuthRepo{reserveLoginAttempt: func(_ context.Context, phoneHash string, burst int64, interval time.Duration) (time.Duration, error) {
+		require.Equal(t, phonecrypto.HashPhone("13800138000", []byte(testUserAuth().PhoneSecret)), phoneHash)
+		require.EqualValues(t, 5, burst)
+		require.Equal(t, 30*time.Second, interval)
+		return wait, nil
+	}}
 	uc := NewUserUsecase(repo, auth, testUserAuth(), log.DefaultLogger)
-
-	_, wrong := uc.Login(context.Background(), "13800138000", "wrong-pass")
-	require.True(t, userv1.IsUserLoginLocked(wrong), "a throttled account reports 429 for wrong guesses")
-
-	u, err := uc.Login(context.Background(), "13800138000", "secret-pass")
-	require.NoError(t, err, "the legitimate owner must still be able to sign in")
-	require.Equal(t, int64(2), u.ID)
-	auth.mu.Lock()
-	require.Len(t, auth.cleared, 1, "a successful login clears the failure window")
-	auth.mu.Unlock()
-}
-
-// Locking an unregistered phone must stay indistinguishable from locking a
-// registered one, otherwise the response leaks account existence.
-func TestUserUsecase_Login_LockoutHidesAccountExistence(t *testing.T) {
-	auth := &fakeAuthRepo{
-		loginFailures: func(ctx context.Context, phoneHash string) (int64, error) {
-			return 9, nil
-		},
+	for _, password := range []string{"secret-pass", "wrong-pass"} {
+		_, err := uc.Login(context.Background(), "13800138000", password)
+		require.True(t, userv1.IsUserLoginLocked(err))
+		require.Equal(t, "2", kerrors.FromError(err).Metadata["retry_after_seconds"])
 	}
-	unknown := &fakeUserRepo{
-		getUserByPhoneHash: func(ctx context.Context, phoneHash string) (*User, error) { return nil, nil },
-	}
-	uc := NewUserUsecase(unknown, auth, testUserAuth(), log.DefaultLogger)
-
-	_, err := uc.Login(context.Background(), "13800138000", "secret-pass")
-	require.True(t, userv1.IsUserLoginLocked(err))
-}
-
-func TestUserUsecase_Login_LockoutCheckFailsOpen(t *testing.T) {
-	passwordHash, err := pwdhash.HashPassword("secret-pass")
-	require.NoError(t, err)
-	repo := &fakeUserRepo{
-		getUserByPhoneHash: func(ctx context.Context, phoneHash string) (*User, error) {
-			return &User{ID: 2, PasswordHash: passwordHash}, nil
-		},
-	}
-	auth := &fakeAuthRepo{
-		loginFailures: func(ctx context.Context, phoneHash string) (int64, error) {
-			return 0, errors.New("redis unavailable")
-		},
-	}
-	uc := NewUserUsecase(repo, auth, testUserAuth(), log.DefaultLogger)
-
-	// The transport limiter already fails closed for auth operations, so the
-	// lockout counter itself must fail open instead of blocking all logins.
+	require.Zero(t, reads, "denied attempts never reach credentials, including correct passwords")
+	wait = 0
 	u, err := uc.Login(context.Background(), "13800138000", "secret-pass")
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), u.ID)
+	require.EqualValues(t, 2, u.ID)
+	require.Equal(t, 1, reads)
 }
 
-func TestUserUsecase_Login_SuccessClearsFailures(t *testing.T) {
-	passwordHash, err := pwdhash.HashPassword("secret-pass")
+func TestUserUsecase_Login_QuotaStoreFailsClosed(t *testing.T) {
+	auth := &fakeAuthRepo{reserveLoginAttempt: func(context.Context, string, int64, time.Duration) (time.Duration, error) {
+		return 0, errors.New("redis unavailable")
+	}}
+	// A credential read would panic: failure must be returned before lookup.
+	uc := NewUserUsecase(&fakeUserRepo{}, auth, testUserAuth(), log.DefaultLogger)
+	u, err := uc.Login(context.Background(), "13800138000", "secret-pass")
+	require.Nil(t, u)
+	require.EqualValues(t, 503, kerrors.FromError(err).Code)
+}
+
+func TestUserUsecase_Login_SuccessConsumesQuota(t *testing.T) {
+	hash, err := pwdhash.HashPassword("secret-pass")
 	require.NoError(t, err)
-	repo := &fakeUserRepo{
-		getUserByPhoneHash: func(ctx context.Context, phoneHash string) (*User, error) {
-			return &User{ID: 2, PasswordHash: passwordHash}, nil
-		},
-	}
+	repo := &fakeUserRepo{getUserByPhoneHash: func(context.Context, string) (*User, error) {
+		return &User{ID: 2, PasswordHash: hash}, nil
+	}}
 	auth := &fakeAuthRepo{}
 	uc := NewUserUsecase(repo, auth, testUserAuth(), log.DefaultLogger)
-
-	u, err := uc.Login(context.Background(), "13800138000", "secret-pass")
+	_, err = uc.Login(context.Background(), "13800138000", "secret-pass")
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), u.ID)
-	auth.mu.Lock()
-	require.Len(t, auth.cleared, 1)
-	auth.mu.Unlock()
+	require.Equal(t, 1, auth.recordedCount())
 }
 
 func TestUserUsecase_GetUpdateDelete(t *testing.T) {
@@ -360,10 +305,10 @@ func TestUserUsecase_GetUpdateDelete(t *testing.T) {
 }
 
 func (r *fakeUserRepo) GetAuthUser(ctx context.Context, id int64) (*User, error) {
-	return r.GetUserByID(ctx, id)
+	return r.getUserByID(ctx, id)
 }
 
-func TestUserUsecase_ChangePasswordRotatesHashAndClearsFailures(t *testing.T) {
+func TestUserUsecase_ChangePasswordRotatesHash(t *testing.T) {
 	oldHash, err := pwdhash.HashPassword("old-secret")
 	require.NoError(t, err)
 	var gotID int64
@@ -383,7 +328,7 @@ func TestUserUsecase_ChangePasswordRotatesHashAndClearsFailures(t *testing.T) {
 	require.NoError(t, uc.ChangePassword(context.Background(), 7, "old-secret", "new-secret"))
 	require.Equal(t, int64(7), gotID)
 	require.NoError(t, pwdhash.ComparePassword(gotHash, "new-secret"))
-	require.Equal(t, []string{"phone-hash"}, authRepo.cleared, "the rotation must clear the login-failure window")
+	require.Zero(t, authRepo.recordedCount(), "authenticated password rotation does not modify the anonymous quota")
 }
 
 func TestUserUsecase_ChangePasswordRejectsBadInputAndCredentials(t *testing.T) {
@@ -412,21 +357,20 @@ func TestUserUsecase_ChangePasswordRejectsBadInputAndCredentials(t *testing.T) {
 	require.False(t, updated, "no invalid request may reach the database")
 }
 
-func TestAuthUsecase_ValidateAccountRevokesTokensIssuedBeforePasswordChange(t *testing.T) {
+func TestAuthUsecase_ValidateAccountRevokesOldVersionEvenInSameSecond(t *testing.T) {
 	changedAt := time.Now().Truncate(time.Second)
 	repo := &fakeUserRepo{
 		getUserByID: func(context.Context, int64) (*User, error) {
-			return &User{ID: 1, Role: "user", PasswordChangedAt: changedAt}, nil
+			return &User{ID: 1, Role: "user", AuthVersion: 2}, nil
 		},
 	}
 	uc := NewAuthUsecase(repo, &fakeAuthRepo{}, testUserAuth())
 
-	stale := &EcommerceClaims{UserID: 1, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt.Add(-time.Minute))}}
+	stale := &EcommerceClaims{UserID: 1, AuthVersion: 1, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt)}}
 	require.Error(t, uc.ValidateAccount(context.Background(), stale))
 
-	// A token issued in the same second as the rotation stays valid: JWTs only
-	// carry second-resolution iat values.
-	fresh := &EcommerceClaims{UserID: 1, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt)}}
+	// Identical iat values do not affect revocation; only the verified version does.
+	fresh := &EcommerceClaims{UserID: 1, AuthVersion: 2, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt)}}
 	require.NoError(t, uc.ValidateAccount(context.Background(), fresh))
 	require.Equal(t, "user", fresh.Role)
 }

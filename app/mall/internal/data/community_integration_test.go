@@ -19,6 +19,7 @@ import (
 	migrations "github.com/Dailiduzhou/simple-ecommerce/app/mall/db"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	kerrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -507,7 +508,8 @@ func TestCommunityIntegrationUserDeletionAtomicity(t *testing.T) {
 	cachedKey := profileKey()
 	require.EqualValues(t, 1, f.rdb.Exists(ctx, cachedKey).Val())
 	e = repo.DeleteUser(ctx, f.actor.ID)
-	sqlViolation(t, e)
+	require.Equal(t, int32(409), kerrors.FromError(e).Code)
+	require.Equal(t, "ACCOUNT_HAS_RETAINED_HISTORY", kerrors.FromError(e).Reason)
 	_, e = f.posts.Get(ctx, f.other.ID, post.ID)
 	require.NoError(t, e)
 	c, e := f.data.DB(ctx).GetComment(ctx, db.GetCommentParams{PostID: otherPost.ID, ID: root.ID})
@@ -705,7 +707,7 @@ func TestCommunityIntegrationPageQueriesAndExplain(t *testing.T) {
 	pool, e := pgxpool.NewWithConfig(ctx, cfg)
 	require.NoError(t, e)
 	defer pool.Close()
-	repo := NewPostRepo(&Data{pool: pool, q: db.New(pool)}, f.tx, f.media)
+	repo := NewPostRepo(&Data{pool: pool, q: db.New(pool)}, NewTransaction(pool, log.DefaultLogger), f.media)
 	for _, size := range []int32{1, 20, 50} {
 		counter.count.Store(0)
 		posts, _, e := repo.List(ctx, f.other.ID, f.actor.ID, pageFor(t, "posts", size))

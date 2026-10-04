@@ -18,14 +18,21 @@ var _ biz.ProductRepo = (*ProductRepo)(nil)
 
 type ProductRepo struct {
 	data *Data
+	tx   biz.TxManager
 	log  *log.Helper
 }
 
-func NewProductRepo(data *Data, logger log.Logger) *ProductRepo {
-	return &ProductRepo{data: data, log: log.NewHelper(logger)}
+func NewProductRepo(data *Data, tx biz.TxManager, logger log.Logger) *ProductRepo {
+	return &ProductRepo{data: data, tx: tx, log: log.NewHelper(logger)}
 }
 
 func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+	if err := biz.ProductDiscount(discount); err != nil {
+		return nil, err
+	}
+	if err := biz.ValidateProductStatus(int32(status)); err != nil {
+		return nil, err
+	}
 	minor, err := biz.ProductPriceMinor(price)
 	if err != nil {
 		return nil, err
@@ -53,8 +60,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 		return nil, err
 	}
 	bizProduct := toBizProduct(p)
-	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", bizProduct.ID, "gen"))
-	r.invalidateProductLists(ctx, 0, categoryID)
+	r.invalidateProduct(ctx, bizProduct.ID, categoryID)
 	return &bizProduct, nil
 }
 
@@ -71,9 +77,7 @@ func (r *ProductRepo) DecrProductStock(ctx context.Context, ID int64, amount int
 	if err != nil {
 		return 0, err
 	}
-	r.deleteCache(ctx, redisKey("product", ID))
-	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", ID, "gen"))
-	r.invalidateProductLists(ctx, product.CategoryID)
+	r.invalidateProduct(ctx, ID, product.CategoryID)
 	return stock, nil
 }
 
@@ -127,13 +131,14 @@ func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	r.deleteCache(ctx, redisKey("product", id))
-	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
-	r.invalidateProductLists(ctx, existing.CategoryID)
+	r.invalidateProduct(ctx, id, existing.CategoryID)
 	return nil
 }
 
-func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+	if err := biz.ProductDiscount(discount); err != nil {
+		return nil, err
+	}
 	minor, err := biz.ProductPriceMinor(price)
 	if err != nil {
 		return nil, err
@@ -157,7 +162,6 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		Name:        name,
 		PriceMinor:  minor,
 		Discount:    discount,
-		Stock:       stock,
 		CoverImage:  coverImageJSON,
 		MediaAssets: mediaAssetsJSON,
 		Description: pgtype.Text{String: descrption, Valid: descrption != ""},
@@ -166,28 +170,33 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		return nil, err
 	}
 	bizProduct := toBizProduct(p)
-	r.deleteCache(ctx, redisKey("product", id))
-	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
-	r.invalidateProductLists(ctx, existing.CategoryID, categoryID)
+	r.invalidateProduct(ctx, id, existing.CategoryID, categoryID)
 	return &bizProduct, nil
 }
 
 func (r *ProductRepo) UpdateProductStatus(ctx context.Context, ID int64, status int32) error {
+	if err := biz.ValidateProductStatus(status); err != nil {
+		return err
+	}
 	q := querierFromContext(ctx, r.data.q)
 	existing, err := q.GetProduct(ctx, ID)
 	if err != nil {
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return biz.ErrProductNotFound
+		}
 		return err
 	}
-	err = q.UpdateProductStatus(ctx, db.UpdateProductStatusParams{
+	_, err = q.UpdateProductStatus(ctx, db.UpdateProductStatusParams{
 		ID:     ID,
 		Status: int16(status),
 	})
 	if err != nil {
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return biz.ErrProductNotFound
+		}
 		return err
 	}
-	r.deleteCache(ctx, redisKey("product", ID))
-	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", ID, "gen"))
-	r.invalidateProductLists(ctx, existing.CategoryID)
+	r.invalidateProduct(ctx, ID, existing.CategoryID)
 	return nil
 }
 
@@ -212,7 +221,7 @@ func (r *ProductRepo) deleteCache(ctx context.Context, key string) {
 }
 
 func (r *ProductRepo) invalidateProductLists(ctx context.Context, categoryIDs ...int64) {
-	bumpCacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
+	keys := []string{"product:list:gen"}
 	seen := make(map[int64]struct{}, len(categoryIDs))
 	for _, categoryID := range categoryIDs {
 		if categoryID <= 0 {
@@ -222,8 +231,25 @@ func (r *ProductRepo) invalidateProductLists(ctx context.Context, categoryIDs ..
 			continue
 		}
 		seen[categoryID] = struct{}{}
-		bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", categoryID, "gen"))
+		keys = append(keys, redisKey("product", "category", categoryID, "gen"))
 	}
+	scheduleCacheInvalidation(ctx, r.data.rdb, r.log, keys, nil)
+}
+
+func (r *ProductRepo) invalidateProduct(ctx context.Context, productID int64, categoryIDs ...int64) {
+	generations := []string{redisKey("product", productID, "gen"), "product:list:gen"}
+	seen := make(map[int64]struct{}, len(categoryIDs))
+	for _, id := range categoryIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		generations = append(generations, redisKey("product", "category", id, "gen"))
+	}
+	scheduleCacheInvalidation(ctx, r.data.rdb, r.log, generations, []string{redisKey("product", productID)})
 }
 
 func toBizProduct(p db.Product) biz.Product {

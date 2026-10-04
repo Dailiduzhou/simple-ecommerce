@@ -7,7 +7,7 @@ import (
 
 // Immutable order-time delivery information, never resolved via AddressID.
 // Repositories/cache store only ciphertext; plaintext exists at the usecase
-// boundary for an owner-authorized response and is excluded from JSON caches.
+// boundary for an owner/admin-authorized response and is excluded from JSON caches.
 type OrderShippingSnapshot struct {
 	ReceiverName                            string
 	ReceiverPhoneEncrypt                    string

@@ -50,7 +50,7 @@ func TestOrderUsecase_ListOrdersOwnsShippingPage(t *testing.T) {
 				go func() {
 					defer wg.Done()
 					<-start
-					pages[i], totals[i], errs[i] = uc.ListOrders(context.Background(), req)
+					pages[i], totals[i], errs[i] = uc.ListOrders(context.Background(), Actor{ID: 7}, req)
 				}()
 			}
 			close(start)

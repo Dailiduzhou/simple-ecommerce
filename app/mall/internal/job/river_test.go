@@ -505,7 +505,7 @@ func TestPeriodicJobsCoverBothBackstops(t *testing.T) {
 	// One periodic schedule per backstop sweep; the args kinds are asserted by
 	// the workers themselves, here we only guard the schedule count so a new
 	// sweep cannot be added without extending this test.
-	require.Len(t, NewPeriodicJobs(), 4)
+	require.Len(t, NewPeriodicJobs(), 5)
 }
 
 func TestClosePayWorker_RequeriesPaymentThatWinsCloseRace(t *testing.T) {
