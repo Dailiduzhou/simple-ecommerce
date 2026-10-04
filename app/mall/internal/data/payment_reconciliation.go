@@ -35,6 +35,14 @@ func (r *PaymentReconciliationRepo) ApplyReconciliation(ctx context.Context, act
 	var changed db.Payment
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := r.data.DB(ctx)
+		// Audit insertion references the actor. Acquire its FK lock before any
+		// order/payment lock, matching account deletion's user-first order.
+		if _, err := q.LockUserForReference(ctx, actor.ID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrPaymentNotFound
+			}
+			return err
+		}
 		// Resolve the parent without cached state, then follow the common order /
 		// ascending payment locks used by callbacks, expiry and refund settlement.
 		snapshot, err := q.GetPayment(ctx, input.PaymentID)
@@ -96,9 +104,9 @@ func (r *PaymentReconciliationRepo) ApplyReconciliation(ctx context.Context, act
 				// Resume the interrupted close, including the signed-parameter
 				// expiry/account checks for an absent Alipay APP/WAP trade.
 				// A plain query job treats that absence as a technical error forever.
-				job, err = r.jobs.EnqueueClosePayTx(ctx, biz.ClosePayArgs{PaymentID: payment.ID, Provider: method.Provider, Reason: "manual_reconciliation"}, time.Time{})
+				job, err = r.jobs.EnqueueClosePayTx(ctx, biz.ClosePayArgs{PaymentID: payment.ID, Provider: method.Provider, ReconciliationVersion: changed.ReconciliationVersion, Reason: "manual_reconciliation"}, time.Time{})
 			} else {
-				job, err = r.jobs.EnqueueCheckPayTx(ctx, biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "manual_reconciliation", MaxPolls: 5, PollIntervalSeconds: 30, OrderExpiresAt: order.ExpiresAt.Time}, time.Time{})
+				job, err = r.jobs.EnqueueCheckPayTx(ctx, biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, ReconciliationVersion: changed.ReconciliationVersion, Trigger: "manual_reconciliation", MaxPolls: 5, PollIntervalSeconds: 30, OrderExpiresAt: order.ExpiresAt.Time}, time.Time{})
 			}
 			if err != nil {
 				return err

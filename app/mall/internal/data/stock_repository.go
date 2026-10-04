@@ -37,9 +37,16 @@ func (r *ProductRepo) AdjustStock(ctx context.Context, input biz.StockAdjustment
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		// Keep room for every outstanding cancellation/full order refund.
+		// The product lock serializes this fresh snapshot with checkout and
+		// restoration; an uncommitted restoration still counts as reserved.
+		reserved, err := q.GetRestorableProductStock(ctx, input.ProductID)
+		if err != nil {
+			return err
+		}
 		balance := int64(product.Stock) + int64(input.Delta)
-		if balance < 0 || balance > math.MaxInt32 {
-			return kratoserrors.Conflict("STOCK_ADJUSTMENT_CONFLICT", "adjustment would put stock outside [0,2147483647]")
+		if balance < 0 || reserved > math.MaxInt32-balance {
+			return kratoserrors.Conflict("STOCK_ADJUSTMENT_CONFLICT", "adjustment would put stock below zero or exceed 2147483647 including restorable order stock")
 		}
 		updated, err := q.AdjustProductStock(ctx, db.AdjustProductStockParams{ID: input.ProductID, Delta: input.Delta})
 		if err != nil {

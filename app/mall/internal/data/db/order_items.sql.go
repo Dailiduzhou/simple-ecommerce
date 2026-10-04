@@ -54,6 +54,26 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 	return i, err
 }
 
+const getRestorableProductStock = `-- name: GetRestorableProductStock :one
+SELECT COALESCE(SUM(oi.quantity), 0)::bigint AS reserved
+FROM order_items oi
+JOIN orders o ON o.id = oi.order_id
+WHERE oi.product_id = $1
+  AND o.status IN ('pending_payment', 'cancelling', 'paid')
+`
+
+// Call AFTER locking the product, in a separate READ COMMITTED statement.
+// Checkout and stock restoration both hold that product lock until commit.
+// Read orders without row locks to avoid reversing their order -> product order.
+// Only these states can still return stock; shipped/completed orders cannot be
+// cancelled/refunded, and duplicate/late payment refunds do not restore stock.
+func (q *Queries) GetRestorableProductStock(ctx context.Context, productID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, getRestorableProductStock, productID)
+	var reserved int64
+	err := row.Scan(&reserved)
+	return reserved, err
+}
+
 const listOrderItems = `-- name: ListOrderItems :many
 SELECT id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at
 FROM order_items

@@ -84,7 +84,7 @@ func (tx orderUserLockTx) InTx(ctx context.Context, fn func(context.Context) err
 }
 
 func TestOrderWritesSerializeWithAccountDeletionIntegration(t *testing.T) {
-	for _, operation := range []string{"checkout", biz.OrderActionShip, biz.OrderActionComplete, "prepare_refund"} {
+	for _, operation := range []string{"checkout", biz.OrderActionShip, biz.OrderActionComplete, "prepare_refund", biz.ReconciliationActionRetry, biz.ReconciliationActionResolve} {
 		t.Run(operation, func(t *testing.T) {
 			f := newCorrectnessFixture(t)
 			ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
@@ -109,6 +109,13 @@ func TestOrderWritesSerializeWithAccountDeletionIntegration(t *testing.T) {
 					require.NoError(t, err)
 				}
 			}
+			reconciliation := operation == biz.ReconciliationActionRetry || operation == biz.ReconciliationActionResolve
+			if reconciliation {
+				_, err := f.pool.Exec(ctx, `UPDATE payments SET third_party_tx_id=$2 WHERE id=$1`, paymentID, f.prefix+"_verified_tx")
+				require.NoError(t, err)
+				payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
+				require.NoError(t, payments.MarkReconciliationRequired(ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "wechat", Reason: "job_exhausted", LastError: "timeout"}))
+			}
 			operationDone := make(chan error, 1)
 			workers.Go(func() {
 				var err error
@@ -118,6 +125,9 @@ func TestOrderWritesSerializeWithAccountDeletionIntegration(t *testing.T) {
 						Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}},
 						IdempotencyKey: f.prefix + "_checkout", RequestHash: strings.Repeat("a", 64),
 					})
+				} else if reconciliation {
+					reconciliationRepo := NewPaymentReconciliationRepo(f.data, tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
+					_, err = reconciliationRepo.ApplyReconciliation(ctx, biz.Actor{ID: f.userID, Admin: true}, reconciliationInput(paymentID, 1, operation, "delete-overlap"))
 				} else if operation == "prepare_refund" {
 					payments := NewPaymentRepo(f.data, tx, log.DefaultLogger)
 					_, _, err = payments.PreparePaymentRefund(ctx, paymentID, f.prefix+"_refund")
@@ -175,6 +185,11 @@ func TestOrderWritesSerializeWithAccountDeletionIntegration(t *testing.T) {
 				row, err := f.data.DB(ctx).GetOrderByUserIdempotency(ctx, db.GetOrderByUserIdempotencyParams{UserID: f.userID, IdempotencyKey: f.prefix + "_checkout"})
 				require.NoError(t, err)
 				require.Equal(t, biz.OrderStatusPendingPayment, row.Status)
+			} else if reconciliation {
+				actions, err := f.data.DB(ctx).ListReconciliationActions(ctx, db.ListReconciliationActionsParams{PaymentID: paymentID, Limit: 10})
+				require.NoError(t, err)
+				require.Len(t, actions, 1)
+				require.Equal(t, operation, actions[0].Action)
 			} else if operation == "prepare_refund" {
 				row, err := f.data.DB(ctx).GetOrder(ctx, orderID)
 				require.NoError(t, err)
