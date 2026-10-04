@@ -91,7 +91,15 @@ func (r *PaymentReconciliationRepo) ApplyReconciliation(ctx context.Context, act
 			if err != nil {
 				return err
 			}
-			job, err := r.jobs.EnqueueCheckPayTx(ctx, biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "manual_reconciliation", MaxPolls: 5, PollIntervalSeconds: 30, OrderExpiresAt: order.ExpiresAt.Time}, time.Time{})
+			var job *biz.MQJob
+			if payment.Status == biz.PaymentStatusClosePending {
+				// Resume the interrupted close, including the signed-parameter
+				// expiry/account checks for an absent Alipay APP/WAP trade.
+				// A plain query job treats that absence as a technical error forever.
+				job, err = r.jobs.EnqueueClosePayTx(ctx, biz.ClosePayArgs{PaymentID: payment.ID, Provider: method.Provider, Reason: "manual_reconciliation"}, time.Time{})
+			} else {
+				job, err = r.jobs.EnqueueCheckPayTx(ctx, biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "manual_reconciliation", MaxPolls: 5, PollIntervalSeconds: 30, OrderExpiresAt: order.ExpiresAt.Time}, time.Time{})
+			}
 			if err != nil {
 				return err
 			}
