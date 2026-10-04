@@ -1793,6 +1793,21 @@ func (mr *MockQuerierMockRecorder) LockUserForAddress(ctx, id interface{}) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockUserForAddress", reflect.TypeOf((*MockQuerier)(nil).LockUserForAddress), ctx, id)
 }
 
+// LockUserForReference mocks base method.
+func (m *MockQuerier) LockUserForReference(ctx context.Context, id int64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockUserForReference", ctx, id)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockUserForReference indicates an expected call of LockUserForReference.
+func (mr *MockQuerierMockRecorder) LockUserForReference(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockUserForReference", reflect.TypeOf((*MockQuerier)(nil).LockUserForReference), ctx, id)
+}
+
 // LockUserMedia mocks base method.
 func (m *MockQuerier) LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]db.MediaAsset, error) {
 	m.ctrl.T.Helper()

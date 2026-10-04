@@ -120,6 +120,19 @@ func (q *Queries) LockUserForAddress(ctx context.Context, id int64) (int64, erro
 	return id_2, err
 }
 
+const lockUserForReference = `-- name: LockUserForReference :one
+SELECT id FROM users WHERE id=$1 FOR KEY SHARE
+`
+
+// Take the user FK lock before dependent rows, matching account deletion's
+// lock order while allowing non-key user updates and default-address switches.
+func (q *Queries) LockUserForReference(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, lockUserForReference, id)
+	var id_2 int64
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET nickname = $2,
