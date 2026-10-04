@@ -42,9 +42,12 @@ func TestReconciliationRetryResumesClosePendingOperation(t *testing.T) {
 			payment.PayChannel = "alipay:app"
 			payment.ReconciliationVersion = 1
 			payment.ReconciliationStatus = biz.ReconciliationStatusRequired
-			q.EXPECT().GetPayment(gomock.Any(), payment.ID).Return(payment, nil)
-			q.EXPECT().GetOrderForUpdate(gomock.Any(), payment.OrderID).Return(db.Order{ID: payment.OrderID}, nil)
-			q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), payment.OrderID).Return([]db.Payment{payment}, nil)
+			gomock.InOrder(
+				q.EXPECT().LockUserForReference(gomock.Any(), int64(99)).Return(int64(99), nil),
+				q.EXPECT().GetPayment(gomock.Any(), payment.ID).Return(payment, nil),
+				q.EXPECT().GetOrderForUpdate(gomock.Any(), payment.OrderID).Return(db.Order{ID: payment.OrderID}, nil),
+				q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), payment.OrderID).Return([]db.Payment{payment}, nil),
+			)
 			q.EXPECT().GetReconciliationAction(gomock.Any(), gomock.Any()).Return(db.PaymentReconciliationAction{}, pgx.ErrNoRows)
 			changed := payment
 			changed.ReconciliationVersion = 2
@@ -66,11 +69,12 @@ func TestReconciliationRetryResumesClosePendingOperation(t *testing.T) {
 			require.EqualValues(t, 123, action.JobID)
 			if status == biz.PaymentStatusClosePending {
 				require.Nil(t, jobs.check)
-				require.Equal(t, &biz.ClosePayArgs{PaymentID: payment.ID, Provider: "alipay", Reason: "manual_reconciliation"}, jobs.close)
+				require.Equal(t, &biz.ClosePayArgs{PaymentID: payment.ID, Provider: "alipay", ReconciliationVersion: 2, Reason: "manual_reconciliation"}, jobs.close)
 			} else {
 				require.Nil(t, jobs.close)
 				require.NotNil(t, jobs.check)
 				require.Equal(t, "manual_reconciliation", jobs.check.Trigger)
+				require.EqualValues(t, 2, jobs.check.ReconciliationVersion)
 			}
 		})
 	}

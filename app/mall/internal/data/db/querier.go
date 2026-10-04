@@ -102,6 +102,12 @@ type Querier interface {
 	GetProduct(ctx context.Context, id int64) (Product, error)
 	GetProductForOrder(ctx context.Context, id int64) (Product, error)
 	GetReconciliationAction(ctx context.Context, arg GetReconciliationActionParams) (PaymentReconciliationAction, error)
+	// Call AFTER locking the product, in a separate READ COMMITTED statement.
+	// Checkout and stock restoration both hold that product lock until commit.
+	// Read orders without row locks to avoid reversing their order -> product order.
+	// Only these states can still return stock; shipped/completed orders cannot be
+	// cancelled/refunded, and duplicate/late payment refunds do not restore stock.
+	GetRestorableProductStock(ctx context.Context, productID int64) (int64, error)
 	GetShippingAddress(ctx context.Context, arg GetShippingAddressParams) (ShippingAddress, error)
 	// Prevent update/delete until the order has copied this exact address row.
 	GetShippingAddressForSnapshot(ctx context.Context, arg GetShippingAddressForSnapshotParams) (ShippingAddress, error)

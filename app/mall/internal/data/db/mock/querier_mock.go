@@ -1152,6 +1152,21 @@ func (mr *MockQuerierMockRecorder) GetReconciliationAction(ctx, arg interface{})
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReconciliationAction", reflect.TypeOf((*MockQuerier)(nil).GetReconciliationAction), ctx, arg)
 }
 
+// GetRestorableProductStock mocks base method.
+func (m *MockQuerier) GetRestorableProductStock(ctx context.Context, productID int64) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRestorableProductStock", ctx, productID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRestorableProductStock indicates an expected call of GetRestorableProductStock.
+func (mr *MockQuerierMockRecorder) GetRestorableProductStock(ctx, productID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRestorableProductStock", reflect.TypeOf((*MockQuerier)(nil).GetRestorableProductStock), ctx, productID)
+}
+
 // GetShippingAddress mocks base method.
 func (m *MockQuerier) GetShippingAddress(ctx context.Context, arg db.GetShippingAddressParams) (db.ShippingAddress, error) {
 	m.ctrl.T.Helper()

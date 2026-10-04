@@ -4,6 +4,7 @@ package data
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -289,6 +290,82 @@ func TestReviewReconciliationSiblingAfterPrimaryRefundIntegration(t *testing.T) 
 			actions, err := repo.ListReconciliationActions(f.ctx, siblingID, 0, 100)
 			require.NoError(t, err)
 			require.Len(t, actions, 1)
+		})
+	}
+}
+
+func TestReconciliationRetryDoesNotReuseDelayedJobIntegration(t *testing.T) {
+	for _, status := range []string{biz.PaymentStatusPending, biz.PaymentStatusClosePending} {
+		t.Run(status, func(t *testing.T) {
+			f := newCorrectnessFixture(t)
+			_, paymentID, _ := f.seedPayment(t, status)
+			mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
+			var old *biz.MQJob
+			var err error
+			if status == biz.PaymentStatusClosePending {
+				old, err = mq.EnqueueClosePay(f.ctx, biz.ClosePayArgs{PaymentID: paymentID, Provider: "wechat", Reason: "expired"}, time.Now().Add(time.Hour))
+			} else {
+				old, err = mq.EnqueueCheckPay(f.ctx, biz.CheckPayArgs{PaymentID: paymentID, Provider: "wechat", Trigger: "prepay", MaxPolls: 100}, time.Now().Add(time.Hour))
+			}
+			require.NoError(t, err)
+			payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
+			repo := NewPaymentReconciliationRepo(f.data, f.tx, mq, log.DefaultLogger)
+			admin := biz.Actor{ID: f.userID, Admin: true}
+			previousID := old.ID
+			// A reopened case must also get a fresh immediate job, even while
+			// the preceding manual retry is still available/running.
+			for attempt := int64(1); attempt <= 2; attempt++ {
+				require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "wechat", Reason: fmt.Sprintf("failure_%d", attempt), LastError: "timeout"}))
+				input := reconciliationInput(paymentID, attempt*2-1, biz.ReconciliationActionRetry, fmt.Sprintf("immediate-retry-%d", attempt))
+				type result struct {
+					action *biz.ReconciliationAction
+					err    error
+				}
+				results := make(chan result, 4)
+				for range 4 {
+					go func() {
+						action, err := repo.ApplyReconciliation(f.ctx, admin, input)
+						results <- result{action, err}
+					}()
+				}
+				var action *biz.ReconciliationAction
+				for range 4 {
+					r := <-results
+					require.NoError(t, r.err)
+					if action != nil {
+						require.Equal(t, action.ID, r.action.ID)
+						require.Equal(t, action.JobID, r.action.JobID)
+					}
+					action = r.action
+				}
+				require.NotEqual(t, old.ID, action.JobID)
+				require.NotEqual(t, previousID, action.JobID)
+				previousID = action.JobID
+				job, err := mq.GetMQJob(f.ctx, action.JobID)
+				require.NoError(t, err)
+				require.Equal(t, "available", job.State)
+				require.False(t, job.ScheduledAt.After(time.Now()), "manual retry must be eligible immediately")
+				if status == biz.PaymentStatusClosePending {
+					var args biz.ClosePayArgs
+					require.NoError(t, json.Unmarshal([]byte(job.ArgsJSON), &args))
+					require.Equal(t, "manual_reconciliation", args.Reason)
+					require.Equal(t, action.ToVersion, args.ReconciliationVersion)
+				} else {
+					var args biz.CheckPayArgs
+					require.NoError(t, json.Unmarshal([]byte(job.ArgsJSON), &args))
+					require.Equal(t, "manual_reconciliation", args.Trigger)
+					require.Equal(t, action.ToVersion, args.ReconciliationVersion)
+					require.Equal(t, 5, args.MaxPolls)
+					require.Equal(t, 30, args.PollIntervalSeconds)
+				}
+				var count int
+				require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT count(*) FROM river_job WHERE kind=$1 AND (args->>'payment_id')::bigint=$2`, job.Kind, paymentID).Scan(&count))
+				require.EqualValues(t, attempt+1, count, "same-key requests enqueue only once")
+			}
+			unchanged, err := mq.GetMQJob(f.ctx, old.ID)
+			require.NoError(t, err)
+			require.Equal(t, old.ScheduledAt, unchanged.ScheduledAt)
+			require.Equal(t, old.ArgsJSON, unchanged.ArgsJSON)
 		})
 	}
 }

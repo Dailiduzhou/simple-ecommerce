@@ -4,11 +4,13 @@ package data
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	kerrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
@@ -149,4 +151,73 @@ func TestReviewOngoingPageBoundsIntegration(t *testing.T) {
 	require.Error(t, err)
 	_, err = repo.ListOngoingOrdersByUser(f.ctx, f.userID, 20, -1)
 	require.Error(t, err)
+}
+
+func TestStockAdjustmentLeavesRoomForCancelAndRefundIntegration(t *testing.T) {
+	for _, operation := range []string{"cancel", "refund"} {
+		t.Run(operation, func(t *testing.T) {
+			f := newCorrectnessFixture(t)
+			orders := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
+			order, err := orders.CreateOrder(f.ctx, biz.CreateOrderArgs{UserID: f.userID, AddressID: f.addressID, Currency: "CNY",
+				OutTradeNo: f.prefix + "_order", IdempotencyKey: f.prefix + "_key", RequestHash: f.prefix,
+				PaymentTimeout: time.Hour, Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}}})
+			require.NoError(t, err)
+			payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
+			var paymentID, refundID int64
+			if operation == "refund" {
+				payment, err := payments.CreatePayment(f.ctx, biz.CreatePaymentArgs{OrderID: order.ID, UserID: f.userID, Amount: 12345, Currency: "CNY", Method: "wechat:native", OutTradeNo: f.prefix + "_pay"})
+				require.NoError(t, err)
+				paymentID = payment.ID
+				require.NoError(t, payments.ApplyPayQuery(f.ctx, biz.CheckPayArgs{PaymentID: paymentID, Provider: "wechat"}, &biz.PaymentQueryResult{Method: biz.PaymentMethod{Provider: "wechat", Product: "native"}, OutTradeNo: payment.OutTradeNo, TransactionID: f.prefix + "_tx", Amount: 12345, Currency: "CNY", TradeState: biz.TradeStateSuccess}))
+				_, refund, err := payments.PreparePaymentRefund(f.ctx, paymentID, f.prefix+"_refund")
+				require.NoError(t, err)
+				refundID = refund.ID
+			}
+			products := NewProductRepo(f.data, f.tx, log.DefaultLogger)
+			input := biz.StockAdjustmentInput{ProductID: f.productID, ActorID: f.userID, Delta: math.MaxInt32 - 99, Reason: "restock", IdempotencyKey: "stock-limit"}
+			_, err = products.AdjustStock(f.ctx, input)
+			require.Error(t, err)
+			require.Equal(t, "STOCK_ADJUSTMENT_CONFLICT", kerrors.FromError(err).Reason)
+			var count, stock int
+			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT count(*) FROM stock_adjustments WHERE product_id=$1`, f.productID).Scan(&count))
+			require.Zero(t, count, "rejected adjustment writes no audit")
+			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id=$1`, f.productID).Scan(&stock))
+			require.Equal(t, 99, stock)
+			input.Delta-- // available + reserved reaches exactly MaxInt32
+			adjustment, err := products.AdjustStock(f.ctx, input)
+			require.NoError(t, err)
+			require.EqualValues(t, math.MaxInt32-1, adjustment.ResultingStock)
+			for range 2 {
+				if operation == "refund" {
+					require.NoError(t, payments.ApplyPaymentRefund(f.ctx, paymentID, refundID))
+				} else {
+					require.NoError(t, orders.CancelOrderByUser(f.ctx, order.ID, f.userID))
+				}
+			}
+			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id=$1`, f.productID).Scan(&stock))
+			require.EqualValues(t, math.MaxInt32, stock, "restore exactly once without overflow or truncation")
+			replay, err := products.AdjustStock(f.ctx, input)
+			require.NoError(t, err)
+			require.Equal(t, adjustment.ID, replay.ID, "replay returns original audit even after restoration")
+			reserved, err := f.data.q.GetRestorableProductStock(f.ctx, f.productID)
+			require.NoError(t, err)
+			require.Zero(t, reserved)
+		})
+	}
+}
+
+func TestRestorableStockIncludesOnlyUnfulfilledOrdersIntegration(t *testing.T) {
+	f := newCorrectnessFixture(t)
+	// Counts order items, not payments (which may include duplicate attempts).
+	for _, status := range []string{biz.OrderStatusPendingPayment, biz.OrderStatusCancelling, biz.OrderStatusPaid,
+		biz.OrderStatusShipped, biz.OrderStatusCompleted, biz.OrderStatusCancelled, biz.OrderStatusRefunded} {
+		orderID, paymentID := fulfillmentOrder(t, f)
+		_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status=$2::text, is_completed=($2::text IN ('completed','cancelled','refunded')) WHERE id=$1`, orderID, status)
+		require.NoError(t, err)
+		_, err = f.pool.Exec(f.ctx, `INSERT INTO payments(order_id,user_id,merchant_id,amount_minor,status,pay_channel,out_trade_no,currency) VALUES($1,$2,0,12345,'failed','wechat:native',$3,'CNY')`, orderID, f.userID, fmt.Sprintf("%s_duplicate_%d", f.prefix, paymentID))
+		require.NoError(t, err)
+	}
+	reserved, err := f.data.q.GetRestorableProductStock(f.ctx, f.productID)
+	require.NoError(t, err)
+	require.EqualValues(t, 3, reserved)
 }

@@ -20,13 +20,16 @@ type ReconcileRefundsArgs struct{}
 func (ReconcileRefundsArgs) Kind() string { return ReconcileRefundsJobKind }
 
 type CheckPayArgs struct {
-	PaymentID           int64  `json:"payment_id" river:"unique"`
-	Provider            string `json:"provider" river:"unique"`
-	NotificationID      int64  `json:"notification_id" river:"unique"`
-	Trigger             string `json:"trigger"`
-	PollCount           int    `json:"poll_count"`
-	MaxPolls            int    `json:"max_polls"`
-	PollIntervalSeconds int    `json:"poll_interval_seconds"`
+	// A committed manual retry gets a fresh unique key, independent of older
+	// scheduled/running polls. Zero retains the ordinary polling identity.
+	ReconciliationVersion int64  `json:"reconciliation_version,omitempty" river:"unique"`
+	PaymentID             int64  `json:"payment_id" river:"unique"`
+	Provider              string `json:"provider" river:"unique"`
+	NotificationID        int64  `json:"notification_id" river:"unique"`
+	Trigger               string `json:"trigger"`
+	PollCount             int    `json:"poll_count"`
+	MaxPolls              int    `json:"max_polls"`
+	PollIntervalSeconds   int    `json:"poll_interval_seconds"`
 	// OrderExpiresAt bounds poll-triggered close: closing earlier would cancel
 	// an order that is still inside its payment window. Zero means the enqueuer
 	// could not supply the deadline and legacy close-on-exhaustion applies.
@@ -36,9 +39,10 @@ type CheckPayArgs struct {
 func (CheckPayArgs) Kind() string { return CheckPayJobKind }
 
 type ClosePayArgs struct {
-	PaymentID int64  `json:"payment_id" river:"unique"`
-	Provider  string `json:"provider" river:"unique"`
-	Reason    string `json:"reason"`
+	ReconciliationVersion int64  `json:"reconciliation_version,omitempty" river:"unique"`
+	PaymentID             int64  `json:"payment_id" river:"unique"`
+	Provider              string `json:"provider" river:"unique"`
+	Reason                string `json:"reason"`
 }
 
 func (ClosePayArgs) Kind() string { return ClosePayJobKind }
