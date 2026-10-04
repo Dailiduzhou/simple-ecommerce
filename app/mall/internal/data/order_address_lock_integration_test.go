@@ -19,8 +19,8 @@ func TestDefaultAddressLockAllowsConcurrentCheckoutIntegration(t *testing.T) {
 	_, err := f.pool.Exec(ctx, `UPDATE shipping_addresses SET receiver_phone_encrypt=$2 WHERE id=$1`, f.addressID, shippingCipher(t, "13800138000"))
 	require.NoError(t, err)
 
-	// Pause checkout after its address FOR SHARE, before the order INSERT's
-	// foreign-key check takes KEY SHARE on the user.
+	// Pause checkout after its user FOR KEY SHARE and address FOR SHARE,
+	// before the order INSERT checks the foreign keys again.
 	barrier := shippingSnapshotTx{TxManager: f.tx, loaded: make(chan struct{}), release: make(chan struct{})}
 	var once sync.Once
 	release := func() { once.Do(func() { close(barrier.release) }) }
@@ -37,7 +37,8 @@ func TestDefaultAddressLockAllowsConcurrentCheckoutIntegration(t *testing.T) {
 	}
 
 	// Default-address switching locks the user first, then waits for the
-	// address held by checkout. This must not block checkout's user FK check.
+	// address held by checkout. Its user lock must remain compatible with
+	// checkout's KEY SHARE, including the order INSERT's user FK check.
 	switchTx, err := f.pool.Begin(ctx)
 	require.NoError(t, err)
 	defer switchTx.Rollback(context.Background())

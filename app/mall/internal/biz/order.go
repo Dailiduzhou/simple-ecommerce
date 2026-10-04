@@ -144,8 +144,8 @@ type OrderRepo interface {
 
 type OrderUsecase interface {
 	CreateOrder(ctx context.Context, req *CreateOrderReq) (*Order, error)
-	GetOrder(ctx context.Context, id, userID int64) (*Order, error)
-	ListOrders(ctx context.Context, req *ListOrdersReq) ([]Order, int64, error)
+	GetOrder(ctx context.Context, id int64, actor Actor) (*Order, error)
+	ListOrders(ctx context.Context, actor Actor, req *ListOrdersReq) ([]Order, int64, error)
 	CancelOrder(ctx context.Context, id, userID int64) error
 }
 
@@ -263,11 +263,20 @@ func hashOrderRequest(userID, addressID int64, items []OrderItemInput) (string, 
 	return hex.EncodeToString(digest[:]), nil
 }
 
-func (uc *orderUsecase) GetOrder(ctx context.Context, id, userID int64) (*Order, error) {
-	if id <= 0 || userID <= 0 {
+func (uc *orderUsecase) GetOrder(ctx context.Context, id int64, actor Actor) (*Order, error) {
+	if err := actor.Validate(); err != nil {
+		return nil, err
+	}
+	if id <= 0 {
 		return nil, ErrOrderNotFound
 	}
-	order, err := uc.repo.GetOrderByUser(ctx, id, userID)
+	var order Order
+	var err error
+	if actor.Admin {
+		order, err = uc.repo.GetOrder(ctx, id)
+	} else {
+		order, err = uc.repo.GetOrderByUser(ctx, id, actor.ID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -277,9 +286,15 @@ func (uc *orderUsecase) GetOrder(ctx context.Context, id, userID int64) (*Order,
 	return &order, nil
 }
 
-func (uc *orderUsecase) ListOrders(ctx context.Context, req *ListOrdersReq) ([]Order, int64, error) {
+func (uc *orderUsecase) ListOrders(ctx context.Context, actor Actor, req *ListOrdersReq) ([]Order, int64, error) {
+	if err := actor.Validate(); err != nil {
+		return nil, 0, err
+	}
 	if req == nil || req.UserID <= 0 {
 		return nil, 0, ErrOrderInputInvalid
+	}
+	if !actor.Admin && actor.ID != req.UserID {
+		return nil, 0, errors.Forbidden("FORBIDDEN", "resource does not belong to the authenticated user")
 	}
 	pagination, err := NewOffsetPage(req.Limit, req.Offset)
 	if err != nil {

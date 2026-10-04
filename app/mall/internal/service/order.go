@@ -54,12 +54,18 @@ func (s *OrderService) GetOrder(ctx context.Context, req *pb.GetOrderRequest) (*
 	if req == nil {
 		return nil, errors.BadRequest("ORDER_REQUEST_REQUIRED", "request is required")
 	}
-	if err := requireResourceOwner(claims, req.UserId); err != nil {
-		return nil, err
+	a := biz.Actor{ID: claims.UserID, Admin: claims.Role == "admin"}
+	if !a.Admin {
+		if err := requireResourceOwner(claims, req.UserId); err != nil {
+			return nil, err
+		}
 	}
-	order, err := s.orderUc.GetOrder(ctx, req.Id, claims.UserID)
+	order, err := s.orderUc.GetOrder(ctx, req.Id, a)
 	if err != nil {
 		return nil, err
+	}
+	if req.UserId != 0 && order.UserID != req.UserId {
+		return nil, biz.ErrOrderNotFound
 	}
 	return toProtoOrder(order), nil
 }
@@ -72,14 +78,18 @@ func (s *OrderService) ListOrders(ctx context.Context, req *pb.ListOrdersRequest
 	if req == nil {
 		return nil, errors.BadRequest("ORDER_REQUEST_REQUIRED", "request is required")
 	}
-	if err := requireResourceOwner(claims, req.UserId); err != nil {
+	a := biz.Actor{ID: claims.UserID, Admin: claims.Role == "admin"}
+	userID := claims.UserID
+	if a.Admin && req.UserId != 0 {
+		userID = req.UserId
+	} else if err := requireResourceOwner(claims, req.UserId); err != nil {
 		return nil, err
 	}
 	pagination, err := biz.NewPage(req.Page, req.PageSize)
 	if err != nil {
 		return nil, err
 	}
-	orders, total, err := s.orderUc.ListOrders(ctx, &biz.ListOrdersReq{UserID: claims.UserID, Ongoing: req.Ongoing, Limit: pagination.Limit, Offset: pagination.Offset})
+	orders, total, err := s.orderUc.ListOrders(ctx, a, &biz.ListOrdersReq{UserID: userID, Ongoing: req.Ongoing, Limit: pagination.Limit, Offset: pagination.Offset})
 	if err != nil {
 		return nil, err
 	}

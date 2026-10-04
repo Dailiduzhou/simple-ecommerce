@@ -42,7 +42,7 @@ func TestUserRepoDeleteUsesTransactionAndDefersCacheInvalidation(t *testing.T) {
 	// No fallback database or Redis: either use before commit would panic.
 	repo := NewUserRepo(&Data{}, log.DefaultLogger)
 	require.NoError(t, repo.DeleteUser(ctx, 12))
-	require.Len(t, state.afterCommit, 1)
+	require.Empty(t, state.afterCommit, "a repository without Redis has no invalidation work to defer")
 }
 
 func TestCommunityConfigurationRejectsUnboundedQueuesBeforeConnecting(t *testing.T) {

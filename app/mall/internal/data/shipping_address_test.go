@@ -54,6 +54,7 @@ func TestSetDefaultShippingAddressIsAtomicAndInvalidatesBothDetails(t *testing.T
 	ctrl := gomock.NewController(t)
 	q := mockdb.NewMockQuerier(ctrl)
 	redisServer := miniredis.RunT(t)
+	q.EXPECT().LockUserForAddress(gomock.Any(), int64(2)).Return(int64(2), nil)
 	q.EXPECT().GetShippingAddress(gomock.Any(), db.GetShippingAddressParams{ID: 9, UserID: 2}).Return(db.ShippingAddress{ID: 9, UserID: 2}, nil)
 	q.EXPECT().GetDefaultShippingAddress(gomock.Any(), int64(2)).Return(db.ShippingAddress{ID: 8, UserID: 2, IsDefault: true}, nil)
 	q.EXPECT().ClearDefaultShippingAddress(gomock.Any(), int64(2)).Return(nil)

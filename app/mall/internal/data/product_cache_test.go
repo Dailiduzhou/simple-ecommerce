@@ -17,7 +17,7 @@ func TestProductListInvalidationUsesGlobalAndCategoryGenerations(t *testing.T) {
 	q := mockdb.NewMockQuerier(ctrl)
 	redisServer := miniredis.RunT(t)
 	d := newTestData(t, q, redisServer)
-	repo := NewProductRepo(d, log.DefaultLogger)
+	repo := NewProductRepo(d, nil, log.DefaultLogger)
 	repo.invalidateProductLists(context.Background(), 7, 8, 7)
 	require.Equal(t, "1", d.rdb.Get(context.Background(), "product:list:gen").Val())
 	require.Equal(t, "1", d.rdb.Get(context.Background(), "product:category:7:gen").Val())
@@ -30,15 +30,11 @@ func TestProductStockInvalidationSurvivesRequestCancellation(t *testing.T) {
 	d := newTestData(t, q, mr)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	q.EXPECT().ListOrderItems(gomock.Any(), int64(10)).DoAndReturn(func(ctx context.Context, _ int64) ([]db.OrderItem, error) {
+	q.EXPECT().ListOrderProductCacheTargets(gomock.Any(), int64(10)).DoAndReturn(func(ctx context.Context, _ int64) ([]db.ListOrderProductCacheTargetsRow, error) {
 		require.NoError(t, ctx.Err())
 		_, bounded := ctx.Deadline()
 		require.True(t, bounded)
-		return []db.OrderItem{{ProductID: 42}}, nil
-	})
-	q.EXPECT().GetProduct(gomock.Any(), int64(42)).DoAndReturn(func(ctx context.Context, _ int64) (db.Product, error) {
-		require.NoError(t, ctx.Err())
-		return db.Product{ID: 42, CategoryID: 7}, nil
+		return []db.ListOrderProductCacheTargetsRow{{ID: 42, CategoryID: 7}}, nil
 	})
 	invalidateProductCachesForOrder(ctx, d, log.NewHelper(log.DefaultLogger), 10)
 	for _, key := range []string{"product:42:gen", "product:list:gen", "product:category:7:gen"} {
@@ -57,8 +53,8 @@ func TestProductDetailGenerationOnlyChangesAfterCommit(t *testing.T) {
 			state := &txState{}
 			ctx := context.WithValue(WithQuerier(context.Background(), q, nil), txStateKey{}, state)
 			q.EXPECT().GetProduct(gomock.Any(), int64(42)).Return(db.Product{ID: 42, CategoryID: 7}, nil)
-			q.EXPECT().UpdateProductStatus(gomock.Any(), db.UpdateProductStatusParams{ID: 42, Status: 1}).Return(nil)
-			require.NoError(t, NewProductRepo(d, log.DefaultLogger).UpdateProductStatus(ctx, 42, 1))
+			q.EXPECT().UpdateProductStatus(gomock.Any(), db.UpdateProductStatusParams{ID: 42, Status: 1}).Return(db.Product{}, nil)
+			require.NoError(t, NewProductRepo(d, nil, log.DefaultLogger).UpdateProductStatus(ctx, 42, 1))
 			require.False(t, mr.Exists("product:42:gen"))
 			if commit {
 				for _, fn := range state.afterCommit {

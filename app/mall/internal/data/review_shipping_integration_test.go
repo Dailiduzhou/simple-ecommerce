@@ -58,15 +58,32 @@ func TestReviewOrderShippingSnapshotSurvivesAddressBookChangesIntegration(t *tes
 	_, err = addresses.UpdateShippingAddress(f.ctx, f.addressID, f.userID, "Receiver B", "hash B", shippingCipher(t, "13900139000"), "New Province", "New City", "New District", "Address B", "")
 	require.NoError(t, err)
 	require.NoError(t, addresses.DeleteShippingAddress(f.ctx, f.addressID, f.userID))
-	read, err := orders.GetOrder(f.ctx, order.ID, f.userID)
+	read, err := orders.GetOrder(f.ctx, order.ID, biz.Actor{ID: f.userID})
 	require.NoError(t, err)
 	require.Equal(t, "Receiver A", read.Shipping.ReceiverName)
 	require.Equal(t, "Address A", read.Shipping.DetailAddress)
 	require.Equal(t, "13800138000", read.Shipping.ReceiverPhone)
-	page, _, err := orders.ListOrders(f.ctx, &biz.ListOrdersReq{UserID: f.userID, Limit: 20})
+	page, _, err := orders.ListOrders(f.ctx, biz.Actor{ID: f.userID}, &biz.ListOrdersReq{UserID: f.userID, Limit: 20})
 	require.NoError(t, err)
 	require.Len(t, page, 1)
 	require.Equal(t, "Address A", page[0].Shipping.DetailAddress)
+	// A different authenticated actor may read the immutable fulfillment
+	// snapshot only with the administrator role, including cached order pages.
+	other := biz.Actor{ID: f.userID + 1}
+	_, err = orders.GetOrder(f.ctx, order.ID, other)
+	require.ErrorIs(t, err, biz.ErrOrderNotFound)
+	_, _, err = orders.ListOrders(f.ctx, other, &biz.ListOrdersReq{UserID: f.userID, Limit: 20})
+	require.Error(t, err)
+	other.Admin = true
+	read, err = orders.GetOrder(f.ctx, order.ID, other)
+	require.NoError(t, err)
+	require.Equal(t, "Address A", read.Shipping.DetailAddress)
+	require.Equal(t, "13800138000", read.Shipping.ReceiverPhone)
+	page, _, err = orders.ListOrders(f.ctx, other, &biz.ListOrdersReq{UserID: f.userID, Limit: 20})
+	require.NoError(t, err)
+	require.Len(t, page, 1)
+	require.Equal(t, "Address A", page[0].Shipping.DetailAddress)
+	require.Equal(t, "13800138000", page[0].Shipping.ReceiverPhone)
 	replay, err := orders.CreateOrder(f.ctx, shippingCheckout(f))
 	require.NoError(t, err)
 	require.Equal(t, order.ID, replay.ID, "idempotent replay does not resolve deleted address IDs")
@@ -130,7 +147,7 @@ func TestReviewConcurrentAddressDeleteWaitsForCheckoutSnapshotIntegration(t *tes
 	created := <-finished
 	require.NoError(t, created.err)
 	require.NoError(t, NewShippingAddressRepo(f.data, f.tx, log.DefaultLogger).DeleteShippingAddress(f.ctx, f.addressID, f.userID))
-	read, err := shippingOrderUsecase(f, f.tx).GetOrder(f.ctx, created.order.ID, f.userID)
+	read, err := shippingOrderUsecase(f, f.tx).GetOrder(f.ctx, created.order.ID, biz.Actor{ID: f.userID})
 	require.NoError(t, err)
 	require.Equal(t, "13800138000", read.Shipping.ReceiverPhone)
 }
