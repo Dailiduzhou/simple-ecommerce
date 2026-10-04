@@ -153,6 +153,8 @@ func TestRefundRetryRestoresPendingBeforeReturningOriginalNumber(t *testing.T) {
 	pending := refund
 	pending.Status = biz.PaymentRefundStatusPending
 	gomock.InOrder(
+		q.EXPECT().GetPayment(gomock.Any(), payment.ID).Return(payment, nil),
+		q.EXPECT().LockUserForReference(gomock.Any(), payment.UserID).Return(payment.UserID, nil),
 		q.EXPECT().GetOrderForUpdateByPaymentID(gomock.Any(), payment.ID).Return(db.Order{ID: payment.OrderID, Status: biz.OrderStatusPaid, PaidPaymentID: pgtype.Int8{Int64: payment.ID, Valid: true}}, nil),
 		q.EXPECT().GetPaymentForUpdate(gomock.Any(), payment.ID).Return(payment, nil),
 		q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), refund.PaymentID).Return(refund, nil),
