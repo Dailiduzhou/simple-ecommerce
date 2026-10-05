@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 
 func TestExampleConfigurationLoadsEnvironmentWithoutCoercingSecrets(t *testing.T) {
 	settings := map[string]string{
+		"APP_IS_PRODUCTION":        "false",
 		"AUTH_ACCESS_TOKEN_SECRET": strings.Repeat("a", 32), "AUTH_REFRESH_TOKEN_SECRET": strings.Repeat("b", 32), "AUTH_PHONE_SECRET": strings.Repeat("1", 32),
 		"SNOWFLAKE_NODE_ID": "1", "PAYMENT_ALIPAY_ENABLED": "false", "ALIPAY_IS_PRODUCTION": "false", "ALIPAY_APP_ID": "2026012345678901", "PAYMENT_WECHAT_ENABLED": "false", "WECHAT_IS_PRODUCTION": "false",
 		"STORAGE_PROVIDER": "s3", "STORAGE_ENDPOINT": "minio:9000", "STORAGE_PUBLIC_ENDPOINT": "images.example.test", "STORAGE_BUCKET": "private-images", "STORAGE_USE_TLS": "false", "STORAGE_PUBLIC_USE_TLS": "true",
@@ -42,6 +44,25 @@ func TestExampleConfigurationLoadsEnvironmentWithoutCoercingSecrets(t *testing.T
 	require.False(t, bc.Payment.Alipay.Enabled)
 	require.True(t, bc.Storage.PublicUseTls)
 	require.EqualValues(t, 90, bc.Community.HistoryRetentionDays)
+	require.NotNil(t, bc.Server.IsProduction)
+	require.False(t, bc.Server.GetIsProduction())
+	t.Setenv("APP_IS_PRODUCTION", "true")
+	bc, e = load()
+	require.NoError(t, e)
+	require.True(t, bc.Server.GetIsProduction())
+	// An absent environment variable must default to production.
+	require.NoError(t, os.Unsetenv("APP_IS_PRODUCTION"))
+	bc, e = load()
+	require.NoError(t, e)
+	require.True(t, bc.Server.GetIsProduction())
+	t.Setenv("APP_IS_PRODUCTION", "")
+	bc, e = load()
+	require.NoError(t, e)
+	require.Nil(t, bc.Server.IsProduction)
+	t.Setenv("APP_IS_PRODUCTION", "invalid")
+	_, e = load()
+	require.ErrorContains(t, e, "server.is_production must be a boolean")
+	t.Setenv("APP_IS_PRODUCTION", "true")
 	t.Setenv("STORAGE_PUBLIC_USE_TLS", "invalid")
 	_, e = load()
 	require.ErrorContains(t, e, "storage.public_use_tls must be a boolean")

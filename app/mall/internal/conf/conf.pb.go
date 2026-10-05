@@ -263,9 +263,12 @@ func (x *Auth) GetLoginAccountInterval() *durationpb.Duration {
 }
 
 type Server struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Http          *Server_HTTP           `protobuf:"bytes,1,opt,name=http,proto3" json:"http,omitempty"`
-	Grpc          *Server_GRPC           `protobuf:"bytes,2,opt,name=grpc,proto3" json:"grpc,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Http  *Server_HTTP           `protobuf:"bytes,1,opt,name=http,proto3" json:"http,omitempty"`
+	Grpc  *Server_GRPC           `protobuf:"bytes,2,opt,name=grpc,proto3" json:"grpc,omitempty"`
+	// Only explicit false enables permissive development CORS. Unset is treated
+	// as production to keep existing deployments restrictive.
+	IsProduction  *bool `protobuf:"varint,3,opt,name=is_production,json=isProduction,proto3,oneof" json:"is_production,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -312,6 +315,13 @@ func (x *Server) GetGrpc() *Server_GRPC {
 		return x.Grpc
 	}
 	return nil
+}
+
+func (x *Server) GetIsProduction() bool {
+	if x != nil && x.IsProduction != nil {
+		return *x.IsProduction
+	}
+	return false
 }
 
 type Data struct {
@@ -1249,10 +1259,11 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\fphone_secret\x18\x05 \x01(\tR\vphoneSecret\x127\n" +
 	"\x18auth_requests_per_minute\x18\x06 \x01(\x05R\x15authRequestsPerMinute\x12.\n" +
 	"\x13login_account_burst\x18\a \x01(\x05R\x11loginAccountBurst\x12O\n" +
-	"\x16login_account_interval\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginAccountInterval\"\xe2\x02\n" +
+	"\x16login_account_interval\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginAccountInterval\"\x9e\x03\n" +
 	"\x06Server\x12+\n" +
 	"\x04http\x18\x01 \x01(\v2\x17.kratos.api.Server.HTTPR\x04http\x12+\n" +
-	"\x04grpc\x18\x02 \x01(\v2\x17.kratos.api.Server.GRPCR\x04grpc\x1a\x92\x01\n" +
+	"\x04grpc\x18\x02 \x01(\v2\x17.kratos.api.Server.GRPCR\x04grpc\x12(\n" +
+	"\ris_production\x18\x03 \x01(\bH\x00R\fisProduction\x88\x01\x01\x1a\x92\x01\n" +
 	"\x04HTTP\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +
@@ -1261,7 +1272,8 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\x04GRPC\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +
-	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\"\xa2\x04\n" +
+	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeoutB\x10\n" +
+	"\x0e_is_production\"\xa2\x04\n" +
 	"\x04Data\x125\n" +
 	"\bdatabase\x18\x01 \x01(\v2\x19.kratos.api.Data.DatabaseR\bdatabase\x12,\n" +
 	"\x05redis\x18\x02 \x01(\v2\x16.kratos.api.Data.RedisR\x05redis\x1a\x94\x01\n" +
@@ -1399,6 +1411,7 @@ func file_conf_conf_proto_init() {
 	if File_conf_conf_proto != nil {
 		return
 	}
+	file_conf_conf_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
