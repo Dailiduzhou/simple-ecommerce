@@ -116,6 +116,7 @@ type Querier interface {
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error)
 	GetVisiblePost(ctx context.Context, id int64) (GetVisiblePostRow, error)
 	HasOngoingOrders(ctx context.Context, userID int64) (bool, error)
+	HasUnresolvedProviderRefund(ctx context.Context, paymentID int64) (bool, error)
 	HideUserPosts(ctx context.Context, authorID pgtype.Int8) error
 	IncrementProductStock(ctx context.Context, arg IncrementProductStockParams) error
 	LikePost(ctx context.Context, arg LikePostParams) error

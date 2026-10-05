@@ -104,6 +104,11 @@ func CanResolveReconciliation(payment *PaymentDO, order Order, refund *PaymentRe
 	if payment == nil || payment.OrderID != order.ID || payment.UserID != order.UserID || payment.Amount != order.TotalAmount || payment.Currency != order.Currency {
 		return false
 	}
+	// Provider-side refunds cannot be acknowledged using the original charge.
+	// Only a matching, successfully settled local refund can clear this case.
+	if payment.ReconciliationReason == "provider_side_refund" && payment.Status != PaymentStatusRefunded {
+		return false
+	}
 	funded := order.Status == OrderStatusPaid || order.Status == OrderStatusShipped || order.Status == OrderStatusCompleted
 	if refund != nil && refund.Status == PaymentRefundStatusPending {
 		return false
@@ -137,4 +142,10 @@ func CanResolveReconciliation(payment *PaymentDO, order Order, refund *PaymentRe
 
 func ReconciliationNeedsReview(status string) bool {
 	return status == ReconciliationStatusRequired || status == ReconciliationStatusProcessing
+}
+
+// ReconciliationJobCurrent fences manual retries, not ordinary polling or new
+// provider facts. A retry only belongs to the processing version that queued it.
+func ReconciliationJobCurrent(jobVersion, currentVersion int64, status string) bool {
+	return jobVersion == 0 || (jobVersion == currentVersion && status == ReconciliationStatusProcessing)
 }

@@ -21,7 +21,8 @@ func (ReconcileRefundsArgs) Kind() string { return ReconcileRefundsJobKind }
 
 type CheckPayArgs struct {
 	// A committed manual retry gets a fresh unique key, independent of older
-	// scheduled/running polls. Zero retains the ordinary polling identity.
+	// scheduled/running polls. It also fences execution and technical failures
+	// to that processing version. Zero retains ordinary polling behavior.
 	ReconciliationVersion int64  `json:"reconciliation_version,omitempty" river:"unique"`
 	PaymentID             int64  `json:"payment_id" river:"unique"`
 	Provider              string `json:"provider" river:"unique"`

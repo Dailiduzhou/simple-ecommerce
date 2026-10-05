@@ -1272,6 +1272,21 @@ func (mr *MockQuerierMockRecorder) HasOngoingOrders(ctx, userID interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasOngoingOrders", reflect.TypeOf((*MockQuerier)(nil).HasOngoingOrders), ctx, userID)
 }
 
+// HasUnresolvedProviderRefund mocks base method.
+func (m *MockQuerier) HasUnresolvedProviderRefund(ctx context.Context, paymentID int64) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasUnresolvedProviderRefund", ctx, paymentID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// HasUnresolvedProviderRefund indicates an expected call of HasUnresolvedProviderRefund.
+func (mr *MockQuerierMockRecorder) HasUnresolvedProviderRefund(ctx, paymentID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasUnresolvedProviderRefund", reflect.TypeOf((*MockQuerier)(nil).HasUnresolvedProviderRefund), ctx, paymentID)
+}
+
 // HideUserPosts mocks base method.
 func (m *MockQuerier) HideUserPosts(ctx context.Context, authorID pgtype.Int8) error {
 	m.ctrl.T.Helper()

@@ -46,7 +46,7 @@ func (h *PaymentRiverErrorHandler) HandleError(ctx context.Context, job *riverty
 		(job.Kind != biz.CheckPayJobKind && job.Kind != biz.ClosePayJobKind) {
 		return nil
 	}
-	var paymentID, notificationID int64
+	var paymentID, notificationID, reconciliationVersion int64
 	var provider string
 	switch job.Kind {
 	case biz.CheckPayJobKind:
@@ -56,6 +56,7 @@ func (h *PaymentRiverErrorHandler) HandleError(ctx context.Context, job *riverty
 			return nil
 		}
 		paymentID, notificationID, provider = args.PaymentID, args.NotificationID, args.Provider
+		reconciliationVersion = args.ReconciliationVersion
 	case biz.ClosePayJobKind:
 		var args biz.ClosePayArgs
 		if err := json.Unmarshal(job.EncodedArgs, &args); err != nil {
@@ -63,6 +64,7 @@ func (h *PaymentRiverErrorHandler) HandleError(ctx context.Context, job *riverty
 			return nil
 		}
 		paymentID, provider = args.PaymentID, args.Provider
+		reconciliationVersion = args.ReconciliationVersion
 	}
 	if paymentID <= 0 {
 		h.log.WithContext(ctx).Errorw("msg", "discarded payment job has invalid payment_id", "job_id", job.ID)
@@ -105,11 +107,14 @@ func (h *PaymentRiverErrorHandler) HandleError(ctx context.Context, job *riverty
 						}
 					}
 				}
-				if err == nil && payment.ID > 0 {
+				// Check under the same locks as resolution: a retry may have
+				// become stale while its provider request was in flight.
+				current := biz.ReconciliationJobCurrent(reconciliationVersion, payment.ReconciliationVersion, payment.ReconciliationStatus)
+				if err == nil && payment.ID > 0 && current {
 					payment, err = requirePaymentReconciliation(ctx, q, paymentID, "job_exhausted", lastError)
 					reconcileRequired = err == nil
 				}
-				if err == nil && payment.ID > 0 {
+				if err == nil && payment.ID > 0 && current {
 					_, err = q.CreatePaymentReconciliationFailure(ctx, db.CreatePaymentReconciliationFailureParams{
 						PaymentID: paymentID, Provider: provider, Reason: "job_exhausted",
 						RiverJobID: pgtype.Int8{Int64: job.ID, Valid: true}, Attempt: int32(job.Attempt), LastError: lastError,

@@ -51,3 +51,30 @@ func TestReconciliationCommandAuthorizationAndEvidence(t *testing.T) {
 	in.Evidence = " "
 	require.EqualValues(t, 400, errors.FromError(in.Validate(Actor{ID: 42, Admin: true})).Code)
 }
+
+func TestProviderSideRefundRequiresSettledRefund(t *testing.T) {
+	payment := &PaymentDO{ID: 1, OrderID: 7, UserID: 42, Amount: 100, Currency: "CNY", Status: PaymentStatusSuccess, ThirdPartyTxID: "provider-tx", ReconciliationReason: "provider_side_refund"}
+	order := Order{ID: 7, UserID: 42, TotalAmount: 100, Currency: "CNY", Status: OrderStatusPaid, PaidPaymentID: 1}
+	require.False(t, CanResolveReconciliation(payment, order, nil))
+	refund := &PaymentRefund{PaymentID: 1, OrderID: 7, UserID: 42, TotalAmount: 100, RefundAmount: 100, Currency: "CNY", Purpose: RefundOrderCancel, Status: PaymentRefundStatusSuccess}
+	require.False(t, CanResolveReconciliation(payment, order, refund), "receipt alone does not settle payment and order")
+	payment.Status = PaymentStatusRefunded
+	require.False(t, CanResolveReconciliation(payment, order, refund), "order must be settled too")
+	order.Status = OrderStatusRefunded
+	require.False(t, CanResolveReconciliation(payment, order, nil))
+	refund.Status = PaymentRefundStatusPending
+	require.False(t, CanResolveReconciliation(payment, order, refund))
+	refund.Status = PaymentRefundStatusSuccess
+	refund.RefundAmount--
+	require.False(t, CanResolveReconciliation(payment, order, refund))
+	refund.RefundAmount++
+	require.True(t, CanResolveReconciliation(payment, order, refund))
+}
+
+func TestReconciliationJobCurrent(t *testing.T) {
+	for _, status := range []string{ReconciliationStatusNone, ReconciliationStatusRequired, ReconciliationStatusProcessing, ReconciliationStatusResolved} {
+		require.True(t, ReconciliationJobCurrent(0, 3, status), "ordinary polls retain their behavior")
+		require.False(t, ReconciliationJobCurrent(2, 3, status))
+		require.Equal(t, status == ReconciliationStatusProcessing, ReconciliationJobCurrent(2, 2, status))
+	}
+}

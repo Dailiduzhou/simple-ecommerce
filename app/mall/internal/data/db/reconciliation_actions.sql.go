@@ -93,6 +93,20 @@ func (q *Queries) GetReconciliationAction(ctx context.Context, arg GetReconcilia
 	return i, err
 }
 
+const hasUnresolvedProviderRefund = `-- name: HasUnresolvedProviderRefund :one
+SELECT EXISTS (
+  SELECT 1 FROM payment_reconciliation_failures
+  WHERE payment_id=$1 AND reason='provider_side_refund' AND resolved_at IS NULL
+)
+`
+
+func (q *Queries) HasUnresolvedProviderRefund(ctx context.Context, paymentID int64) (bool, error) {
+	row := q.db.QueryRow(ctx, hasUnresolvedProviderRefund, paymentID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listReconciliationActions = `-- name: ListReconciliationActions :many
 SELECT id, payment_id, actor_id, action, from_status, to_status, from_version, to_version, idempotency_key, reason, evidence, river_job_id, created_at FROM payment_reconciliation_actions WHERE payment_id=$1 AND id>$2 ORDER BY id LIMIT $3
 `

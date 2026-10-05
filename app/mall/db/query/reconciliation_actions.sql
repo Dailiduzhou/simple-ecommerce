@@ -24,3 +24,9 @@ SELECT * FROM payments WHERE id > $1 AND reconciliation_status IN ('required','p
 
 -- name: ListReconciliationActions :many
 SELECT * FROM payment_reconciliation_actions WHERE payment_id=$1 AND id>$2 ORDER BY id LIMIT $3;
+
+-- name: HasUnresolvedProviderRefund :one
+SELECT EXISTS (
+  SELECT 1 FROM payment_reconciliation_failures
+  WHERE payment_id=$1 AND reason='provider_side_refund' AND resolved_at IS NULL
+);
