@@ -121,6 +121,7 @@ services:
       loki:
         condition: service_started
     environment:
+      APP_IS_PRODUCTION: ${APP_IS_PRODUCTION:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DATABASE_SOURCE: ${DATABASE_SOURCE:-postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}

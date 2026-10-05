@@ -1,4 +1,7 @@
 server:
+  # Explicit false allows all CORS origins, methods, headers and credentials.
+  # Keep true in production; this is independent of payment sandbox settings.
+  is_production: "${APP_IS_PRODUCTION:true}"
   http:
     addr: 0.0.0.0:8000
     timeout: 10s

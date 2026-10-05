@@ -48,6 +48,12 @@ func normalizeBools(node any, md protoreflect.MessageDescriptor, path string) er
 			continue // YAML literal bools are already typed
 		}
 		if text == "" {
+			if fd.HasOptionalKeyword() {
+				// Preserve absence: an empty env value must not become an
+				// explicit false for presence-sensitive flags (e.g. production).
+				delete(values, name)
+				continue
+			}
 			text = "false"
 		}
 		flag, e := strconv.ParseBool(text)

@@ -50,6 +50,9 @@ message Server {
   }
   HTTP http = 1;
   GRPC grpc = 2;
+  // Only explicit false enables permissive development CORS. Unset is treated
+  // as production to keep existing deployments restrictive.
+  optional bool is_production = 3;
 }
 
 message Data {
