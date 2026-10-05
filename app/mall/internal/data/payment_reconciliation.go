@@ -127,7 +127,11 @@ func (r *PaymentReconciliationRepo) ApplyReconciliation(ctx context.Context, act
 			if refund != nil && refund.Status == biz.PaymentRefundStatusPending {
 				return biz.ErrReconciliationConflict
 			}
-			if !biz.CanResolveReconciliation(toBizPayment(payment), toBizOrder(order), refund) {
+			canResolve, err := canResolvePaymentReconciliation(ctx, q, payment, order, refund)
+			if err != nil {
+				return err
+			}
+			if !canResolve {
 				return biz.ErrReconciliationConflict
 			}
 			// A sibling may have funded the order and subsequently been refunded.
@@ -145,7 +149,10 @@ func (r *PaymentReconciliationRepo) ApplyReconciliation(ctx context.Context, act
 					} else if !errors.Is(err, pgx.ErrNoRows) {
 						return err
 					}
-					validPrimary = biz.CanResolveReconciliation(toBizPayment(candidate), toBizOrder(order), primaryRefund)
+					validPrimary, err = canResolvePaymentReconciliation(ctx, q, candidate, order, primaryRefund)
+					if err != nil {
+						return err
+					}
 					break
 				}
 				if !validPrimary {
@@ -214,4 +221,20 @@ func (r *PaymentReconciliationRepo) ListReconciliationActions(ctx context.Contex
 
 func toBizReconciliationAction(row db.PaymentReconciliationAction) biz.ReconciliationAction {
 	return biz.ReconciliationAction{ID: row.ID, PaymentID: row.PaymentID, ActorID: row.ActorID, Action: row.Action, FromStatus: row.FromStatus, ToStatus: row.ToStatus, FromVersion: row.FromVersion, ToVersion: row.ToVersion, IdempotencyKey: row.IdempotencyKey, Reason: row.Reason, Evidence: row.Evidence, JobID: row.RiverJobID.Int64, CreatedAt: row.CreatedAt.Time}
+}
+
+func canResolvePaymentReconciliation(ctx context.Context, q db.Querier, payment db.Payment, order db.Order, refund *biz.PaymentRefund) (bool, error) {
+	if !biz.CanResolveReconciliation(toBizPayment(payment), toBizOrder(order), refund) {
+		return false, nil
+	}
+	if payment.Status == biz.PaymentStatusRefunded {
+		return true, nil // The business check verified the full settlement receipt.
+	}
+	// A later technical failure can replace reconciliation_reason. Unresolved
+	// financial evidence must still block resolution (including a primary sibling).
+	unresolved, err := q.HasUnresolvedProviderRefund(ctx, payment.ID)
+	if err != nil {
+		return false, err
+	}
+	return !unresolved, nil
 }

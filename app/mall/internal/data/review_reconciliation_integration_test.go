@@ -12,8 +12,11 @@ import (
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	paymentjob "github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/job"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -367,5 +370,144 @@ func TestReconciliationRetryDoesNotReuseDelayedJobIntegration(t *testing.T) {
 			require.Equal(t, old.ScheduledAt, unchanged.ScheduledAt)
 			require.Equal(t, old.ArgsJSON, unchanged.ArgsJSON)
 		})
+	}
+}
+
+func TestProviderSideRefundResolutionRequiresSettlementIntegration(t *testing.T) {
+	f := newCorrectnessFixture(t)
+	orderID, paymentID, trade := f.seedPayment(t, biz.PaymentStatusPending)
+	payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
+	args := biz.CheckPayArgs{PaymentID: paymentID, Provider: "wechat"}
+	result := &biz.PaymentQueryResult{Method: biz.PaymentMethod{Provider: "wechat", Product: "native"}, OutTradeNo: trade, TransactionID: trade + "-tx", Amount: 12345, Currency: "CNY", TradeState: biz.TradeStateSuccess}
+	require.NoError(t, payments.ApplyPayQuery(f.ctx, args, result))
+	result.TradeState = biz.TradeStateRefund
+	require.NoError(t, payments.ApplyPayQuery(f.ctx, args, result))
+	repo := NewPaymentReconciliationRepo(f.data, f.tx, nil, log.DefaultLogger)
+	admin := biz.Actor{ID: f.userID, Admin: true}
+	input := reconciliationInput(paymentID, 1, biz.ReconciliationActionResolve, "resolve-provider-refund")
+	_, err := repo.ApplyReconciliation(f.ctx, admin, input)
+	require.ErrorIs(t, err, biz.ErrReconciliationConflict)
+	// Even if another technical failure overwrites the current reason, the
+	// unresolved financial evidence still prevents acknowledging the charge.
+	require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "wechat", Reason: "job_exhausted", LastError: "timeout"}))
+	input.ExpectedVersion = 2
+	_, err = repo.ApplyReconciliation(f.ctx, admin, input)
+	require.ErrorIs(t, err, biz.ErrReconciliationConflict)
+	_, refund, err := payments.PreparePaymentRefund(f.ctx, paymentID, trade+"-refund")
+	require.NoError(t, err)
+	_, err = repo.ApplyReconciliation(f.ctx, admin, input)
+	require.ErrorIs(t, err, biz.ErrReconciliationConflict, "pending receipt is insufficient")
+	// The provider query verifies the refund and drives the existing settlement
+	// path; resolution itself must never change financial or inventory state.
+	require.NoError(t, payments.ApplyPayQuery(f.ctx, args, result))
+	settled, err := f.data.q.GetOrderRefundByPaymentID(f.ctx, pgtype.Int8{Int64: paymentID, Valid: true})
+	require.NoError(t, err)
+	require.Equal(t, refund.ID, settled.ID)
+	require.Equal(t, biz.PaymentRefundStatusSuccess, settled.Status)
+	order, err := f.data.q.GetOrder(f.ctx, orderID)
+	require.NoError(t, err)
+	require.Equal(t, biz.OrderStatusRefunded, order.Status)
+	receipt, err := repo.ApplyReconciliation(f.ctx, admin, input)
+	require.NoError(t, err)
+	require.Equal(t, biz.ReconciliationStatusResolved, receipt.ToStatus)
+}
+
+type reconciliationRaceGateway struct {
+	biz.PaymentGateway
+	query func() (*biz.PaymentQueryResult, error)
+	calls int
+}
+
+func (g *reconciliationRaceGateway) Query(context.Context, biz.PaymentQueryRequest) (*biz.PaymentQueryResult, error) {
+	g.calls++
+	return g.query()
+}
+
+func TestManualRetryVersionFenceIntegration(t *testing.T) {
+	for _, kind := range []string{biz.CheckPayJobKind, biz.ClosePayJobKind} {
+		for _, scenario := range []string{"resolved before work", "resolved during timeout", "current timeout", "new financial anomaly"} {
+			t.Run(kind+"/"+scenario, func(t *testing.T) {
+				f := newCorrectnessFixture(t)
+				status := biz.PaymentStatusPending
+				if kind == biz.ClosePayJobKind {
+					status = biz.PaymentStatusClosePending
+				}
+				_, paymentID, trade := f.seedPayment(t, status)
+				payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
+				mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
+				repo := NewPaymentReconciliationRepo(f.data, f.tx, mq, log.DefaultLogger)
+				admin := biz.Actor{ID: f.userID, Admin: true}
+				require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "wechat", Reason: "job_exhausted", LastError: "timeout"}))
+				action, err := repo.ApplyReconciliation(f.ctx, admin, reconciliationInput(paymentID, 1, biz.ReconciliationActionRetry, "retry-version-fence"))
+				require.NoError(t, err)
+				require.EqualValues(t, 2, action.ToVersion)
+				queued, err := mq.GetMQJob(f.ctx, action.JobID)
+				require.NoError(t, err)
+				require.Equal(t, kind, queued.Kind)
+				result := &biz.PaymentQueryResult{Method: biz.PaymentMethod{Provider: "wechat", Product: "native"}, OutTradeNo: trade, TransactionID: trade + "-tx", Amount: 12345, Currency: "CNY", TradeState: biz.TradeStateSuccess}
+				require.NoError(t, payments.ApplyPayQuery(f.ctx, biz.CheckPayArgs{PaymentID: paymentID, Provider: "wechat"}, result))
+				resolve := func() {
+					receipt, err := repo.ApplyReconciliation(f.ctx, admin, reconciliationInput(paymentID, 2, biz.ReconciliationActionResolve, "resolve-version-fence"))
+					require.NoError(t, err)
+					require.EqualValues(t, 3, receipt.ToVersion)
+				}
+				if scenario == "resolved before work" {
+					resolve()
+				}
+				gateway := &reconciliationRaceGateway{query: func() (*biz.PaymentQueryResult, error) {
+					if scenario != "current timeout" {
+						resolve()
+					}
+					if scenario == "new financial anomaly" {
+						result.TradeState = biz.TradeStateRefund
+						return result, nil
+					}
+					return nil, errors.New("provider timeout")
+				}}
+				row := &rivertype.JobRow{ID: action.JobID, Kind: kind, Attempt: 8, MaxAttempts: 8, EncodedArgs: []byte(queued.ArgsJSON)}
+				if kind == biz.CheckPayJobKind {
+					var args biz.CheckPayArgs
+					require.NoError(t, json.Unmarshal(row.EncodedArgs, &args))
+					err = paymentjob.NewCheckPayWorker(gateway, payments, log.DefaultLogger).Work(f.ctx, &river.Job[biz.CheckPayArgs]{JobRow: row, Args: args})
+				} else {
+					var args biz.ClosePayArgs
+					require.NoError(t, json.Unmarshal(row.EncodedArgs, &args))
+					err = paymentjob.NewClosePayWorker(gateway, payments).Work(f.ctx, &river.Job[biz.ClosePayArgs]{JobRow: row, Args: args})
+				}
+				if scenario == "resolved before work" || scenario == "new financial anomaly" {
+					require.NoError(t, err)
+				} else {
+					require.EqualError(t, err, "provider timeout")
+				}
+				if scenario == "resolved before work" {
+					require.Zero(t, gateway.calls)
+				} else {
+					require.Equal(t, 1, gateway.calls)
+				}
+				// Also exercise delayed exhaustion delivery independently of Work.
+				if scenario != "new financial anomaly" {
+					f.handler.HandleError(f.ctx, row, errors.New("provider timeout"))
+				}
+				payment, err := f.data.q.GetPayment(f.ctx, paymentID)
+				require.NoError(t, err)
+				var unresolved int
+				require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT count(*) FROM payment_reconciliation_failures WHERE payment_id=$1 AND resolved_at IS NULL`, paymentID).Scan(&unresolved))
+				switch scenario {
+				case "current timeout":
+					require.Equal(t, biz.ReconciliationStatusRequired, payment.ReconciliationStatus)
+					require.EqualValues(t, 3, payment.ReconciliationVersion)
+					require.Positive(t, unresolved)
+				case "new financial anomaly":
+					require.Equal(t, biz.ReconciliationStatusRequired, payment.ReconciliationStatus)
+					require.EqualValues(t, 4, payment.ReconciliationVersion)
+					require.Equal(t, "provider_side_refund", payment.ReconciliationReason.String)
+					require.Equal(t, 1, unresolved)
+				default:
+					require.Equal(t, biz.ReconciliationStatusResolved, payment.ReconciliationStatus)
+					require.EqualValues(t, 3, payment.ReconciliationVersion)
+					require.Zero(t, unresolved)
+				}
+			})
+		}
 	}
 }

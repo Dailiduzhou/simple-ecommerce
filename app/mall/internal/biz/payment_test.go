@@ -546,3 +546,7 @@ func TestPrepayForOrder_RejectsOverlongDescription(t *testing.T) {
 	require.ErrorIs(t, err, ErrPaymentDescriptionTooLong)
 	require.Nil(t, repo.payment, "no payment may be created for a rejected description")
 }
+
+func (r *paymentTestRepo) GetPaymentForJob(ctx context.Context, id int64) (*PaymentDO, error) {
+	return r.GetPayment(ctx, id)
+}

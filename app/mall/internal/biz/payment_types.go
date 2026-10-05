@@ -354,6 +354,8 @@ type ReconciliationFailure struct {
 type PaymentRepo interface {
 	CreatePayment(context.Context, CreatePaymentArgs) (*PaymentDO, error)
 	GetPayment(context.Context, int64) (*PaymentDO, error)
+	// GetPaymentForJob bypasses caches so manual retries observe committed versions.
+	GetPaymentForJob(context.Context, int64) (*PaymentDO, error)
 	GetPaymentByUser(context.Context, int64, int64) (*PaymentDO, error)
 	GetLatestPaymentByOrder(context.Context, int64) (*PaymentDO, error)
 	GetActivePaymentByOrderMethod(context.Context, int64, string) (*PaymentDO, error)

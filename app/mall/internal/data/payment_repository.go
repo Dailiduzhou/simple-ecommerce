@@ -169,6 +169,17 @@ func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO,
 	return r.getPayment(ctx, redisKey("payment", id, "gen"), func(gen int64) string { return redisKey("payment", id, "g", gen) }, func() (db.Payment, error) { return querierFromContext(ctx, r.data.q).GetPayment(ctx, id) })
 }
 
+func (r *PaymentRepo) GetPaymentForJob(ctx context.Context, id int64) (*biz.PaymentDO, error) {
+	row, err := querierFromContext(ctx, r.data.q).GetPayment(ctx, id)
+	if stderrors.Is(err, pgx.ErrNoRows) {
+		return nil, biz.ErrPaymentNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toBizPayment(row), nil
+}
+
 func (r *PaymentRepo) GetPaymentByUser(ctx context.Context, id, userID int64) (*biz.PaymentDO, error) {
 	payment, err := r.GetPayment(ctx, id)
 	if err != nil {
@@ -247,6 +258,30 @@ func (r *PaymentRepo) MarkPayClosePending(ctx context.Context, args biz.CheckPay
 	var changed db.Payment
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
+		if args.ReconciliationVersion != 0 {
+			// Fence the polling-to-close handoff under resolution's lock order.
+			snapshot, err := q.GetPayment(ctx, args.PaymentID)
+			if err != nil {
+				return err
+			}
+			if _, err := q.GetOrderForUpdate(ctx, snapshot.OrderID); err != nil {
+				return err
+			}
+			payments, err := q.ListPaymentsByOrderForUpdate(ctx, snapshot.OrderID)
+			if err != nil {
+				return err
+			}
+			current := false
+			for _, payment := range payments {
+				if payment.ID == args.PaymentID {
+					current = biz.ReconciliationJobCurrent(args.ReconciliationVersion, payment.ReconciliationVersion, payment.ReconciliationStatus)
+					break
+				}
+			}
+			if !current {
+				return nil
+			}
+		}
 		row, err := q.MarkPaymentClosePending(ctx, args.PaymentID)
 		if err != nil {
 			if !stderrors.Is(err, pgx.ErrNoRows) {
@@ -269,7 +304,7 @@ func (r *PaymentRepo) MarkPayClosePending(ctx context.Context, args biz.CheckPay
 			return fmt.Errorf("payment mq is not configured")
 		}
 		if _, err := r.jobs.EnqueueClosePayTx(ctx, biz.ClosePayArgs{
-			PaymentID: row.ID, Provider: method.Provider, Reason: args.Trigger,
+			PaymentID: row.ID, Provider: method.Provider, Reason: args.Trigger, ReconciliationVersion: args.ReconciliationVersion,
 		}, time.Time{}); err != nil {
 			return err
 		}
