@@ -25,8 +25,12 @@ const OperationPaymentCreatePaymentCheckJob = "/api.payment.v1.Payment/CreatePay
 const OperationPaymentGetMQJob = "/api.payment.v1.Payment/GetMQJob"
 const OperationPaymentGetPayment = "/api.payment.v1.Payment/GetPayment"
 const OperationPaymentGetPaymentByOrder = "/api.payment.v1.Payment/GetPaymentByOrder"
+const OperationPaymentListPaymentReconciliationActions = "/api.payment.v1.Payment/ListPaymentReconciliationActions"
+const OperationPaymentListPaymentReconciliations = "/api.payment.v1.Payment/ListPaymentReconciliations"
 const OperationPaymentQueryPayment = "/api.payment.v1.Payment/QueryPayment"
 const OperationPaymentRefundPayment = "/api.payment.v1.Payment/RefundPayment"
+const OperationPaymentResolvePaymentReconciliation = "/api.payment.v1.Payment/ResolvePaymentReconciliation"
+const OperationPaymentRetryPaymentReconciliation = "/api.payment.v1.Payment/RetryPaymentReconciliation"
 
 type PaymentHTTPServer interface {
 	// ClosePayment 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
@@ -39,10 +43,15 @@ type PaymentHTTPServer interface {
 	GetMQJob(context.Context, *GetMQJobRequest) (*MQJobInfo, error)
 	GetPayment(context.Context, *GetPaymentRequest) (*PaymentInfo, error)
 	GetPaymentByOrder(context.Context, *GetPaymentByOrderRequest) (*PaymentInfo, error)
+	ListPaymentReconciliationActions(context.Context, *ListReconciliationActionsRequest) (*ListReconciliationActionsReply, error)
+	ListPaymentReconciliations(context.Context, *ListReconciliationCasesRequest) (*ListReconciliationCasesReply, error)
 	// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
 	QueryPayment(context.Context, *QueryPaymentReq) (*QueryPaymentReply, error)
 	// RefundPayment 管理员对指定支付发起整笔全额退款。
 	RefundPayment(context.Context, *RefundPaymentRequest) (*RefundPaymentReply, error)
+	ResolvePaymentReconciliation(context.Context, *ReconciliationCommandRequest) (*ReconciliationActionInfo, error)
+	// RetryPaymentReconciliation 管理员人工对账；重试、解决与审计写入同一事务。解决必须有证据，且不能覆盖资金事实。
+	RetryPaymentReconciliation(context.Context, *ReconciliationCommandRequest) (*ReconciliationActionInfo, error)
 }
 
 func RegisterPaymentHTTPServer(s *http.Server, srv PaymentHTTPServer) {
@@ -53,6 +62,10 @@ func RegisterPaymentHTTPServer(s *http.Server, srv PaymentHTTPServer) {
 	r.GET("/v1/payments/{id}", _Payment_GetPayment0_HTTP_Handler(srv))
 	r.GET("/v1/orders/{order_id}/payment", _Payment_GetPaymentByOrder0_HTTP_Handler(srv))
 	r.POST("/v1/payments/{id}/refund", _Payment_RefundPayment0_HTTP_Handler(srv))
+	r.POST("/v1/payments/{id}/reconciliation/retry", _Payment_RetryPaymentReconciliation0_HTTP_Handler(srv))
+	r.POST("/v1/payments/{id}/reconciliation/resolve", _Payment_ResolvePaymentReconciliation0_HTTP_Handler(srv))
+	r.GET("/v1/payment-reconciliations", _Payment_ListPaymentReconciliations0_HTTP_Handler(srv))
+	r.GET("/v1/payments/{id}/reconciliation/actions", _Payment_ListPaymentReconciliationActions0_HTTP_Handler(srv))
 	r.POST("/v1/payments/{payment_id}/checks", _Payment_CreatePaymentCheckJob0_HTTP_Handler(srv))
 	r.GET("/v1/payments/mq/jobs/{job_id}", _Payment_GetMQJob0_HTTP_Handler(srv))
 }
@@ -189,6 +202,97 @@ func _Payment_RefundPayment0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.C
 	}
 }
 
+func _Payment_RetryPaymentReconciliation0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ReconciliationCommandRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationPaymentRetryPaymentReconciliation)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.RetryPaymentReconciliation(ctx, req.(*ReconciliationCommandRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ReconciliationActionInfo)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _Payment_ResolvePaymentReconciliation0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ReconciliationCommandRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationPaymentResolvePaymentReconciliation)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ResolvePaymentReconciliation(ctx, req.(*ReconciliationCommandRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ReconciliationActionInfo)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _Payment_ListPaymentReconciliations0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListReconciliationCasesRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationPaymentListPaymentReconciliations)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListPaymentReconciliations(ctx, req.(*ListReconciliationCasesRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListReconciliationCasesReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _Payment_ListPaymentReconciliationActions0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListReconciliationActionsRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationPaymentListPaymentReconciliationActions)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListPaymentReconciliationActions(ctx, req.(*ListReconciliationActionsRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListReconciliationActionsReply)
+		return ctx.Result(200, reply)
+	}
+}
+
 func _Payment_CreatePaymentCheckJob0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in CreatePaymentCheckJobRequest
@@ -247,10 +351,15 @@ type PaymentHTTPClient interface {
 	GetMQJob(ctx context.Context, req *GetMQJobRequest, opts ...http.CallOption) (rsp *MQJobInfo, err error)
 	GetPayment(ctx context.Context, req *GetPaymentRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
 	GetPaymentByOrder(ctx context.Context, req *GetPaymentByOrderRequest, opts ...http.CallOption) (rsp *PaymentInfo, err error)
+	ListPaymentReconciliationActions(ctx context.Context, req *ListReconciliationActionsRequest, opts ...http.CallOption) (rsp *ListReconciliationActionsReply, err error)
+	ListPaymentReconciliations(ctx context.Context, req *ListReconciliationCasesRequest, opts ...http.CallOption) (rsp *ListReconciliationCasesReply, err error)
 	// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
 	QueryPayment(ctx context.Context, req *QueryPaymentReq, opts ...http.CallOption) (rsp *QueryPaymentReply, err error)
 	// RefundPayment 管理员对指定支付发起整笔全额退款。
 	RefundPayment(ctx context.Context, req *RefundPaymentRequest, opts ...http.CallOption) (rsp *RefundPaymentReply, err error)
+	ResolvePaymentReconciliation(ctx context.Context, req *ReconciliationCommandRequest, opts ...http.CallOption) (rsp *ReconciliationActionInfo, err error)
+	// RetryPaymentReconciliation 管理员人工对账；重试、解决与审计写入同一事务。解决必须有证据，且不能覆盖资金事实。
+	RetryPaymentReconciliation(ctx context.Context, req *ReconciliationCommandRequest, opts ...http.CallOption) (rsp *ReconciliationActionInfo, err error)
 }
 
 type PaymentHTTPClientImpl struct {
@@ -343,6 +452,32 @@ func (c *PaymentHTTPClientImpl) GetPaymentByOrder(ctx context.Context, in *GetPa
 	return &out, nil
 }
 
+func (c *PaymentHTTPClientImpl) ListPaymentReconciliationActions(ctx context.Context, in *ListReconciliationActionsRequest, opts ...http.CallOption) (*ListReconciliationActionsReply, error) {
+	var out ListReconciliationActionsReply
+	pattern := "/v1/payments/{id}/reconciliation/actions"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationPaymentListPaymentReconciliationActions))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *PaymentHTTPClientImpl) ListPaymentReconciliations(ctx context.Context, in *ListReconciliationCasesRequest, opts ...http.CallOption) (*ListReconciliationCasesReply, error) {
+	var out ListReconciliationCasesReply
+	pattern := "/v1/payment-reconciliations"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationPaymentListPaymentReconciliations))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
 func (c *PaymentHTTPClientImpl) QueryPayment(ctx context.Context, in *QueryPaymentReq, opts ...http.CallOption) (*QueryPaymentReply, error) {
 	var out QueryPaymentReply
@@ -363,6 +498,33 @@ func (c *PaymentHTTPClientImpl) RefundPayment(ctx context.Context, in *RefundPay
 	pattern := "/v1/payments/{id}/refund"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationPaymentRefundPayment))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *PaymentHTTPClientImpl) ResolvePaymentReconciliation(ctx context.Context, in *ReconciliationCommandRequest, opts ...http.CallOption) (*ReconciliationActionInfo, error) {
+	var out ReconciliationActionInfo
+	pattern := "/v1/payments/{id}/reconciliation/resolve"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationPaymentResolvePaymentReconciliation))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RetryPaymentReconciliation 管理员人工对账；重试、解决与审计写入同一事务。解决必须有证据，且不能覆盖资金事实。
+func (c *PaymentHTTPClientImpl) RetryPaymentReconciliation(ctx context.Context, in *ReconciliationCommandRequest, opts ...http.CallOption) (*ReconciliationActionInfo, error) {
+	var out ReconciliationActionInfo
+	pattern := "/v1/payments/{id}/reconciliation/retry"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationPaymentRetryPaymentReconciliation))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

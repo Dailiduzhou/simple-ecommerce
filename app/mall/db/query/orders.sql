@@ -8,9 +8,15 @@ INSERT INTO orders (
   out_trade_no,
   idempotency_key,
   request_hash,
-  expires_at
+  expires_at,
+  receiver_name, receiver_phone_encrypt, shipping_province, shipping_city,
+  shipping_district, shipping_detail_address
 )
-VALUES ($1, $2, $3, $4, 'pending_payment', $5, $6, $7, $8)
+VALUES (sqlc.arg(user_id), sqlc.arg(address_id), sqlc.arg(total_amount_minor), sqlc.arg(currency),
+  'pending_payment', sqlc.arg(out_trade_no), sqlc.arg(idempotency_key), sqlc.arg(request_hash),
+  clock_timestamp() + make_interval(secs => sqlc.arg(payment_timeout_seconds)::double precision),
+  sqlc.arg(receiver_name), sqlc.arg(receiver_phone_encrypt), sqlc.arg(shipping_province),
+  sqlc.arg(shipping_city), sqlc.arg(shipping_district), sqlc.arg(shipping_detail_address))
 RETURNING *;
 
 -- name: GetOrder :one
@@ -62,11 +68,16 @@ SELECT *
 FROM orders
 WHERE user_id = $1
   AND is_completed = FALSE
-ORDER BY id DESC;
+ORDER BY id DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountOngoingOrdersByUser :one
+SELECT count(*) FROM orders WHERE user_id=$1 AND is_completed=FALSE;
 
 -- name: MarkOrderPaid :one
 UPDATE orders
 SET status = 'paid',
+    paid_payment_id = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status = 'pending_payment'
@@ -117,7 +128,7 @@ WHERE user_id = $1;
 -- name: OrderIsExpired :one
 -- Expiry decisions must use the database clock, not the application server's,
 -- so instances with skewed clocks cannot extend or shrink the payment window.
-SELECT COALESCE(expires_at <= now(), TRUE)::boolean AS expired
+SELECT COALESCE(expires_at <= clock_timestamp(), TRUE)::boolean AS expired
 FROM orders
 WHERE id = $1;
 

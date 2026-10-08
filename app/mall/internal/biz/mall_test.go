@@ -34,11 +34,11 @@ func (r *fakeCategoryRepo) GetCategory(ctx context.Context, id int64) (*Category
 	return r.getCategory(ctx, id)
 }
 
-func (r *fakeCategoryRepo) ListSubCategories(ctx context.Context, parentID int64) ([]Category, error) {
+func (r *fakeCategoryRepo) ListSubCategories(ctx context.Context, parentID int64, limit, offset int32) ([]Category, error) {
 	return r.listSub(ctx, parentID)
 }
 
-func (r *fakeCategoryRepo) ListTopCategories(ctx context.Context) ([]Category, error) {
+func (r *fakeCategoryRepo) ListTopCategories(ctx context.Context, limit, offset int32) ([]Category, error) {
 	return r.listTop(ctx)
 }
 
@@ -110,7 +110,7 @@ func TestCategoryUsecase_ListCategories_Top(t *testing.T) {
 	}
 	uc := NewCategoryUsecase(repo, log.DefaultLogger)
 
-	cs, err := uc.ListCategories(context.Background(), 0)
+	cs, err := uc.ListCategories(context.Background(), 0, 0, 0)
 	require.NoError(t, err)
 	require.Len(t, cs, 1)
 	assert.Equal(t, int64(1), cs[0].ID)
@@ -129,7 +129,7 @@ func TestCategoryUsecase_ListCategories_Sub(t *testing.T) {
 	}
 	uc := NewCategoryUsecase(repo, log.DefaultLogger)
 
-	cs, err := uc.ListCategories(context.Background(), 5)
+	cs, err := uc.ListCategories(context.Background(), 5, 0, 0)
 	require.NoError(t, err)
 	require.Len(t, cs, 1)
 	assert.Equal(t, int64(5), cs[0].ParentID)
@@ -269,6 +269,7 @@ func TestProductDiscountValidation(t *testing.T) {
 	}{
 		{"1", true}, {"1.00", true}, {"0.85", true}, {"0.01", true},
 		{"0", false}, {"0.00", false}, {"-0.5", false}, {"1.01", false}, {"2", false},
+		{"0.999", false}, {"0.001", false}, {"0.850", true},
 	} {
 		d, err := decimal.NewFromString(tc.discount)
 		require.NoError(t, err)

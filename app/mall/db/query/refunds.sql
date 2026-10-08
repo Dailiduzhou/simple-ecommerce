@@ -8,9 +8,10 @@ INSERT INTO order_refunds (
   refund_amount_minor,
   currency,
   reason,
+  purpose,
   status
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
 RETURNING *;
 
 -- name: GetOrderRefundByPaymentID :one

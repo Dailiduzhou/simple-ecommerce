@@ -47,3 +47,11 @@ func NewPaymentAdapters(c *conf.Payment, logger log.Logger) ([]biz.PaymentAdapte
 	}
 	return adapters, nil
 }
+
+var (
+	_ biz.PaymentAdapter          = (*WechatPaymentAdapter)(nil)
+	_ biz.PaymentAdapter          = (*AlipayPaymentAdapter)(nil)
+	_ biz.PaymentRepo             = (*PaymentRepo)(nil)
+	_ biz.PaymentMQRepo           = (*PaymentMQRepo)(nil)
+	_ biz.PaymentNotificationRepo = (*PaymentNotificationRepo)(nil)
+)

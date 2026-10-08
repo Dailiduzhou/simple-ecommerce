@@ -19,6 +19,7 @@ var _ = binding.EncodeURL
 
 const _ = http.SupportPackageIsVersion1
 
+const OperationMallAdjustProductStock = "/api.mall.v1.Mall/AdjustProductStock"
 const OperationMallCreateCategory = "/api.mall.v1.Mall/CreateCategory"
 const OperationMallCreateEvent = "/api.mall.v1.Mall/CreateEvent"
 const OperationMallCreateProduct = "/api.mall.v1.Mall/CreateProduct"
@@ -38,6 +39,8 @@ const OperationMallUpdateProduct = "/api.mall.v1.Mall/UpdateProduct"
 const OperationMallUpdateProductStatus = "/api.mall.v1.Mall/UpdateProductStatus"
 
 type MallHTTPServer interface {
+	// AdjustProductStock Inventory changes are audited deltas; content editing cannot set stock.
+	AdjustProductStock(context.Context, *AdjustProductStockRequest) (*StockAdjustment, error)
 	// CreateCategory Categories
 	CreateCategory(context.Context, *CreateCategoryRequest) (*Category, error)
 	// CreateEvent Events
@@ -74,6 +77,7 @@ func RegisterMallHTTPServer(s *http.Server, srv MallHTTPServer) {
 	r.PUT("/v1/products/{id}", _Mall_UpdateProduct0_HTTP_Handler(srv))
 	r.PATCH("/v1/products/{id}/status", _Mall_UpdateProductStatus0_HTTP_Handler(srv))
 	r.DELETE("/v1/products/{id}", _Mall_DeleteProduct0_HTTP_Handler(srv))
+	r.POST("/v1/products/{id}/stock-adjustments", _Mall_AdjustProductStock0_HTTP_Handler(srv))
 	r.POST("/v1/events", _Mall_CreateEvent0_HTTP_Handler(srv))
 	r.GET("/v1/events/{id}", _Mall_GetEvent0_HTTP_Handler(srv))
 	r.GET("/v1/events", _Mall_ListEvents0_HTTP_Handler(srv))
@@ -324,6 +328,31 @@ func _Mall_DeleteProduct0_HTTP_Handler(srv MallHTTPServer) func(ctx http.Context
 	}
 }
 
+func _Mall_AdjustProductStock0_HTTP_Handler(srv MallHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in AdjustProductStockRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationMallAdjustProductStock)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.AdjustProductStock(ctx, req.(*AdjustProductStockRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*StockAdjustment)
+		return ctx.Result(200, reply)
+	}
+}
+
 func _Mall_CreateEvent0_HTTP_Handler(srv MallHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in CreateEventRequest
@@ -460,6 +489,8 @@ func _Mall_DeleteEvent0_HTTP_Handler(srv MallHTTPServer) func(ctx http.Context) 
 }
 
 type MallHTTPClient interface {
+	// AdjustProductStock Inventory changes are audited deltas; content editing cannot set stock.
+	AdjustProductStock(ctx context.Context, req *AdjustProductStockRequest, opts ...http.CallOption) (rsp *StockAdjustment, err error)
 	// CreateCategory Categories
 	CreateCategory(ctx context.Context, req *CreateCategoryRequest, opts ...http.CallOption) (rsp *Category, err error)
 	// CreateEvent Events
@@ -489,6 +520,20 @@ type MallHTTPClientImpl struct {
 
 func NewMallHTTPClient(client *http.Client) MallHTTPClient {
 	return &MallHTTPClientImpl{client}
+}
+
+// AdjustProductStock Inventory changes are audited deltas; content editing cannot set stock.
+func (c *MallHTTPClientImpl) AdjustProductStock(ctx context.Context, in *AdjustProductStockRequest, opts ...http.CallOption) (*StockAdjustment, error) {
+	var out StockAdjustment
+	pattern := "/v1/products/{id}/stock-adjustments"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationMallAdjustProductStock))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // CreateCategory Categories

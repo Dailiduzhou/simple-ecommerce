@@ -20,15 +20,24 @@ var _ = binding.EncodeURL
 const _ = http.SupportPackageIsVersion1
 
 const OperationOrderCancelOrder = "/api.order.v1.Order/CancelOrder"
+const OperationOrderCompleteOrder = "/api.order.v1.Order/CompleteOrder"
 const OperationOrderCreateOrder = "/api.order.v1.Order/CreateOrder"
 const OperationOrderGetOrder = "/api.order.v1.Order/GetOrder"
+const OperationOrderListOrderFulfillmentActions = "/api.order.v1.Order/ListOrderFulfillmentActions"
 const OperationOrderListOrders = "/api.order.v1.Order/ListOrders"
+const OperationOrderShipOrder = "/api.order.v1.Order/ShipOrder"
 
 type OrderHTTPServer interface {
 	CancelOrder(context.Context, *CancelOrderRequest) (*CancelOrderReply, error)
+	// CompleteOrder The order owner or an administrator confirms receipt; only shipped orders.
+	CompleteOrder(context.Context, *CompleteOrderRequest) (*OrderFulfillmentAction, error)
 	CreateOrder(context.Context, *CreateOrderRequest) (*OrderInfo, error)
 	GetOrder(context.Context, *GetOrderRequest) (*OrderInfo, error)
+	// ListOrderFulfillmentActions Owner/admin audit history, bounded to dispatch and completion records.
+	ListOrderFulfillmentActions(context.Context, *ListOrderFulfillmentActionsRequest) (*ListOrderFulfillmentActionsReply, error)
 	ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersReply, error)
+	// ShipOrder Administrator dispatch after a settled payment and with no pending refund.
+	ShipOrder(context.Context, *ShipOrderRequest) (*OrderFulfillmentAction, error)
 }
 
 func RegisterOrderHTTPServer(s *http.Server, srv OrderHTTPServer) {
@@ -37,6 +46,9 @@ func RegisterOrderHTTPServer(s *http.Server, srv OrderHTTPServer) {
 	r.GET("/v1/orders/{id}", _Order_GetOrder0_HTTP_Handler(srv))
 	r.GET("/v1/users/{user_id}/orders", _Order_ListOrders0_HTTP_Handler(srv))
 	r.POST("/v1/orders/{id}/cancel", _Order_CancelOrder0_HTTP_Handler(srv))
+	r.POST("/v1/orders/{id}/ship", _Order_ShipOrder0_HTTP_Handler(srv))
+	r.POST("/v1/orders/{id}/complete", _Order_CompleteOrder0_HTTP_Handler(srv))
+	r.GET("/v1/orders/{id}/fulfillment-actions", _Order_ListOrderFulfillmentActions0_HTTP_Handler(srv))
 }
 
 func _Order_CreateOrder0_HTTP_Handler(srv OrderHTTPServer) func(ctx http.Context) error {
@@ -130,11 +142,89 @@ func _Order_CancelOrder0_HTTP_Handler(srv OrderHTTPServer) func(ctx http.Context
 	}
 }
 
+func _Order_ShipOrder0_HTTP_Handler(srv OrderHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ShipOrderRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationOrderShipOrder)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ShipOrder(ctx, req.(*ShipOrderRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*OrderFulfillmentAction)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _Order_CompleteOrder0_HTTP_Handler(srv OrderHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CompleteOrderRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationOrderCompleteOrder)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.CompleteOrder(ctx, req.(*CompleteOrderRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*OrderFulfillmentAction)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _Order_ListOrderFulfillmentActions0_HTTP_Handler(srv OrderHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListOrderFulfillmentActionsRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationOrderListOrderFulfillmentActions)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListOrderFulfillmentActions(ctx, req.(*ListOrderFulfillmentActionsRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListOrderFulfillmentActionsReply)
+		return ctx.Result(200, reply)
+	}
+}
+
 type OrderHTTPClient interface {
 	CancelOrder(ctx context.Context, req *CancelOrderRequest, opts ...http.CallOption) (rsp *CancelOrderReply, err error)
+	// CompleteOrder The order owner or an administrator confirms receipt; only shipped orders.
+	CompleteOrder(ctx context.Context, req *CompleteOrderRequest, opts ...http.CallOption) (rsp *OrderFulfillmentAction, err error)
 	CreateOrder(ctx context.Context, req *CreateOrderRequest, opts ...http.CallOption) (rsp *OrderInfo, err error)
 	GetOrder(ctx context.Context, req *GetOrderRequest, opts ...http.CallOption) (rsp *OrderInfo, err error)
+	// ListOrderFulfillmentActions Owner/admin audit history, bounded to dispatch and completion records.
+	ListOrderFulfillmentActions(ctx context.Context, req *ListOrderFulfillmentActionsRequest, opts ...http.CallOption) (rsp *ListOrderFulfillmentActionsReply, err error)
 	ListOrders(ctx context.Context, req *ListOrdersRequest, opts ...http.CallOption) (rsp *ListOrdersReply, err error)
+	// ShipOrder Administrator dispatch after a settled payment and with no pending refund.
+	ShipOrder(ctx context.Context, req *ShipOrderRequest, opts ...http.CallOption) (rsp *OrderFulfillmentAction, err error)
 }
 
 type OrderHTTPClientImpl struct {
@@ -150,6 +240,20 @@ func (c *OrderHTTPClientImpl) CancelOrder(ctx context.Context, in *CancelOrderRe
 	pattern := "/v1/orders/{id}/cancel"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationOrderCancelOrder))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CompleteOrder The order owner or an administrator confirms receipt; only shipped orders.
+func (c *OrderHTTPClientImpl) CompleteOrder(ctx context.Context, in *CompleteOrderRequest, opts ...http.CallOption) (*OrderFulfillmentAction, error) {
+	var out OrderFulfillmentAction
+	pattern := "/v1/orders/{id}/complete"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationOrderCompleteOrder))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
@@ -184,6 +288,20 @@ func (c *OrderHTTPClientImpl) GetOrder(ctx context.Context, in *GetOrderRequest,
 	return &out, nil
 }
 
+// ListOrderFulfillmentActions Owner/admin audit history, bounded to dispatch and completion records.
+func (c *OrderHTTPClientImpl) ListOrderFulfillmentActions(ctx context.Context, in *ListOrderFulfillmentActionsRequest, opts ...http.CallOption) (*ListOrderFulfillmentActionsReply, error) {
+	var out ListOrderFulfillmentActionsReply
+	pattern := "/v1/orders/{id}/fulfillment-actions"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationOrderListOrderFulfillmentActions))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *OrderHTTPClientImpl) ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...http.CallOption) (*ListOrdersReply, error) {
 	var out ListOrdersReply
 	pattern := "/v1/users/{user_id}/orders"
@@ -191,6 +309,20 @@ func (c *OrderHTTPClientImpl) ListOrders(ctx context.Context, in *ListOrdersRequ
 	opts = append(opts, http.Operation(OperationOrderListOrders))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ShipOrder Administrator dispatch after a settled payment and with no pending refund.
+func (c *OrderHTTPClientImpl) ShipOrder(ctx context.Context, in *ShipOrderRequest, opts ...http.CallOption) (*OrderFulfillmentAction, error) {
+	var out OrderFulfillmentAction
+	pattern := "/v1/orders/{id}/ship"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationOrderShipOrder))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var _ biz.OrderRepo = (*OrderRepo)(nil)
@@ -34,6 +34,9 @@ func NewOrderRepoWithJobs(data *Data, tx biz.TxManager, jobs biz.OrderMQRepo, lo
 }
 
 func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (biz.Order, error) {
+	if args.PaymentTimeout <= 0 {
+		args.PaymentTimeout = 30 * time.Minute
+	}
 	var result biz.Order
 	created := false
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
@@ -68,7 +71,16 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		if !stderrors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		if _, err := q.GetShippingAddress(ctx, db.GetShippingAddressParams{ID: args.AddressID, UserID: args.UserID}); err != nil {
+		// Account deletion locks the user before cascading to addresses. Take
+		// the order's user FK lock first so checkout follows the same order.
+		if _, err := q.LockUserForReference(ctx, args.UserID); err != nil {
+			if stderrors.Is(err, pgx.ErrNoRows) {
+				return biz.ErrAddressNotFound
+			}
+			return err
+		}
+		address, err := q.GetShippingAddressForSnapshot(ctx, db.GetShippingAddressForSnapshotParams{ID: args.AddressID, UserID: args.UserID})
+		if err != nil {
 			if stderrors.Is(err, pgx.ErrNoRows) {
 				return biz.ErrAddressNotFound
 			}
@@ -113,7 +125,10 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		order, err := q.CreateOrder(ctx, db.CreateOrderParams{
 			UserID: args.UserID, AddressID: args.AddressID, TotalAmountMinor: total,
 			Currency: args.Currency, OutTradeNo: args.OutTradeNo, IdempotencyKey: args.IdempotencyKey,
-			RequestHash: args.RequestHash, ExpiresAt: pgtype.Timestamptz{Time: args.ExpiresAt, Valid: true},
+			RequestHash: args.RequestHash, PaymentTimeoutSeconds: args.PaymentTimeout.Seconds(),
+			ReceiverName: address.ReceiverName, ReceiverPhoneEncrypt: address.ReceiverPhoneEncrypt,
+			ShippingProvince: address.Province, ShippingCity: address.City, ShippingDistrict: address.District,
+			ShippingDetailAddress: address.DetailAddress,
 		})
 		if err != nil {
 			return err
@@ -140,7 +155,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		if r.jobs == nil {
 			return fmt.Errorf("order mq is not configured")
 		}
-		if _, err := r.jobs.EnqueueExpireOrderTx(ctx, biz.ExpireOrderArgs{OrderID: order.ID}, args.ExpiresAt); err != nil {
+		if _, err := r.jobs.EnqueueExpireOrderTx(ctx, biz.ExpireOrderArgs{OrderID: order.ID}, order.ExpiresAt.Time); err != nil {
 			return err
 		}
 		created = true
@@ -148,9 +163,6 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if stderrors.As(err, &pgErr) && pgErr.Code == "23503" && pgErr.ConstraintName == "fk_order_address" {
-			return biz.Order{}, biz.ErrAddressNotFound
-		}
 		if stderrors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_orders_out_trade_no" {
 			// The caller mints a fresh out_trade_no and retries; the transaction
 			// above has already rolled back, so nothing was persisted.
@@ -184,15 +196,17 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			return biz.Order{}, err
 		}
 	}
-	if created {
-		r.invalidateUserLists(ctx, result.UserID)
-		for _, item := range result.Items {
-			bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", item.ProductID, "gen"))
-			r.deleteKey(ctx, redisKey("product", item.ProductID))
-			bumpCacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
-			bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", item.CategoryID, "gen"))
+	batchCacheInvalidations(ctx, func(ctx context.Context) {
+		if created {
+			r.invalidateUserLists(ctx, result.UserID)
+			for _, item := range result.Items {
+				bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", item.ProductID, "gen"))
+				r.deleteKey(ctx, redisKey("product", item.ProductID))
+				bumpCacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
+				bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", item.CategoryID, "gen"))
+			}
 		}
-	}
+	})
 	return result, nil
 }
 
@@ -241,16 +255,26 @@ func (r *OrderRepo) HasOngoingOrders(ctx context.Context, userID int64) (bool, e
 	return querierFromContext(ctx, r.data.q).HasOngoingOrders(ctx, userID)
 }
 
-func (r *OrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64) ([]biz.Order, error) {
+func (r *OrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64, limit, offset int32) ([]biz.Order, error) {
+	pagination, err := biz.NewOffsetPage(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	limit, offset = pagination.Limit, pagination.Offset
 	genKey := redisKey("order", "user", "ongoing", userID, "gen")
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, genKey)
-	cacheKey := generationCacheKey(generation, redisKey("order", "user", "ongoing", userID, generation))
+	cacheKey := generationCacheKey(generation, redisKey("order", "user", "ongoing", userID, generation, limit, offset))
 	return r.listOrders(ctx, cacheKey, func() ([]db.Order, error) {
-		return querierFromContext(ctx, r.data.q).ListOngoingOrdersByUser(ctx, userID)
+		return querierFromContext(ctx, r.data.q).ListOngoingOrdersByUser(ctx, db.ListOngoingOrdersByUserParams{UserID: userID, Limit: limit, Offset: offset})
 	})
 }
 
 func (r *OrderRepo) ListOrdersByUser(ctx context.Context, userID int64, limit, offset int32) ([]biz.Order, error) {
+	pagination, err := biz.NewOffsetPage(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	limit, offset = pagination.Limit, pagination.Offset
 	genKey := redisKey("order", "user", userID, "gen")
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, genKey)
 	cacheKey := generationCacheKey(generation, redisKey("order", "user", userID, generation, limit, offset))
@@ -266,11 +290,26 @@ func (r *OrderRepo) listOrders(ctx context.Context, cacheKey string, load func()
 			return nil, err
 		}
 		orders := make([]biz.Order, len(rows))
+		ids := make([]int64, len(rows))
 		for i, row := range rows {
 			orders[i] = toBizOrder(row)
-			orders[i].Items, err = r.loadItems(ctx, row.ID)
-			if err != nil {
-				return nil, err
+			orders[i].Items = []biz.OrderItem{}
+			ids[i] = row.ID
+		}
+		if len(ids) == 0 {
+			return orders, nil
+		}
+		items, err := querierFromContext(ctx, r.data.q).ListOrderItemsByOrderIDs(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		byOrder := make(map[int64][]biz.OrderItem, len(ids))
+		for _, item := range items {
+			byOrder[item.OrderID] = append(byOrder[item.OrderID], toBizOrderItem(item.ProductID, 0, item.Quantity, item.UnitPriceMinor, item.ProductNameSnapshot, item.CoverImageSnapshot))
+		}
+		for i := range orders {
+			if list := byOrder[orders[i].ID]; len(list) > 0 {
+				orders[i].Items = list
 			}
 		}
 		return orders, nil
@@ -279,6 +318,10 @@ func (r *OrderRepo) listOrders(ctx context.Context, cacheKey string, load func()
 
 func (r *OrderRepo) CountOrdersByUser(ctx context.Context, userID int64) (int64, error) {
 	return querierFromContext(ctx, r.data.q).CountOrdersByUser(ctx, userID)
+}
+
+func (r *OrderRepo) CountOngoingOrdersByUser(ctx context.Context, userID int64) (int64, error) {
+	return querierFromContext(ctx, r.data.q).CountOngoingOrdersByUser(ctx, userID)
 }
 
 func (r *OrderRepo) CancelOrderByUser(ctx context.Context, id, userID int64) error {
@@ -308,7 +351,7 @@ func (r *OrderRepo) CancelOrderByUser(ctx context.Context, id, userID int64) err
 		}
 		hasActive := false
 		for _, payment := range payments {
-			if payment.ReconciliationStatus == biz.ReconciliationStatusRequired {
+			if biz.ReconciliationNeedsReview(payment.ReconciliationStatus) {
 				return biz.ErrPaymentReconciliationRequired
 			}
 			switch payment.Status {
@@ -333,8 +376,10 @@ func (r *OrderRepo) CancelOrderByUser(ctx context.Context, id, userID int64) err
 	if err != nil {
 		return err
 	}
-	r.invalidateOrder(ctx, toBizOrder(order))
-	invalidateProductCachesForOrder(ctx, r.data, r.log, id)
+	batchCacheInvalidations(ctx, func(ctx context.Context) {
+		r.invalidateOrder(ctx, toBizOrder(order))
+		invalidateProductCachesForOrder(ctx, r.data, r.log, id)
+	})
 	return nil
 }
 
@@ -365,17 +410,18 @@ func toBizOrderItem(productID, categoryID int64, quantity int32, price int64, na
 }
 
 func (r *OrderRepo) invalidateOrder(ctx context.Context, order biz.Order) {
-	r.deleteKey(ctx, redisKey("order", order.ID))
-	r.deleteKey(ctx, redisKey("order", "user", order.ID, order.UserID))
+	deletes := []string{redisKey("order", order.ID), redisKey("order", "user", order.ID, order.UserID)}
 	if order.OutTradeNo != "" {
-		r.deleteKey(ctx, redisKey("order", "no", order.OutTradeNo))
+		deletes = append(deletes, redisKey("order", "no", order.OutTradeNo))
 	}
-	r.invalidateUserLists(ctx, order.UserID)
+	r.invalidateUserLists(ctx, order.UserID, deletes...)
 }
 
-func (r *OrderRepo) invalidateUserLists(ctx context.Context, userID int64) {
-	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("order", "user", userID, "gen"))
-	bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("order", "user", "ongoing", userID, "gen"))
+func (r *OrderRepo) invalidateUserLists(ctx context.Context, userID int64, deletes ...string) {
+	scheduleCacheInvalidation(ctx, r.data.rdb, r.log, []string{
+		redisKey("order", "user", userID, "gen"),
+		redisKey("order", "user", "ongoing", userID, "gen"),
+	}, deletes)
 }
 
 func (r *OrderRepo) getListCache(ctx context.Context, key string) ([]biz.Order, error) {
@@ -392,10 +438,12 @@ func (r *OrderRepo) deleteKey(ctx context.Context, key string) {
 
 func toBizOrder(row db.Order) biz.Order {
 	return biz.Order{
-		ID: row.ID, UserID: row.UserID, AddressID: row.AddressID,
+		ID: row.ID, UserID: row.UserID, AddressID: row.AddressID, PaidPaymentID: row.PaidPaymentID.Int64,
 		TotalAmount: row.TotalAmountMinor, Currency: row.Currency, Status: row.Status,
 		IsCompleted: row.IsCompleted, CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time,
 		OutTradeNo: row.OutTradeNo, IdempotencyKey: row.IdempotencyKey, RequestHash: row.RequestHash,
 		ExpiresAt: row.ExpiresAt.Time,
+		Shipping: &biz.OrderShippingSnapshot{ReceiverName: row.ReceiverName, ReceiverPhoneEncrypt: row.ReceiverPhoneEncrypt,
+			Province: row.ShippingProvince, City: row.ShippingCity, District: row.ShippingDistrict, DetailAddress: row.ShippingDetailAddress},
 	}
 }

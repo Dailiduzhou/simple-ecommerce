@@ -101,10 +101,14 @@ func (r *CategoryRepo) GetCategory(ctx context.Context, id int64) (*biz.Category
 	})
 }
 
-func (r *CategoryRepo) ListSubCategories(ctx context.Context, parentID int64) ([]biz.Category, error) {
-	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryListGenerationKey, categoryListCacheKey(parentID))
+func (r *CategoryRepo) ListSubCategories(ctx context.Context, parentID int64, limit, offset int32) ([]biz.Category, error) {
+	p, err := biz.NewOffsetPage(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryListGenerationKey, categoryListCacheKey(parentID, p.Limit, p.Offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Category, error) {
-		rows, err := r.data.DB(ctx).ListSubCategories(ctx, toPgParentID(parentID))
+		rows, err := r.data.DB(ctx).ListSubCategories(ctx, db.ListSubCategoriesParams{ParentID: toPgParentID(parentID), Limit: p.Limit, Offset: p.Offset})
 		if err != nil {
 			return nil, err
 		}
@@ -112,10 +116,14 @@ func (r *CategoryRepo) ListSubCategories(ctx context.Context, parentID int64) ([
 	})
 }
 
-func (r *CategoryRepo) ListTopCategories(ctx context.Context) ([]biz.Category, error) {
-	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryListGenerationKey, categoryListCacheKey(0))
+func (r *CategoryRepo) ListTopCategories(ctx context.Context, limit, offset int32) ([]biz.Category, error) {
+	p, err := biz.NewOffsetPage(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryListGenerationKey, categoryListCacheKey(0, p.Limit, p.Offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Category, error) {
-		rows, err := r.data.DB(ctx).ListTopCategories(ctx)
+		rows, err := r.data.DB(ctx).ListTopCategories(ctx, db.ListTopCategoriesParams{Limit: p.Limit, Offset: p.Offset})
 		if err != nil {
 			return nil, err
 		}
@@ -164,11 +172,8 @@ func categoryGenerationKey(id int64) string {
 	return redisKey("category", id, "gen")
 }
 
-func categoryListCacheKey(parentID int64) string {
-	if parentID > 0 {
-		return redisKey("category", "list", parentID)
-	}
-	return "category:list:top"
+func categoryListCacheKey(parentID int64, limit, offset int32) string {
+	return redisKey("category", "list", parentID, "limit", limit, "offset", offset)
 }
 
 func toPgParentID(parentID int64) pgtype.Int8 {

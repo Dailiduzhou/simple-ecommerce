@@ -26,6 +26,9 @@ func NewEventRepo(data *Data, logger log.Logger) *EventRepo {
 }
 
 func (r *EventRepo) CreateEvent(ctx context.Context, name string, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, description string, startAt time.Time, endAt time.Time) (*biz.Event, error) {
+	if err := biz.ValidateEventStatus(int32(status)); err != nil {
+		return nil, err
+	}
 	coverImageJSON, err := json.Marshal(coverImage)
 	if err != nil {
 		return nil, err
@@ -79,6 +82,11 @@ func (r *EventRepo) GetEvent(ctx context.Context, id int64) (*biz.Event, error) 
 }
 
 func (r *EventRepo) ListEvents(ctx context.Context, status *int32, limit int32, offset int32) ([]biz.Event, error) {
+	if status != nil {
+		if err := biz.ValidateEventStatus(*status); err != nil {
+			return nil, err
+		}
+	}
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, "event:list:gen")
 	key := generationCacheKey(generation, eventListPresenceCacheKey(generation, status, limit, offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Event, error) {
@@ -130,10 +138,16 @@ func (r *EventRepo) UpdateEvent(ctx context.Context, id int64, name string, cove
 }
 
 func (r *EventRepo) UpdateEventStatus(ctx context.Context, id int64, status int32) error {
-	if err := r.data.DB(ctx).UpdateEventStatus(ctx, db.UpdateEventStatusParams{
+	if err := biz.ValidateEventStatus(status); err != nil {
+		return err
+	}
+	if _, err := r.data.DB(ctx).UpdateEventStatus(ctx, db.UpdateEventStatusParams{
 		ID:     id,
 		Status: int16(status),
 	}); err != nil {
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return errors.NotFound("EVENT_NOT_FOUND", "event not found")
+		}
 		return err
 	}
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, eventGenerationKey(id))

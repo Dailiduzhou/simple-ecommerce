@@ -30,8 +30,10 @@ import (
 
 // ProviderSet is data providers.
 var ProviderSet = wire.NewSet(
-	NewCommunityUserRepo, NewCommunityPolicy, NewMediaPolicy, NewObjectStorage, NewWriteLimiter, NewBrowsingHistoryRepo, NewPostRepo, NewCommentRepo, NewMediaRepo,
+	NewPaymentReconciliationRepo, NewCacheInvalidationRepo, NewCommunityUserRepo, NewCommunityPolicy, NewMediaPolicy, NewObjectStorage, NewWriteLimiter, NewBrowsingHistoryRepo, NewPostRepo, NewCommentRepo, NewMediaRepo,
 	NewPgxPool, NewConfiguredRiverClient, NewRiverInsertClient, NewPaymentRiverErrorHandler, NewData, NewRedisClient, NewAuthRepo, NewUserRepo, NewShippingAddressRepo, NewProductRepo, NewCategoryRepo, NewEventRepo, NewOrderRepoWithJobs, NewOrderPolicy, NewPaymentPolicy, NewPaymentAdapters, NewPaymentRepoWithJobs, NewPaymentMQRepoForWire, NewPaymentNotificationRepo, NewOrderExpiryRepo, NewTransaction, NewSnowflakeIDGenerator,
+	wire.Bind(new(biz.PaymentReconciliationRepo), new(*PaymentReconciliationRepo)),
+	wire.Bind(new(biz.CacheInvalidationRepo), new(*CacheInvalidationRepo)),
 	wire.Bind(new(biz.AuthRepo), new(*AuthRepo)),
 	wire.Bind(new(biz.UserRepo), new(*CommunityUserRepo)),
 	wire.Bind(new(biz.BrowsingHistoryRepo), new(*BrowsingHistoryRepo)),
@@ -43,6 +45,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(biz.CategoryRepo), new(*CategoryRepo)),
 	wire.Bind(new(biz.EventRepo), new(*EventRepo)),
 	wire.Bind(new(biz.OrderRepo), new(*OrderRepo)),
+	wire.Bind(new(biz.OrderFulfillmentRepo), new(*OrderRepo)),
 	wire.Bind(new(biz.OrderMQRepo), new(*PaymentMQRepo)),
 	wire.Bind(new(biz.PaymentRepo), new(*PaymentRepo)),
 	wire.Bind(new(biz.PaymentMQRepo), new(*PaymentMQRepo)),
@@ -129,13 +132,14 @@ func NewRedisClient(c *conf.Data) (*redis.Client, error) {
 		network = "tcp"
 	}
 	rdb := redis.NewClient(&redis.Options{
-		Network:      network,
-		Addr:         c.Redis.Addr,
-		Password:     c.Redis.Password,
-		DB:           int(c.Redis.Db),
-		DialTimeout:  durationOrDefault(c.Redis.DialTimeout, 5*time.Second),
-		ReadTimeout:  durationOrDefault(c.Redis.ReadTimeout, time.Second),
-		WriteTimeout: durationOrDefault(c.Redis.WriteTimeout, time.Second),
+		ContextTimeoutEnabled: true,
+		Network:               network,
+		Addr:                  c.Redis.Addr,
+		Password:              c.Redis.Password,
+		DB:                    int(c.Redis.Db),
+		DialTimeout:           durationOrDefault(c.Redis.DialTimeout, 5*time.Second),
+		ReadTimeout:           durationOrDefault(c.Redis.ReadTimeout, time.Second),
+		WriteTimeout:          durationOrDefault(c.Redis.WriteTimeout, time.Second),
 	})
 
 	if err := rdb.Ping(context.Background()).Err(); err != nil {

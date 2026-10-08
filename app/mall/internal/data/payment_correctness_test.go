@@ -51,7 +51,9 @@ func TestAlipaySignedParametersBindProductAndAbsoluteExpiry(t *testing.T) {
 	adapter := NewAlipayPaymentAdapter(client, log.DefaultLogger)
 	adapter.wapSigner = signer
 	adapter.notifyURL = "https://merchant.example/notify"
-	deadline := time.Now().UTC().Add(20 * time.Minute).Truncate(time.Second)
+	// Deliberately behind the process clock: the adapter must sign the absolute
+	// database deadline without making its own payability decision.
+	deadline := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
 	for _, product := range []string{"wap", "app"} {
 		t.Run(product, func(t *testing.T) {
 			request := biz.PaymentPrepayRequest{Method: biz.PaymentMethod{Provider: "alipay", Product: product},
@@ -95,11 +97,9 @@ func TestAlipaySignedParametersBindProductAndAbsoluteExpiry(t *testing.T) {
 			}
 			digest := sha256.Sum256([]byte(signed.EncodeAliPaySignParams()))
 			require.NoError(t, rsa.VerifyPKCS1v15(&key.PublicKey, crypto.SHA256, digest[:], signature))
-			for _, expired := range []time.Time{{}, time.Now().Add(-time.Second)} {
-				request.ExpiresAt = expired
-				_, err := adapter.Prepay(context.Background(), request)
-				require.ErrorIs(t, err, biz.ErrOrderExpired)
-			}
+			request.ExpiresAt = time.Time{}
+			_, err = adapter.Prepay(context.Background(), request)
+			require.ErrorIs(t, err, biz.ErrOrderExpired)
 		})
 	}
 }
@@ -149,10 +149,13 @@ func TestRefundRetryRestoresPendingBeforeReturningOriginalNumber(t *testing.T) {
 	q := mockdb.NewMockQuerier(gomock.NewController(t))
 	payment := statePayment(biz.PaymentStatusSuccess)
 	refund := db.OrderRefund{ID: 11, PaymentID: pgtype.Int8{Int64: payment.ID, Valid: true}, OrderID: payment.OrderID, UserID: payment.UserID,
-		OutRefundNo: "original", Currency: payment.Currency, TotalAmountMinor: payment.AmountMinor, RefundAmountMinor: payment.AmountMinor, Status: biz.PaymentRefundStatusFailed}
+		OutRefundNo: "original", Currency: payment.Currency, TotalAmountMinor: payment.AmountMinor, RefundAmountMinor: payment.AmountMinor, Purpose: string(biz.RefundOrderCancel), Status: biz.PaymentRefundStatusFailed}
 	pending := refund
 	pending.Status = biz.PaymentRefundStatusPending
 	gomock.InOrder(
+		q.EXPECT().GetPayment(gomock.Any(), payment.ID).Return(payment, nil),
+		q.EXPECT().LockUserForReference(gomock.Any(), payment.UserID).Return(payment.UserID, nil),
+		q.EXPECT().GetOrderForUpdateByPaymentID(gomock.Any(), payment.ID).Return(db.Order{ID: payment.OrderID, Status: biz.OrderStatusPaid, PaidPaymentID: pgtype.Int8{Int64: payment.ID, Valid: true}}, nil),
 		q.EXPECT().GetPaymentForUpdate(gomock.Any(), payment.ID).Return(payment, nil),
 		q.EXPECT().GetOrderRefundByPaymentID(gomock.Any(), refund.PaymentID).Return(refund, nil),
 		q.EXPECT().RetryOrderRefund(gomock.Any(), refund.ID).Return(pending, nil),

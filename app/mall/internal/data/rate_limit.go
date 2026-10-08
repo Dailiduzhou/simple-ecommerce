@@ -48,11 +48,11 @@ func validateAuthLimits(a *conf.Auth) error {
 	if v := a.GetAuthRequestsPerMinute(); v < 0 || v > 10000 {
 		return fmt.Errorf("auth.auth_requests_per_minute must be between 0 (default) and 10000")
 	}
-	if v := a.GetLoginMaxAttempts(); v < 0 || v > 100 {
-		return fmt.Errorf("auth.login_max_attempts must be between 0 (default) and 100")
+	if v := a.GetLoginAccountBurst(); v < 0 || v > 100 {
+		return fmt.Errorf("auth.login_account_burst must be between 0 (default) and 100")
 	}
-	if d := a.GetLoginLockoutDuration().AsDuration(); d < 0 || d > 24*time.Hour {
-		return fmt.Errorf("auth.login_lockout_duration must be between 0 (default) and 24h")
+	if d := a.GetLoginAccountInterval().AsDuration(); d != 0 && (d < time.Second || d > time.Minute) {
+		return fmt.Errorf("auth.login_account_interval must be 0 (default) or between 1s and 60s")
 	}
 	return nil
 }

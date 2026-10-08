@@ -63,11 +63,12 @@ RETURNING *;
 -- name: RequirePaymentReconciliation :one
 UPDATE payments
 SET reconciliation_status = 'required',
+    reconciliation_version = reconciliation_version + 1,
     reconciliation_reason = $2,
     reconciliation_detail = $3,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-  AND reconciliation_status NOT IN ('processing', 'resolved')
+  AND (reconciliation_status <> 'required' OR reconciliation_reason IS DISTINCT FROM $2 OR reconciliation_detail IS DISTINCT FROM $3)
 RETURNING *;
 
 -- name: UpdatePaymentRefunded :execrows

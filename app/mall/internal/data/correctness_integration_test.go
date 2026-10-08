@@ -53,6 +53,14 @@ func (integrationCheckPayWorker) Work(context.Context, *river.Job[biz.CheckPayAr
 	return nil
 }
 
+type integrationClosePayWorker struct {
+	river.WorkerDefaults[biz.ClosePayArgs]
+}
+
+func (integrationClosePayWorker) Work(context.Context, *river.Job[biz.ClosePayArgs]) error {
+	return nil
+}
+
 type integrationExpireOrderWorker struct {
 	river.WorkerDefaults[biz.ExpireOrderArgs]
 }
@@ -82,7 +90,7 @@ func newCorrectnessFixture(t *testing.T) *correctnessFixture {
 		redisAddr = "127.0.0.1:6379"
 	}
 	// DB 15 is reserved for this suite so it never flushes the application's DB 0.
-	rdb := redis.NewClient(&redis.Options{Addr: redisAddr, DB: 15})
+	rdb := redis.NewClient(&redis.Options{Addr: redisAddr, DB: 15, ContextTimeoutEnabled: true})
 	require.NoError(t, rdb.Ping(ctx).Err())
 	require.NoError(t, rdb.FlushDB(ctx).Err())
 
@@ -94,6 +102,7 @@ func newCorrectnessFixture(t *testing.T) *correctnessFixture {
 	handler := NewPaymentRiverErrorHandler(pool, rdb, log.DefaultLogger)
 	workers := river.NewWorkers()
 	river.AddWorker(workers, integrationCheckPayWorker{})
+	river.AddWorker(workers, integrationClosePayWorker{})
 	river.AddWorker(workers, integrationExpireOrderWorker{})
 	riverClient, err := NewRiverClient(pool, workers, nil, handler)
 	require.NoError(t, err)
@@ -149,9 +158,13 @@ func (f *correctnessFixture) cleanup(t *testing.T) {
 		{`DELETE FROM river_job WHERE kind = $1 AND args->>'provider' = $2`, []any{biz.CheckPayJobKind, f.provider}},
 		{`DELETE FROM payment_notifications WHERE provider = $1`, []any{f.provider}},
 		{`DELETE FROM payment_reconciliation_failures WHERE payment_id IN (SELECT id FROM payments WHERE user_id = $1)`, []any{f.userID}},
+		{`DELETE FROM payment_reconciliation_actions WHERE payment_id IN (SELECT id FROM payments WHERE user_id = $1)`, []any{f.userID}},
 		{`DELETE FROM order_refunds WHERE user_id = $1`, []any{f.userID}},
+		{`DELETE FROM stock_adjustments WHERE actor_id = $1`, []any{f.userID}},
+		{`UPDATE orders SET paid_payment_id=NULL WHERE user_id = $1`, []any{f.userID}},
 		{`DELETE FROM payments WHERE user_id = $1`, []any{f.userID}},
 		{`DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE user_id = $1)`, []any{f.userID}},
+		{`DELETE FROM order_fulfillment_actions WHERE order_id IN (SELECT id FROM orders WHERE user_id = $1)`, []any{f.userID}},
 		{`DELETE FROM orders WHERE user_id = $1`, []any{f.userID}},
 		{`DELETE FROM shipping_addresses WHERE user_id = $1`, []any{f.userID}},
 		{`DELETE FROM products WHERE category_id = $1`, []any{f.categoryID}},
@@ -171,9 +184,11 @@ func (f *correctnessFixture) seedPayment(t *testing.T, status string) (int64, in
 	require.NoError(t, f.pool.QueryRow(f.ctx, `
 		INSERT INTO orders (
 			user_id, address_id, total_amount_minor, status, out_trade_no, currency,
-			idempotency_key, request_hash, expires_at
+			idempotency_key, request_hash, expires_at, receiver_name, receiver_phone_encrypt,
+			shipping_province, shipping_city, shipping_district, shipping_detail_address
 		)
-		VALUES ($1, $2, 12345, 'pending_payment', $3, 'CNY', $4, $5, CURRENT_TIMESTAMP + INTERVAL '30 minutes')
+		SELECT $1, $2, 12345, 'pending_payment', $3, 'CNY', $4, $5, CURRENT_TIMESTAMP + INTERVAL '30 minutes',
+			receiver_name,receiver_phone_encrypt,province,city,district,detail_address FROM shipping_addresses WHERE id=$2
 		RETURNING id`,
 		f.userID, f.addressID, orderNo, orderNo, strings.Repeat("a", 64)).Scan(&orderID))
 	outTradeNo := fmt.Sprintf("%s_pay_%d", f.prefix, time.Now().UnixNano())
@@ -343,7 +358,7 @@ func TestCorrectnessIntegration(t *testing.T) {
 					UserID: f.userID, AddressID: f.addressID, OutTradeNo: fmt.Sprintf("%s_concurrent_order_%d", f.prefix, i),
 					Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}},
 					IdempotencyKey: idempotencyKey, RequestHash: f.prefix + "_concurrent_hash",
-					ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+					PaymentTimeout: 30 * time.Minute,
 				})
 				if err != nil {
 					failures <- err
@@ -382,13 +397,15 @@ func TestCorrectnessIntegration(t *testing.T) {
 			UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_conflict_order",
 			Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}},
 			IdempotencyKey: idempotencyKey, RequestHash: f.prefix + "_different_hash",
-			ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+			PaymentTimeout: 30 * time.Minute,
 		})
 		require.ErrorIs(t, err, biz.ErrIdempotencyKeyConflict)
 	})
 
 	t.Run("concurrent refund preparation yields a single refund record", func(t *testing.T) {
-		_, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+		orderID, paymentID, _ := f.seedPayment(t, biz.PaymentStatusSuccess)
+		_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status='paid',paid_payment_id=$2 WHERE id=$1`, orderID, paymentID)
+		require.NoError(t, err)
 		repo := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 
 		refundIDs := make(chan int64, 2)
@@ -436,12 +453,11 @@ func TestCorrectnessIntegration(t *testing.T) {
 		}
 		mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
 		repo := NewOrderRepoWithJobs(f.data, f.tx, mq, log.DefaultLogger)
-		expiresAt := time.Now().UTC().Add(30 * time.Minute)
 		order, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{
 			UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_created_order",
 			Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 2}},
 			IdempotencyKey: f.prefix + "_idempotency", RequestHash: f.prefix + "_request_hash",
-			ExpiresAt: expiresAt,
+			PaymentTimeout: 30 * time.Minute,
 		})
 		require.NoError(t, err)
 		require.Equal(t, int64(24690), order.TotalAmount)
@@ -504,7 +520,7 @@ func TestCorrectnessIntegration(t *testing.T) {
 		require.NoError(t, err)
 		payment, err := q.GetPayment(f.ctx, paymentID)
 		require.NoError(t, err)
-		cacheKeys := append(paymentCacheKeysFor(payment, paymentCacheGeneration(f.ctx, f.rdb, log.NewHelper(log.DefaultLogger))), redisKey("order", orderID))
+		cacheKeys := append(paymentCacheKeysFor(payment, cacheGeneration(f.ctx, f.rdb, log.NewHelper(log.DefaultLogger), redisKey("payment", payment.ID, "gen"))), redisKey("order", orderID))
 		for _, key := range cacheKeys {
 			require.NoError(t, f.rdb.Set(f.ctx, key, `{"Status":"pending"}`, time.Hour).Err())
 		}
@@ -524,7 +540,15 @@ func TestCorrectnessIntegration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, biz.PaymentNotificationStatusFailed, storedNotification.Status)
 		require.Equal(t, "provider timeout", storedNotification.LastError.String)
-		require.Equal(t, int64(0), f.rdb.Exists(f.ctx, cacheKeys...).Val())
+		require.Equal(t, int64(0), f.rdb.Exists(f.ctx, redisKey("order", orderID)).Val())
+		for _, key := range paymentGenerationKeys(payment) {
+			value, err := f.rdb.Get(f.ctx, key).Int64()
+			require.NoError(t, err)
+			require.Equal(t, int64(1), value)
+		}
+		refreshed, err := NewPaymentRepo(f.data, f.tx, log.DefaultLogger).GetPayment(f.ctx, paymentID)
+		require.NoError(t, err)
+		require.Equal(t, biz.ReconciliationStatusRequired, refreshed.ReconciliationStatus)
 	})
 
 	t.Run("discarded stale River job preserves terminal payment state", func(t *testing.T) {

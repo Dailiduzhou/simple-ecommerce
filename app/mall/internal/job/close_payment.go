@@ -26,12 +26,15 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	if args.PaymentID <= 0 || args.Provider == "" || w.gateway == nil || w.repo == nil {
 		return river.JobCancel(fmt.Errorf("close_pay requires payment_id, provider, gateway, and repository"))
 	}
-	payment, err := w.repo.GetPayment(ctx, args.PaymentID)
+	payment, err := w.repo.GetPaymentForJob(ctx, args.PaymentID)
 	if err != nil {
 		return err
 	}
 	if payment == nil {
 		return fmt.Errorf("payment repository returned an empty payment")
+	}
+	if !biz.ReconciliationJobCurrent(args.ReconciliationVersion, payment.ReconciliationVersion, payment.ReconciliationStatus) {
+		return nil
 	}
 	method, err := biz.ParsePaymentMethod(payment.Method)
 	if err != nil {
@@ -49,7 +52,7 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 		TransactionID: payment.ThirdPartyTxID, ExpectedProviderAccount: signed.ProviderAccount}
 	queryStarted := time.Now()
 	query, err := w.gateway.Query(ctx, queryRequest)
-	applyArgs := biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "close_pay"}
+	applyArgs := biz.CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "close_pay", ReconciliationVersion: args.ReconciliationVersion}
 	if errors.Is(err, biz.ErrProviderOrderNotExist) {
 		// APP/WAP only generate signed parameters locally. Absence is normal,
 		// but query only counts as closure evidence after those parameters expire.
@@ -90,6 +93,10 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 		return err
 	}
 	if !capabilities.SupportsClose {
+		if args.ReconciliationVersion != 0 {
+			// Let the version-fenced exhaustion handler record technical failure.
+			return fmt.Errorf("provider does not support payment close")
+		}
 		return w.repo.MarkReconciliationRequired(ctx, biz.ReconciliationFailure{
 			PaymentID: payment.ID, Provider: method.Provider, Attempt: max(1, job.Attempt),
 			Reason: "close_failed", LastError: "provider does not support payment close",
