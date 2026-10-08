@@ -1,6 +1,10 @@
 services:
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # Build the fixed community source release; upstream images are unavailable.
+    image: ecommerce-minio:local
+    build:
+      context: .
+      dockerfile: deploy/minio.Dockerfile
     profiles: [storage]
     entrypoint: ["/bin/sh", "-ec"]
     command:
