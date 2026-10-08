@@ -74,7 +74,7 @@ func TestCategoryRepo_CreateCategory_InvalidatesListCache(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewCategoryRepo(d, log.DefaultLogger)
-	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(0), "g", 0), []biz.Category{
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(0, 20, 0), "g", 0), []biz.Category{
 		{ID: 99, Name: "stale"},
 	})
 
@@ -92,7 +92,7 @@ func TestCategoryRepo_CreateCategory_InvalidatesListCache(t *testing.T) {
 		}, nil)
 
 	mockQ.EXPECT().
-		ListTopCategories(gomock.Any()).
+		ListTopCategories(gomock.Any(), db.ListTopCategoriesParams{Limit: 20}).
 		Times(1).
 		Return([]db.Category{
 			{ID: 1, Name: "phones", SortOrder: 10},
@@ -102,7 +102,7 @@ func TestCategoryRepo_CreateCategory_InvalidatesListCache(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), c.ID)
 
-	cs, err := repo.ListTopCategories(context.Background())
+	cs, err := repo.ListTopCategories(context.Background(), 20, 0)
 	require.NoError(t, err)
 	require.Len(t, cs, 1)
 	assert.Equal(t, int64(1), cs[0].ID)
@@ -116,11 +116,11 @@ func TestCategoryRepo_ListSubCategories_CacheHit(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewCategoryRepo(d, log.DefaultLogger)
-	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2), "g", 0), []biz.Category{
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2, 20, 0), "g", 0), []biz.Category{
 		{ID: 3, ParentID: 2, Name: "cases", SortOrder: 1},
 	})
 
-	cs, err := repo.ListSubCategories(context.Background(), 2)
+	cs, err := repo.ListSubCategories(context.Background(), 2, 20, 0)
 	require.NoError(t, err)
 	require.Len(t, cs, 1)
 	assert.Equal(t, int64(3), cs[0].ID)
@@ -141,7 +141,7 @@ func TestCategoryRepo_UpdateCategory_InvalidatesParentListCache(t *testing.T) {
 		Name:      "old",
 		SortOrder: 1,
 	})
-	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2), "g", 0), []biz.Category{
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2, 20, 0), "g", 0), []biz.Category{
 		{ID: 99, ParentID: 2, Name: "stale"},
 	})
 
@@ -170,7 +170,7 @@ func TestCategoryRepo_UpdateCategory_InvalidatesParentListCache(t *testing.T) {
 		}, nil)
 
 	mockQ.EXPECT().
-		ListSubCategories(gomock.Any(), pgtype.Int8{Int64: 2, Valid: true}).
+		ListSubCategories(gomock.Any(), db.ListSubCategoriesParams{ParentID: pgtype.Int8{Int64: 2, Valid: true}, Limit: 20}).
 		Times(1).
 		Return([]db.Category{
 			{
@@ -190,7 +190,7 @@ func TestCategoryRepo_UpdateCategory_InvalidatesParentListCache(t *testing.T) {
 	assert.Equal(t, "new", cached.Name)
 	assert.Equal(t, int32(4), cached.SortOrder)
 
-	cs, err := repo.ListSubCategories(context.Background(), 2)
+	cs, err := repo.ListSubCategories(context.Background(), 2, 20, 0)
 	require.NoError(t, err)
 	require.Len(t, cs, 1)
 	assert.Equal(t, "new", cs[0].Name)
@@ -204,7 +204,7 @@ func TestCategoryRepo_DeleteCategory_ClearsCachesWhenUnused(t *testing.T) {
 	d := newTestData(t, mockQ, mr)
 	repo := NewCategoryRepo(d, log.DefaultLogger)
 	repo.setCache(context.Background(), redisKey("category", 3, "g", 0), &biz.Category{ID: 3, ParentID: 2, Name: "leaf"})
-	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2), "g", 0), []biz.Category{{ID: 3, ParentID: 2, Name: "stale"}})
+	repo.setListCache(context.Background(), redisKey(categoryListCacheKey(2, 20, 0), "g", 0), []biz.Category{{ID: 3, ParentID: 2, Name: "stale"}})
 
 	// One statement performs the dependency checks and the delete.
 	mockQ.EXPECT().

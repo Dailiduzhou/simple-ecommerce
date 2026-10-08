@@ -78,16 +78,7 @@ func writeJSONCache(ctx context.Context, d *Data, logger *log.Helper, key string
 }
 
 func deleteJSONCache(ctx context.Context, d *Data, logger *log.Helper, keys ...string) {
-	afterCommit(ctx, func() {
-		if d.rdb == nil || len(keys) == 0 {
-			return
-		}
-		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-		defer cancel()
-		if err := d.rdb.Unlink(cacheCtx, keys...).Err(); err != nil {
-			cacheFailure(cacheCtx, logger, "unlink", keys[0], err)
-		}
-	})
+	scheduleCacheInvalidation(ctx, d.rdb, logger, nil, keys)
 }
 
 // cacheAside caches successful loads, including typed nil (not-found) values.

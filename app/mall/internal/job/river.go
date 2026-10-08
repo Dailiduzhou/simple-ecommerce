@@ -42,12 +42,15 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	if w.paymentGateway == nil || w.paymentRepo == nil {
 		return w.cancel(ctx, args, fmt.Errorf("payment worker dependencies are missing"))
 	}
-	payment, err := w.paymentRepo.GetPayment(ctx, args.PaymentID)
+	payment, err := w.paymentRepo.GetPaymentForJob(ctx, args.PaymentID)
 	if err != nil {
 		return err
 	}
 	if payment == nil {
 		return w.retryable(ctx, args, fmt.Errorf("payment repository returned an empty payment"))
+	}
+	if !biz.ReconciliationJobCurrent(args.ReconciliationVersion, payment.ReconciliationVersion, payment.ReconciliationStatus) {
+		return nil
 	}
 	method, err := biz.ParsePaymentMethod(payment.Method)
 	if err != nil {

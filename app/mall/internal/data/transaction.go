@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 type transaction struct {
@@ -20,7 +22,8 @@ type transaction struct {
 type (
 	txStateKey struct{}
 	txState    struct {
-		afterCommit []func()
+		afterCommit        []func()
+		cacheInvalidations map[*redis.Client]*redisCacheInvalidation
 	}
 )
 
@@ -37,6 +40,9 @@ func (t *transaction) InTx(ctx context.Context, fn func(ctx context.Context) err
 // InTxSnapshot provides the read-only, single-snapshot view used by paginated
 // reads that would otherwise mix several points in time.
 func (t *transaction) InTxSnapshot(ctx context.Context, fn func(ctx context.Context) error) error {
+	if inTransaction(ctx) {
+		return fn(ctx)
+	}
 	return t.run(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, fn)
 }
 
@@ -47,6 +53,8 @@ func (t *transaction) run(ctx context.Context, opts pgx.TxOptions, fn func(ctx c
 	if inTransaction(ctx) {
 		return fmt.Errorf("transaction already active: reuse the context passed to InTx instead of nesting")
 	}
+	ctx, cancelWork := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelWork()
 	tx, err := t.pool.BeginTx(ctx, opts)
 	if err != nil {
 		return err
@@ -57,7 +65,8 @@ func (t *transaction) run(ctx context.Context, opts pgx.TxOptions, fn func(ctx c
 		// Rollback and commit must survive a client disconnect: the outcome of an
 		// already-started transaction is decided by PostgreSQL, not by whether the
 		// caller is still connected.
-		detached := context.WithoutCancel(ctx)
+		detached, cancel := transactionCleanupContext(ctx)
+		defer cancel()
 		if p := recover(); p != nil {
 			_ = tx.Rollback(detached)
 			panic(p)
@@ -92,6 +101,10 @@ func WithQuerier(ctx context.Context, q db.Querier, tx pgx.Tx) context.Context {
 		ctx = context.WithValue(ctx, ctxRawPgTxKey{}, tx)
 	}
 	return ctx
+}
+
+func transactionCleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 }
 
 func afterCommit(ctx context.Context, fn func()) {

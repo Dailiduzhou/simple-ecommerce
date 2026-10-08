@@ -54,12 +54,13 @@ WHERE id = $1
   AND deleted_at IS NULL
 RETURNING *;
 
--- name: UpdateEventStatus :exec
+-- name: UpdateEventStatus :one
 UPDATE events
 SET status = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-  AND deleted_at IS NULL;
+  AND deleted_at IS NULL
+RETURNING *;
 
 -- name: SoftDeleteEvent :exec
 UPDATE events

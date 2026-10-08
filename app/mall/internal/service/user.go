@@ -41,15 +41,11 @@ func (s *UserService) Login(ctx context.Context, req *pb.LoginRequest) (*pb.Logi
 	if err != nil {
 		return nil, err
 	}
-	token, err := s.authUc.GenerateAccessToken(u.ID, u.Role)
+	pair, err := s.authUc.StartSession(ctx, u)
 	if err != nil {
-		return nil, pb.ErrorUnauthorized("generate access token failed")
+		return nil, err
 	}
-	refreshToken, err := s.authUc.GenerateRefreshToken(u.ID, u.Role)
-	if err != nil {
-		return nil, pb.ErrorUnauthorized("generate refresh token failed")
-	}
-	return &pb.LoginReply{Id: u.ID, Token: token, RefreshToken: refreshToken}, nil
+	return &pb.LoginReply{Id: u.ID, Token: pair.AccessToken, RefreshToken: pair.RefreshToken}, nil
 }
 
 func (s *UserService) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.UserInfo, error) {
@@ -149,7 +145,7 @@ func (s *UserService) ListShippingAddresses(ctx context.Context, req *pb.ListShi
 	if err := requireResourceOwner(claims, req.UserId); err != nil {
 		return nil, err
 	}
-	sas, err := s.shippingAddrUc.ListShippingAddressesByUser(ctx, claims.UserID)
+	sas, err := s.shippingAddrUc.ListShippingAddressesByUser(ctx, claims.UserID, req.Page, req.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -221,33 +217,14 @@ func toProtoShippingAddress(sa *biz.ShippingAddress) *pb.ShippingAddress {
 }
 
 func (s *UserService) RefreshToken(ctx context.Context, req *pb.RefreshRequest) (*pb.RefreshReply, error) {
-	claims, err := s.authUc.ParseRefreshToken(req.RefreshToken)
+	pair, err := s.authUc.RefreshSession(ctx, req.RefreshToken)
 	if err != nil {
-		s.log.WithContext(ctx).Errorf("refresh token invalid or expired: %v", err)
-		return nil, pb.ErrorTokenExpired("refresh token invalid or expired")
-	}
-
-	if err := s.authUc.ConsumeRefresh(ctx, claims); err != nil {
 		return nil, err
 	}
-
-	accessToken, err := s.authUc.GenerateAccessToken(claims.UserID, claims.Role)
-	if err != nil {
-		s.log.WithContext(ctx).Errorf("generate access token failed: %v", err)
-		return nil, pb.ErrorUnauthorized("generate access token failed")
-	}
-
-	refreshToken, err := s.authUc.GenerateRefreshToken(claims.UserID, claims.Role)
-	if err != nil {
-		s.log.WithContext(ctx).Errorf("generate refresh token failed: %v", err)
-		return nil, pb.ErrorUnauthorized("generate refresh token failed")
-	}
-
-	return &pb.RefreshReply{AccessToken: accessToken, RefreshToken: refreshToken}, nil
+	return &pb.RefreshReply{AccessToken: pair.AccessToken, RefreshToken: pair.RefreshToken}, nil
 }
 
-// Logout revokes the access token that authorizes this call (itself excluded
-// from the JWT whitelist) and optionally burns the client's refresh token.
+// Logout revokes the caller's entire session, including refresh descendants.
 func (s *UserService) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.LogoutReply, error) {
 	claims, err := authenticatedClaims(ctx)
 	if err != nil {

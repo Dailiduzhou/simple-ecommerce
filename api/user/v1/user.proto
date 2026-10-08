@@ -29,6 +29,10 @@ service User {
       body: "*"
     };
   }
+  // Password checks share an account quota across all IPs (default burst 5,
+  // one check replenished every 30 seconds). Rejections do not extend the wait.
+  // HTTP 429 / USER_LOGIN_LOCKED includes metadata.retry_after_seconds;
+  // credential checks also fail closed with 503 when the quota store is unavailable.
   rpc Login(LoginRequest) returns (LoginReply) {
     option (google.api.http) = {
       post: "/v1/users/login"
@@ -52,6 +56,8 @@ service User {
       body: "*"
     };
   }
+  // Physically deletes accounts without retained transaction/audit history.
+  // Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {
     option (google.api.http) = {delete: "/v1/users/{id}"};
   }
@@ -170,6 +176,8 @@ message CreateShippingAddressRequest {
 
 message ListShippingAddressesRequest {
   int64 user_id = 1;
+  int32 page = 2 [(buf.validate.field).int32.gte = 0];
+  int32 page_size = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}]; // 默认 20
 }
 message ListShippingAddressesReply {
   repeated ShippingAddress addresses = 1;

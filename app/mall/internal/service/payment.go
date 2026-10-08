@@ -21,12 +21,13 @@ type PaymentService struct {
 	pb.UnimplementedPaymentServer
 	paymentUc       biz.PaymentUsecase
 	paymentJobs     biz.PaymentJobUsecase
+	reconciliation  *biz.PaymentReconciliationUsecase
 	log             *log.Helper
 	callbackLimiter *providerCallbackLimiter
 }
 
-func NewPaymentService(paymentUc biz.PaymentUsecase, paymentJobs biz.PaymentJobUsecase, logger log.Logger) *PaymentService {
-	return &PaymentService{paymentUc: paymentUc, paymentJobs: paymentJobs, log: log.NewHelper(logger), callbackLimiter: newProviderCallbackLimiter(120)}
+func NewPaymentService(paymentUc biz.PaymentUsecase, paymentJobs biz.PaymentJobUsecase, reconciliation *biz.PaymentReconciliationUsecase, logger log.Logger) *PaymentService {
+	return &PaymentService{paymentUc: paymentUc, paymentJobs: paymentJobs, reconciliation: reconciliation, log: log.NewHelper(logger), callbackLimiter: newProviderCallbackLimiter(120)}
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymentReq) (*pb.CreatePaymentReply, error) {
@@ -292,7 +293,7 @@ func toProtoPaymentInfo(payment *biz.PaymentDO) *pb.PaymentInfo {
 		Id: payment.ID, OrderId: payment.OrderID, UserId: payment.UserID, MerchantId: payment.MerchantID,
 		AmountMinor: payment.Amount, Currency: payment.Currency, Status: payment.Status, Method: payment.Method,
 		ThirdPartyTxId: payment.ThirdPartyTxID, OutTradeNo: payment.OutTradeNo, CreatedAt: timestamppb.New(payment.CreatedAt),
-		ReconciliationStatus: payment.ReconciliationStatus, ReconciliationReason: payment.ReconciliationReason,
+		ReconciliationVersion: payment.ReconciliationVersion, ReconciliationStatus: payment.ReconciliationStatus, ReconciliationReason: payment.ReconciliationReason,
 	}
 	if payment.PaidAt != nil {
 		result.PaidAt = timestamppb.New(*payment.PaidAt)

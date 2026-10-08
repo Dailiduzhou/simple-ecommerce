@@ -12,6 +12,7 @@ import (
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -60,7 +61,7 @@ func TestPostRepoIntegrationReadSnapshotDuringImageReplacement(t *testing.T) {
 				require.NoError(t, err)
 				// Release the barrier before closing the pool even if an assertion fails.
 				defer func() { release.Do(func() { close(barrier.resume) }); pool.Close() }()
-				repo := NewPostRepo(&Data{pool: pool, q: db.New(pool)}, f.tx, f.media)
+				repo := NewPostRepo(&Data{pool: pool, q: db.New(pool)}, NewTransaction(pool, log.DefaultLogger), f.media)
 				ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
 				defer cancel()
 				type result struct {

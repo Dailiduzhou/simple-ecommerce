@@ -505,7 +505,7 @@ func TestPeriodicJobsCoverBothBackstops(t *testing.T) {
 	// One periodic schedule per backstop sweep; the args kinds are asserted by
 	// the workers themselves, here we only guard the schedule count so a new
 	// sweep cannot be added without extending this test.
-	require.Len(t, NewPeriodicJobs(), 4)
+	require.Len(t, NewPeriodicJobs(), 5)
 }
 
 func TestClosePayWorker_RequeriesPaymentThatWinsCloseRace(t *testing.T) {
@@ -575,4 +575,43 @@ func TestClosePayWorker_MissingActionDoesNotProveNoDispatch(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, repo.applied)
 	require.NotNil(t, repo.reconciled)
+}
+
+func (r *workerRepo) GetPaymentForJob(ctx context.Context, id int64) (*biz.PaymentDO, error) {
+	return r.GetPayment(ctx, id)
+}
+
+func TestManualRetryWorkersFenceVersionAndStatus(t *testing.T) {
+	for _, kind := range []string{biz.CheckPayJobKind, biz.ClosePayJobKind} {
+		for _, tc := range []struct {
+			name    string
+			version int64
+			status  string
+			queries int
+		}{
+			{"resolved", 3, biz.ReconciliationStatusResolved, 0},
+			{"new retry", 4, biz.ReconciliationStatusProcessing, 0},
+			{"not processing", 2, biz.ReconciliationStatusRequired, 0},
+			{"current", 2, biz.ReconciliationStatusProcessing, 1},
+		} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				repo := &workerRepo{payment: &biz.PaymentDO{ID: 8, Method: "wechat:native", ReconciliationVersion: tc.version, ReconciliationStatus: tc.status}}
+				gateway := &workerGateway{err: errors.New("timeout")}
+				var err error
+				if kind == biz.CheckPayJobKind {
+					err = NewCheckPayWorker(gateway, repo, log.DefaultLogger).Work(context.Background(), &river.Job[biz.CheckPayArgs]{JobRow: &rivertype.JobRow{Attempt: 8}, Args: biz.CheckPayArgs{PaymentID: 8, Provider: "wechat", ReconciliationVersion: 2}})
+				} else {
+					err = NewClosePayWorker(gateway, repo).Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 8}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: "wechat", ReconciliationVersion: 2}})
+				}
+				if tc.queries == 0 {
+					require.NoError(t, err)
+				} else {
+					require.EqualError(t, err, "timeout")
+				}
+				require.Equal(t, tc.queries, gateway.queries)
+				require.False(t, repo.applied)
+				require.Nil(t, repo.reconciled)
+			})
+		}
+	}
 }

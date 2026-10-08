@@ -275,16 +275,5 @@ func (r *PostRepo) SetLike(ctx context.Context, a biz.Actor, id int64, on bool) 
 // Writes already own their transaction and post locks; never open a nested
 // transaction or lose uncommitted images when Get is used to return a write.
 func (r *PostRepo) readSnapshot(ctx context.Context, fn func(context.Context) error) error {
-	if querierFromContext(ctx, nil) != nil {
-		return fn(ctx)
-	}
-	tx, err := r.data.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(context.Background())
-	if err = fn(WithQuerier(ctx, db.New(tx), tx)); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return r.tx.InTxSnapshot(ctx, fn)
 }

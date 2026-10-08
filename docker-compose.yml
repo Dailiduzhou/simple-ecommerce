@@ -106,6 +106,7 @@ services:
       loki:
         condition: service_started
     environment:
+      APP_IS_PRODUCTION: ${APP_IS_PRODUCTION:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
       DATABASE_SOURCE: ${DATABASE_SOURCE:?set DATABASE_SOURCE (use sslmode=require outside a trusted network)}

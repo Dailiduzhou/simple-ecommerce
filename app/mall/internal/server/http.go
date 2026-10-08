@@ -53,8 +53,14 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 		clientIP = nil
 	}
 
+	filters := []http.FilterFunc{custommid.CommunityBodyLimit}
+	if c.IsProduction != nil && !c.GetIsProduction() {
+		// CORS must wrap body limits, routing and authentication so preflights
+		// short-circuit them and error responses also carry CORS headers.
+		filters = append([]http.FilterFunc{custommid.DevelopmentCORS}, filters...)
+	}
 	opts := []http.ServerOption{
-		http.Filter(custommid.CommunityBodyLimit),
+		http.Filter(filters...),
 		http.Middleware(
 			recovery.Recovery(),
 			tracing.Server(),

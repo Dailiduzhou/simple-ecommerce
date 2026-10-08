@@ -10,7 +10,7 @@ CREATE TABLE users (
   phone_hash VARCHAR(128) NOT NULL,
   phone_encrypt VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  password_changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  auth_version BIGINT NOT NULL DEFAULT 1 CHECK (auth_version > 0),
   role VARCHAR(10) NOT NULL DEFAULT 'user',
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -23,7 +23,7 @@ COMMENT ON COLUMN users.id IS '用户全局唯一ID';
 COMMENT ON COLUMN users.phone_hash IS '手机号HMAC摘要，用于等值匹配登录';
 COMMENT ON COLUMN users.phone_encrypt IS '手机号AES对称加密密文，用于解密展示';
 COMMENT ON COLUMN users.password_hash IS 'Bcrypt加密后的密码';
-COMMENT ON COLUMN users.password_changed_at IS '密码最近变更时间；早于该时间签发的访问/刷新令牌全部失效';
+COMMENT ON COLUMN users.auth_version IS '凭证版本；改密原子递增，令牌必须携带验证密码时读取的同一版本';
 
 CREATE TABLE shipping_addresses (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -66,7 +66,7 @@ CREATE TABLE products (
   category_id BIGINT NOT NULL,
   name VARCHAR(255) NOT NULL,
   price_minor BIGINT NOT NULL DEFAULT 0,
-  discount NUMERIC(10, 2) NOT NULL DEFAULT 1.00,
+  discount NUMERIC NOT NULL DEFAULT 1.00,
   stock INTEGER NOT NULL DEFAULT 0,
   status SMALLINT NOT NULL DEFAULT 0,
   cover_image JSONB NOT NULL DEFAULT '{}',
@@ -77,9 +77,10 @@ CREATE TABLE products (
   deleted_at TIMESTAMPTZ,
   CONSTRAINT fk_product_category
     FOREIGN KEY (category_id) REFERENCES categories(id),
-  CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1),
+  CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1 AND discount = round(discount, 2)),
   -- 库存与价格不允许为负：扣减/回补逻辑一旦出错，这里直接拒绝而不是让脏数据落库。
   CONSTRAINT products_stock_check CHECK (stock >= 0),
+  CONSTRAINT products_status_check CHECK (status IN (0, 1)),
   CONSTRAINT products_price_minor_check CHECK (price_minor >= 0)
 );
 
@@ -90,10 +91,30 @@ CREATE INDEX idx_products_media_assets ON products USING GIN (media_assets);
 
 COMMENT ON COLUMN products.status IS '商品状态：0=下架，1=上架；当前业务未定义其他状态值';
 
+CREATE TABLE stock_adjustments (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  product_id BIGINT NOT NULL REFERENCES products(id),
+  actor_id BIGINT NOT NULL REFERENCES users(id),
+  delta INTEGER NOT NULL CHECK (delta <> 0),
+  reason VARCHAR(255) NOT NULL CHECK (length(reason) > 0),
+  idempotency_key VARCHAR(64) NOT NULL,
+  resulting_stock INTEGER NOT NULL CHECK (resulting_stock >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (product_id, idempotency_key)
+);
+
 CREATE TABLE orders (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL,
   address_id BIGINT NOT NULL,
+  -- Historical source ID only: address-book deletion must not rewrite orders.
+  receiver_name VARCHAR(64) NOT NULL,
+  receiver_phone_encrypt TEXT NOT NULL,
+  shipping_province VARCHAR(64) NOT NULL,
+  shipping_city VARCHAR(64) NOT NULL,
+  shipping_district VARCHAR(64) NOT NULL,
+  shipping_detail_address TEXT NOT NULL,
+  paid_payment_id BIGINT,
   total_amount_minor BIGINT NOT NULL,
   currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
   status VARCHAR(20) NOT NULL DEFAULT 'pending_payment',
@@ -106,8 +127,10 @@ CREATE TABLE orders (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_order_user
     FOREIGN KEY (user_id) REFERENCES users(id),
-  CONSTRAINT fk_order_address
-    FOREIGN KEY (address_id) REFERENCES shipping_addresses(id),
+  CONSTRAINT orders_shipping_snapshot_check CHECK (
+    address_id > 0 AND receiver_name <> '' AND receiver_phone_encrypt <> ''
+    AND shipping_detail_address <> ''
+  ),
   CONSTRAINT orders_amount_check CHECK (total_amount_minor > 0),
   CONSTRAINT orders_status_check CHECK (
     status IN ('pending_payment', 'paid', 'shipped', 'completed', 'cancelling', 'cancelled', 'refunded')
@@ -116,6 +139,41 @@ CREATE TABLE orders (
     is_completed = (status IN ('completed', 'cancelled', 'refunded'))
   )
 );
+
+-- Append-only through the application. Preserve actors and transition facts
+-- independently of subsequent order state or editable address-book records.
+CREATE TABLE order_fulfillment_actions (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  order_id BIGINT NOT NULL REFERENCES orders(id),
+  actor_id BIGINT NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL CHECK (action IN ('ship', 'complete')),
+  from_status TEXT NOT NULL,
+  to_status TEXT NOT NULL,
+  idempotency_key VARCHAR(64) NOT NULL CHECK (length(idempotency_key) BETWEEN 8 AND 64),
+  reason VARCHAR(255) NOT NULL CHECK (length(btrim(reason)) > 0),
+  carrier VARCHAR(64) NOT NULL DEFAULT '',
+  tracking_number VARCHAR(128) NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+  UNIQUE (order_id, action),
+  UNIQUE (order_id, idempotency_key),
+  CHECK ((action='ship' AND from_status='paid' AND to_status='shipped' AND length(btrim(carrier))>0 AND length(btrim(tracking_number))>0)
+      OR (action='complete' AND from_status='shipped' AND to_status='completed' AND carrier='' AND tracking_number=''))
+);
+
+CREATE FUNCTION protect_order_shipping_snapshot() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF ROW(NEW.address_id, NEW.receiver_name, NEW.receiver_phone_encrypt,
+         NEW.shipping_province, NEW.shipping_city, NEW.shipping_district, NEW.shipping_detail_address)
+     IS DISTINCT FROM
+     ROW(OLD.address_id, OLD.receiver_name, OLD.receiver_phone_encrypt,
+         OLD.shipping_province, OLD.shipping_city, OLD.shipping_district, OLD.shipping_detail_address) THEN
+    RAISE EXCEPTION 'order shipping snapshot is immutable' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER orders_shipping_snapshot_immutable BEFORE UPDATE ON orders
+  FOR EACH ROW EXECUTE FUNCTION protect_order_shipping_snapshot();
 
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_orders_ongoing ON orders(user_id, is_completed)
@@ -164,6 +222,7 @@ CREATE TABLE payments (
   action_payload JSONB,
   paid_at TIMESTAMPTZ,
   reconciliation_status VARCHAR(20) NOT NULL DEFAULT 'none',
+  reconciliation_version BIGINT NOT NULL DEFAULT 0 CHECK (reconciliation_version >= 0),
   reconciliation_reason VARCHAR(64),
   reconciliation_detail TEXT,
   prepay_lease_token VARCHAR(64),
@@ -199,6 +258,30 @@ CREATE INDEX idx_payments_reconciliation
   ON payments(reconciliation_status, updated_at)
   WHERE reconciliation_status <> 'none';
 
+-- Keep the payment which funded fulfilment distinct from excess/late money.
+ALTER TABLE orders ADD CONSTRAINT fk_order_paid_payment
+  FOREIGN KEY (paid_payment_id) REFERENCES payments(id);
+
+CREATE TABLE payment_reconciliation_actions (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  payment_id BIGINT NOT NULL REFERENCES payments(id),
+  actor_id BIGINT NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL CHECK (action IN ('retry', 'resolve')),
+  from_status TEXT NOT NULL CHECK (from_status IN ('required', 'processing')),
+  to_status TEXT NOT NULL,
+  from_version BIGINT NOT NULL CHECK (from_version > 0),
+  to_version BIGINT NOT NULL CHECK (to_version = from_version + 1),
+  idempotency_key VARCHAR(64) NOT NULL CHECK (length(idempotency_key) BETWEEN 8 AND 64),
+  reason VARCHAR(255) NOT NULL CHECK (length(btrim(reason)) > 0),
+  evidence TEXT NOT NULL DEFAULT '' CHECK (length(evidence) <= 2000),
+  river_job_id BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+  UNIQUE (payment_id, idempotency_key),
+  UNIQUE (payment_id, to_version),
+  CHECK ((action='retry' AND from_status='required' AND to_status='processing' AND river_job_id IS NOT NULL)
+      OR (action='resolve' AND to_status='resolved' AND length(btrim(evidence))>0 AND river_job_id IS NULL))
+);
+
 CREATE TABLE order_refunds (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   order_id BIGINT NOT NULL,
@@ -209,6 +292,7 @@ CREATE TABLE order_refunds (
   refund_amount_minor BIGINT NOT NULL,
   currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
   reason TEXT NOT NULL DEFAULT '',
+  purpose VARCHAR(32) NOT NULL DEFAULT 'order_cancel_refund',
   status VARCHAR(20) NOT NULL DEFAULT 'pending',
   last_error TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -221,7 +305,11 @@ CREATE TABLE order_refunds (
     FOREIGN KEY (payment_id) REFERENCES payments(id),
   -- 退款金额必须是正数且不超过对应的应付总额，避免超退。
   CONSTRAINT order_refunds_total_amount_check CHECK (total_amount_minor > 0),
-  CONSTRAINT order_refunds_amount_check CHECK (refund_amount_minor > 0 AND refund_amount_minor <= total_amount_minor)
+  CONSTRAINT order_refunds_amount_check CHECK (refund_amount_minor > 0 AND refund_amount_minor <= total_amount_minor),
+  CONSTRAINT order_refunds_purpose_check CHECK (
+    purpose IN ('order_cancel_refund', 'duplicate_payment_refund', 'late_payment_refund')
+  ),
+  CONSTRAINT order_refunds_status_check CHECK (status IN ('pending', 'success', 'failed'))
 );
 
 CREATE UNIQUE INDEX idx_order_refunds_out_refund_no ON order_refunds(out_refund_no);
@@ -292,6 +380,7 @@ CREATE TABLE events (
   deleted_at TIMESTAMPTZ,
   -- 活动结束必须晚于开始，否则窗口判定（DB 时钟）会退化成永久有效/永久过期。
   CONSTRAINT events_window_check CHECK (end_at > start_at)
+  , CONSTRAINT events_status_check CHECK (status IN (0, 1, 2))
 );
 
 CREATE INDEX idx_events_status ON events(status) WHERE deleted_at IS NULL;
@@ -407,3 +496,47 @@ BEGIN
 END $$;
 CREATE TRIGGER post_comment_relationship BEFORE INSERT OR UPDATE ON post_comments
   FOR EACH ROW EXECUTE FUNCTION check_post_comment_relationship();
+
+
+-- The outbox and each source mutation commit together, including writes by
+-- expiry/reconciliation error handlers. Append rows instead of locking shared
+-- generation keys on writes: checkout and refund may lock products/orders in
+-- different phases. Recovery workers deduplicate the selected keys in Redis.
+CREATE TABLE cache_invalidations (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  generation_keys TEXT[] NOT NULL CHECK (cardinality(generation_keys) BETWEEN 1 AND 5),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE FUNCTION enqueue_projection_invalidation() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  current_row RECORD;
+  targets TEXT[];
+BEGIN
+  IF TG_OP = 'DELETE' THEN current_row := OLD; ELSE current_row := NEW; END IF;
+  CASE TG_TABLE_NAME
+    WHEN 'products' THEN
+      targets := ARRAY['product:' || current_row.id || ':gen', 'product:list:gen',
+                       'product:category:' || current_row.category_id || ':gen'];
+      IF TG_OP = 'UPDATE' AND OLD.category_id <> NEW.category_id THEN
+        targets := array_append(targets, 'product:category:' || OLD.category_id || ':gen');
+      END IF;
+    WHEN 'orders' THEN
+      targets := ARRAY['order:user:' || current_row.user_id || ':gen',
+                       'order:user:ongoing:' || current_row.user_id || ':gen'];
+    WHEN 'payments' THEN
+      targets := ARRAY['payment:' || current_row.id || ':gen',
+                       'payment:order:' || current_row.order_id || ':gen',
+                       'payment:out_trade_no:' || current_row.out_trade_no || ':gen'];
+    ELSE RAISE EXCEPTION 'unsupported projection source: %', TG_TABLE_NAME;
+  END CASE;
+  INSERT INTO cache_invalidations(generation_keys) VALUES (targets);
+  RETURN NULL;
+END;
+$$;
+CREATE TRIGGER products_projection_changed AFTER INSERT OR UPDATE OR DELETE ON products
+  FOR EACH ROW EXECUTE FUNCTION enqueue_projection_invalidation();
+CREATE TRIGGER orders_projection_changed AFTER INSERT OR UPDATE OR DELETE ON orders
+  FOR EACH ROW EXECUTE FUNCTION enqueue_projection_invalidation();
+CREATE TRIGGER payments_projection_changed AFTER INSERT OR UPDATE OR DELETE ON payments
+  FOR EACH ROW EXECUTE FUNCTION enqueue_projection_invalidation();

@@ -10,7 +10,7 @@ import (
 	"github.com/riverqueue/river"
 )
 
-var ProviderSet = wire.NewSet(NewBrowsingHistoryCleanupWorker, NewMediaSweepWorker, NewMediaDeleteWorker, NewRiverServer, NewWorkers, NewCheckPayWorker, NewExpireOrderWorker, NewClosePayWorker, NewReapExpiredOrdersWorker, NewReconcileRefundsWorker, NewPeriodicJobs)
+var ProviderSet = wire.NewSet(NewCacheInvalidationWorker, NewBrowsingHistoryCleanupWorker, NewMediaSweepWorker, NewMediaDeleteWorker, NewRiverServer, NewWorkers, NewCheckPayWorker, NewExpireOrderWorker, NewClosePayWorker, NewReapExpiredOrdersWorker, NewReconcileRefundsWorker, NewPeriodicJobs)
 
 type RiverServer struct {
 	client *river.Client[pgx.Tx]
@@ -28,8 +28,9 @@ func (s *RiverServer) Stop(ctx context.Context) error {
 	return s.client.Stop(ctx)
 }
 
-func NewWorkers(checkPayWorker *CheckPayWorker, expireOrderWorker *ExpireOrderWorker, closePayWorker *ClosePayWorker, reapExpiredOrdersWorker *ReapExpiredOrdersWorker, reconcileRefundsWorker *ReconcileRefundsWorker, history *BrowsingHistoryCleanupWorker, sweep *MediaSweepWorker, media *MediaDeleteWorker, logger log.Logger) *river.Workers {
+func NewWorkers(checkPayWorker *CheckPayWorker, expireOrderWorker *ExpireOrderWorker, closePayWorker *ClosePayWorker, reapExpiredOrdersWorker *ReapExpiredOrdersWorker, reconcileRefundsWorker *ReconcileRefundsWorker, history *BrowsingHistoryCleanupWorker, sweep *MediaSweepWorker, media *MediaDeleteWorker, caches *CacheInvalidationWorker, logger log.Logger) *river.Workers {
 	workers := river.NewWorkers()
+	river.AddWorker(workers, caches)
 	river.AddWorker(workers, history)
 	river.AddWorker(workers, sweep)
 	river.AddWorker(workers, media)

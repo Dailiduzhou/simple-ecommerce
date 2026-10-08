@@ -25,8 +25,8 @@ func ProductPriceMinor(price decimal.Decimal) (int64, error) {
 // either raise the charged price above the list price or zero it out, so
 // both are rejected instead of silently mischarging.
 func ProductDiscount(discount decimal.Decimal) error {
-	if !discount.IsPositive() || discount.GreaterThan(decimal.NewFromInt(1)) {
-		return errors.BadRequest("PRODUCT_DISCOUNT_INVALID", "discount must be greater than 0 and at most 1")
+	if !discount.IsPositive() || discount.GreaterThan(decimal.NewFromInt(1)) || !discount.Equal(discount.Round(2)) {
+		return errors.BadRequest("PRODUCT_DISCOUNT_INVALID", "discount must be in (0,1] with at most two decimal places")
 	}
 	return nil
 }
@@ -79,7 +79,8 @@ type ProductRepo interface {
 	ListProducts(ctx context.Context, limit int32, offset int32) ([]Product, error)
 	ListProductsByCategory(ctx context.Context, categoryID int64, limit int32, offset int32) ([]Product, error)
 	SoftDeleteProduct(ctx context.Context, id int64) error
-	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	AdjustStock(context.Context, StockAdjustmentInput) (*StockAdjustment, error)
 	UpdateProductStatus(ctx context.Context, ID int64, status int32) error
 }
 
@@ -87,7 +88,8 @@ type ProductUsecase interface {
 	CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	GetProduct(ctx context.Context, id int64) (*Product, error)
 	ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error)
-	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, stock int32, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	AdjustStock(context.Context, StockAdjustmentInput) (*StockAdjustment, error)
 	UpdateProductStatus(ctx context.Context, id int64, status int32) error
 	DeleteProduct(ctx context.Context, id int64) error
 }
@@ -102,6 +104,9 @@ func NewProductUsecase(repo ProductRepo, logger log.Logger) ProductUsecase {
 }
 
 func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+	if err := ValidateProductStatus(int32(status)); err != nil {
+		return nil, err
+	}
 	price, err := decimal.NewFromString(priceStr)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
@@ -127,20 +132,23 @@ func (uc *productUsecase) GetProduct(ctx context.Context, id int64) (*Product, e
 }
 
 func (uc *productUsecase) ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error) {
-	offset := (page - 1) * pageSize
+	pagination, err := NewPage(page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
 	total, err := uc.repo.CountProducts(ctx, categoryID)
 	if err != nil {
 		return nil, 0, err
 	}
 	if categoryID > 0 {
-		ps, err := uc.repo.ListProductsByCategory(ctx, categoryID, pageSize, offset)
+		ps, err := uc.repo.ListProductsByCategory(ctx, categoryID, pagination.Limit, pagination.Offset)
 		return ps, int32(total), err
 	}
-	ps, err := uc.repo.ListProducts(ctx, pageSize, offset)
+	ps, err := uc.repo.ListProducts(ctx, pagination.Limit, pagination.Offset)
 	return ps, int32(total), err
 }
 
-func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, stock int32, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
 	price, err := decimal.NewFromString(priceStr)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
@@ -158,10 +166,13 @@ func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryI
 		return nil, err
 	}
 	cover := mediaFromCoverURL(coverImage)
-	return uc.repo.UpdateProduct(ctx, id, categoryID, name, price, discount, stock, cover, mediaAssets, descrption)
+	return uc.repo.UpdateProduct(ctx, id, categoryID, name, price, discount, cover, mediaAssets, descrption)
 }
 
 func (uc *productUsecase) UpdateProductStatus(ctx context.Context, id int64, status int32) error {
+	if err := ValidateProductStatus(status); err != nil {
+		return err
+	}
 	return uc.repo.UpdateProductStatus(ctx, id, status)
 }
 
@@ -189,15 +200,15 @@ type CategoryRepo interface {
 	CreateCategory(ctx context.Context, parentID int64, name string, sortOrder int32) (*Category, error)
 	DeleteCategory(ctx context.Context, id int64) error
 	GetCategory(ctx context.Context, id int64) (*Category, error)
-	ListSubCategories(ctx context.Context, parentID int64) ([]Category, error)
-	ListTopCategories(ctx context.Context) ([]Category, error)
+	ListSubCategories(ctx context.Context, parentID int64, limit, offset int32) ([]Category, error)
+	ListTopCategories(ctx context.Context, limit, offset int32) ([]Category, error)
 	UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*Category, error)
 }
 
 type CategoryUsecase interface {
 	CreateCategory(ctx context.Context, parentID int64, name string, sortOrder int32) (*Category, error)
 	GetCategory(ctx context.Context, id int64) (*Category, error)
-	ListCategories(ctx context.Context, parentID int64) ([]Category, error)
+	ListCategories(ctx context.Context, parentID int64, page, pageSize int32) ([]Category, error)
 	UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*Category, error)
 	DeleteCategory(ctx context.Context, id int64) error
 }
@@ -228,11 +239,15 @@ func (uc *categoryUsecase) GetCategory(ctx context.Context, id int64) (*Category
 	return uc.repo.GetCategory(ctx, id)
 }
 
-func (uc *categoryUsecase) ListCategories(ctx context.Context, parentID int64) ([]Category, error) {
-	if parentID > 0 {
-		return uc.repo.ListSubCategories(ctx, parentID)
+func (uc *categoryUsecase) ListCategories(ctx context.Context, parentID int64, page, pageSize int32) ([]Category, error) {
+	p, err := NewPage(page, pageSize)
+	if err != nil {
+		return nil, err
 	}
-	return uc.repo.ListTopCategories(ctx)
+	if parentID > 0 {
+		return uc.repo.ListSubCategories(ctx, parentID, p.Limit, p.Offset)
+	}
+	return uc.repo.ListTopCategories(ctx, p.Limit, p.Offset)
 }
 
 func (uc *categoryUsecase) UpdateCategory(ctx context.Context, id int64, name string, sortOrder int32) (*Category, error) {
@@ -285,6 +300,9 @@ func NewEventUsecase(repo EventRepo, logger log.Logger) EventUsecase {
 }
 
 func (uc *eventUsecase) CreateEvent(ctx context.Context, name string, status int16, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
+	if err := ValidateEventStatus(int32(status)); err != nil {
+		return nil, err
+	}
 	if err := validateEventWindow(startAt, endAt); err != nil {
 		return nil, err
 	}
@@ -306,8 +324,16 @@ func (uc *eventUsecase) GetEvent(ctx context.Context, id int64) (*Event, error) 
 }
 
 func (uc *eventUsecase) ListEvents(ctx context.Context, status *int32, pageSize int32, page int32) ([]Event, error) {
-	offset := (page - 1) * pageSize
-	return uc.repo.ListEvents(ctx, status, pageSize, offset)
+	if status != nil {
+		if err := ValidateEventStatus(*status); err != nil {
+			return nil, err
+		}
+	}
+	pagination, err := NewPage(page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	return uc.repo.ListEvents(ctx, status, pagination.Limit, pagination.Offset)
 }
 
 func (uc *eventUsecase) UpdateEvent(ctx context.Context, id int64, name string, coverImage string, mediaAssets []MediaInfo, description string, startAt time.Time, endAt time.Time) (*Event, error) {
@@ -319,6 +345,9 @@ func (uc *eventUsecase) UpdateEvent(ctx context.Context, id int64, name string, 
 }
 
 func (uc *eventUsecase) UpdateEventStatus(ctx context.Context, id int64, status int32) error {
+	if err := ValidateEventStatus(status); err != nil {
+		return err
+	}
 	return uc.repo.UpdateEventStatus(ctx, id, status)
 }
 

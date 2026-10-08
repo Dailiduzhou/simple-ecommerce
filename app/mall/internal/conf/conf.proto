@@ -27,10 +27,11 @@ message Auth {
   string phone_secret = 5;
   // Per-minute budget for anonymous login/register/refresh requests. Zero means the default.
   int32 auth_requests_per_minute = 6;
-  // Failed-login attempts before an account is temporarily locked. Zero means the default.
-  int32 login_max_attempts = 7;
-  // How long a login lockout lasts from the first recorded failure.
-  google.protobuf.Duration login_lockout_duration = 8;
+  // Account-wide password-check burst shared by all IPs. Zero defaults to 5.
+  int32 login_account_burst = 7;
+  // Refill one password check per interval (1s to 60s); zero defaults to 30s.
+  // Rejected requests do not extend the wait. Successful logins also consume quota.
+  google.protobuf.Duration login_account_interval = 8;
 }
 
 message Server {
@@ -49,6 +50,9 @@ message Server {
   }
   HTTP http = 1;
   GRPC grpc = 2;
+  // Only explicit false enables permissive development CORS. Unset is treated
+  // as production to keep existing deployments restrictive.
+  optional bool is_production = 3;
 }
 
 message Data {

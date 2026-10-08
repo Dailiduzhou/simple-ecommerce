@@ -17,7 +17,7 @@ SET status = 'refunded',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status IN ('success', 'refunded')
-RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, merchant_id, amount_minor, currency, status, pay_channel, third_party_tx_id, out_trade_no, action_type, action_payload, paid_at, reconciliation_status, reconciliation_version, reconciliation_reason, reconciliation_detail, prepay_lease_token, prepay_lease_until, prepay_attempts, last_error, created_at, updated_at
 `
 
 func (q *Queries) ConfirmPaymentRefunded(ctx context.Context, id int64) (Payment, error) {
@@ -38,6 +38,7 @@ func (q *Queries) ConfirmPaymentRefunded(ctx context.Context, id int64) (Payment
 		&i.ActionPayload,
 		&i.PaidAt,
 		&i.ReconciliationStatus,
+		&i.ReconciliationVersion,
 		&i.ReconciliationReason,
 		&i.ReconciliationDetail,
 		&i.PrepayLeaseToken,
@@ -60,10 +61,11 @@ INSERT INTO order_refunds (
   refund_amount_minor,
   currency,
   reason,
+  purpose,
   status
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
-RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, status, last_error, created_at, updated_at
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, purpose, status, last_error, created_at, updated_at
 `
 
 type CreateOrderRefundParams struct {
@@ -75,6 +77,7 @@ type CreateOrderRefundParams struct {
 	RefundAmountMinor int64
 	Currency          string
 	Reason            string
+	Purpose           string
 }
 
 func (q *Queries) CreateOrderRefund(ctx context.Context, arg CreateOrderRefundParams) (OrderRefund, error) {
@@ -87,6 +90,7 @@ func (q *Queries) CreateOrderRefund(ctx context.Context, arg CreateOrderRefundPa
 		arg.RefundAmountMinor,
 		arg.Currency,
 		arg.Reason,
+		arg.Purpose,
 	)
 	var i OrderRefund
 	err := row.Scan(
@@ -99,6 +103,7 @@ func (q *Queries) CreateOrderRefund(ctx context.Context, arg CreateOrderRefundPa
 		&i.RefundAmountMinor,
 		&i.Currency,
 		&i.Reason,
+		&i.Purpose,
 		&i.Status,
 		&i.LastError,
 		&i.CreatedAt,
@@ -108,7 +113,7 @@ func (q *Queries) CreateOrderRefund(ctx context.Context, arg CreateOrderRefundPa
 }
 
 const getOrderRefundByPaymentID = `-- name: GetOrderRefundByPaymentID :one
-SELECT id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, status, last_error, created_at, updated_at
+SELECT id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, purpose, status, last_error, created_at, updated_at
 FROM order_refunds
 WHERE payment_id = $1
 `
@@ -126,6 +131,7 @@ func (q *Queries) GetOrderRefundByPaymentID(ctx context.Context, paymentID pgtyp
 		&i.RefundAmountMinor,
 		&i.Currency,
 		&i.Reason,
+		&i.Purpose,
 		&i.Status,
 		&i.LastError,
 		&i.CreatedAt,
@@ -135,7 +141,7 @@ func (q *Queries) GetOrderRefundByPaymentID(ctx context.Context, paymentID pgtyp
 }
 
 const listStalePendingRefunds = `-- name: ListStalePendingRefunds :many
-SELECT id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, status, last_error, created_at, updated_at
+SELECT id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, purpose, status, last_error, created_at, updated_at
 FROM order_refunds
 WHERE status = 'pending'
   AND updated_at < now() - make_interval(secs => $1::double precision)
@@ -167,6 +173,7 @@ func (q *Queries) ListStalePendingRefunds(ctx context.Context, arg ListStalePend
 			&i.RefundAmountMinor,
 			&i.Currency,
 			&i.Reason,
+			&i.Purpose,
 			&i.Status,
 			&i.LastError,
 			&i.CreatedAt,
@@ -189,7 +196,7 @@ SET status = 'success',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND payment_id = $2
-RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, status, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, purpose, status, last_error, created_at, updated_at
 `
 
 type MarkOrderRefundSuccessParams struct {
@@ -210,6 +217,7 @@ func (q *Queries) MarkOrderRefundSuccess(ctx context.Context, arg MarkOrderRefun
 		&i.RefundAmountMinor,
 		&i.Currency,
 		&i.Reason,
+		&i.Purpose,
 		&i.Status,
 		&i.LastError,
 		&i.CreatedAt,
@@ -228,7 +236,7 @@ SET status = CASE
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $3
   AND status <> 'success'
-RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, status, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, purpose, status, last_error, created_at, updated_at
 `
 
 type RecordOrderRefundErrorParams struct {
@@ -250,6 +258,7 @@ func (q *Queries) RecordOrderRefundError(ctx context.Context, arg RecordOrderRef
 		&i.RefundAmountMinor,
 		&i.Currency,
 		&i.Reason,
+		&i.Purpose,
 		&i.Status,
 		&i.LastError,
 		&i.CreatedAt,
@@ -265,7 +274,7 @@ SET status = 'pending',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status = 'failed'
-RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, status, last_error, created_at, updated_at
+RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, purpose, status, last_error, created_at, updated_at
 `
 
 func (q *Queries) RetryOrderRefund(ctx context.Context, id int64) (OrderRefund, error) {
@@ -281,6 +290,7 @@ func (q *Queries) RetryOrderRefund(ctx context.Context, id int64) (OrderRefund, 
 		&i.RefundAmountMinor,
 		&i.Currency,
 		&i.Reason,
+		&i.Purpose,
 		&i.Status,
 		&i.LastError,
 		&i.CreatedAt,

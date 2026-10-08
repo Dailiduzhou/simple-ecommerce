@@ -54,6 +54,26 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 	return i, err
 }
 
+const getRestorableProductStock = `-- name: GetRestorableProductStock :one
+SELECT COALESCE(SUM(oi.quantity), 0)::bigint AS reserved
+FROM order_items oi
+JOIN orders o ON o.id = oi.order_id
+WHERE oi.product_id = $1
+  AND o.status IN ('pending_payment', 'cancelling', 'paid')
+`
+
+// Call AFTER locking the product, in a separate READ COMMITTED statement.
+// Checkout and stock restoration both hold that product lock until commit.
+// Read orders without row locks to avoid reversing their order -> product order.
+// Only these states can still return stock; shipped/completed orders cannot be
+// cancelled/refunded, and duplicate/late payment refunds do not restore stock.
+func (q *Queries) GetRestorableProductStock(ctx context.Context, productID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, getRestorableProductStock, productID)
+	var reserved int64
+	err := row.Scan(&reserved)
+	return reserved, err
+}
+
 const listOrderItems = `-- name: ListOrderItems :many
 SELECT id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at
 FROM order_items
@@ -79,6 +99,70 @@ func (q *Queries) ListOrderItems(ctx context.Context, orderID int64) ([]OrderIte
 			&i.CoverImageSnapshot,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrderItemsByOrderIDs = `-- name: ListOrderItemsByOrderIDs :many
+SELECT id, order_id, product_id, quantity, unit_price_minor, product_name_snapshot, cover_image_snapshot, created_at FROM order_items WHERE order_id=ANY($1::bigint[])
+ORDER BY order_id, id
+`
+
+func (q *Queries) ListOrderItemsByOrderIDs(ctx context.Context, dollar_1 []int64) ([]OrderItem, error) {
+	rows, err := q.db.Query(ctx, listOrderItemsByOrderIDs, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrderItem
+	for rows.Next() {
+		var i OrderItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrderID,
+			&i.ProductID,
+			&i.Quantity,
+			&i.UnitPriceMinor,
+			&i.ProductNameSnapshot,
+			&i.CoverImageSnapshot,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrderProductCacheTargets = `-- name: ListOrderProductCacheTargets :many
+SELECT DISTINCT p.id, p.category_id FROM products p
+JOIN order_items oi ON oi.product_id = p.id WHERE oi.order_id = $1
+`
+
+type ListOrderProductCacheTargetsRow struct {
+	ID         int64
+	CategoryID int64
+}
+
+func (q *Queries) ListOrderProductCacheTargets(ctx context.Context, orderID int64) ([]ListOrderProductCacheTargetsRow, error) {
+	rows, err := q.db.Query(ctx, listOrderProductCacheTargets, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrderProductCacheTargetsRow
+	for rows.Next() {
+		var i ListOrderProductCacheTargetsRow
+		if err := rows.Scan(&i.ID, &i.CategoryID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -36,11 +36,11 @@ func (r *fakeCategoryRepo) GetCategory(ctx context.Context, id int64) (*biz.Cate
 	return r.getCategory(ctx, id)
 }
 
-func (r *fakeCategoryRepo) ListSubCategories(ctx context.Context, parentID int64) ([]biz.Category, error) {
+func (r *fakeCategoryRepo) ListSubCategories(ctx context.Context, parentID int64, limit, offset int32) ([]biz.Category, error) {
 	return r.listSub(ctx, parentID)
 }
 
-func (r *fakeCategoryRepo) ListTopCategories(ctx context.Context) ([]biz.Category, error) {
+func (r *fakeCategoryRepo) ListTopCategories(ctx context.Context, limit, offset int32) ([]biz.Category, error) {
 	return r.listTop(ctx)
 }
 

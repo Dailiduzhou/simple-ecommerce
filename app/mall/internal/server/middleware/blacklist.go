@@ -22,20 +22,16 @@ func CheckBlacklist(authUc biz.AuthUsecase) middleware.Middleware {
 				return nil, userv1.ErrorUnauthorized("invalid token claims")
 			}
 
-			if ec.ID == "" {
-				return nil, userv1.ErrorUnauthorized("missing token id")
-			}
-
-			blacklisted, err := authUc.IsTokenBlacklisted(ctx, ec.ID)
-			if err != nil {
-				return nil, userv1.ErrorUnauthorized("check blacklist failed")
-			}
-			if blacklisted {
-				return nil, userv1.ErrorTokenExpired("token has been revoked")
-			}
-
 			if err := authUc.ValidateAccount(ctx, ec); err != nil {
 				return nil, userv1.ErrorUnauthorized("account validation failed")
+			}
+			// Signature/expiry and account validation still apply to logout. Only
+			// the session-active check is skipped, so an ambiguous failed response
+			// can be retried after Redis already committed the revocation.
+			if _, logout := req.(*userv1.LogoutRequest); !logout {
+				if err := authUc.ValidateSession(ctx, ec); err != nil {
+					return nil, err
+				}
 			}
 			return handler(ctx, req)
 		}

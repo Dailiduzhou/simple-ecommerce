@@ -1,4 +1,7 @@
 server:
+  # Explicit false allows all CORS origins, methods, headers and credentials.
+  # Keep true in production; this is independent of payment sandbox settings.
+  is_production: "${APP_IS_PRODUCTION:true}"
   http:
     addr: 0.0.0.0:8000
     timeout: 10s
@@ -39,9 +42,11 @@ auth:
   phone_secret: "${AUTH_PHONE_SECRET}"
   # Per-minute budget for anonymous login/register/refresh requests (IP dimension).
   auth_requests_per_minute: 10
-  # Failed-login attempts before a temporary per-account lockout.
-  login_max_attempts: 5
-  login_lockout_duration: 900s
+  # Password-check burst and refill interval, including successful attempts.
+  # All IPs share this account budget before password verification. A 429
+  # includes retry_after_seconds; rejected requests do not postpone recovery.
+  login_account_burst: 5
+  login_account_interval: 30s
 
 snowflake:
   node_id: "${SNOWFLAKE_NODE_ID}"
