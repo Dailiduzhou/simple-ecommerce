@@ -44,7 +44,15 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 		return river.JobCancel(fmt.Errorf("close_pay provider does not match payment"))
 	}
 	var signed biz.SignedPaymentPayload
-	localSigning := method.Provider == "alipay" && (method.Product == "app" || method.Product == "wap") && payment.Action.Type != ""
+	// Alipay APP/WAP prepay only signs parameters locally: nothing reaches the
+	// provider until the buyer invokes the signed payload. For those products a
+	// payment that never persisted an action provably never dispatched anything,
+	// even when prepay attempts failed after incrementing the counter — a
+	// deadline-second adapter failure must not strand the order in manual
+	// reconciliation and keep its stock reserved. Wechat prepay is a network
+	// call, so a failed attempt stays indeterminate and never proves absence.
+	locallySignedProduct := method.Provider == "alipay" && (method.Product == "app" || method.Product == "wap")
+	localSigning := locallySignedProduct && payment.Action.Type != ""
 	if localSigning {
 		localSigning = json.Unmarshal(payment.Action.Payload, &signed) == nil
 	}
@@ -56,7 +64,11 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	if errors.Is(err, biz.ErrProviderOrderNotExist) {
 		// APP/WAP only generate signed parameters locally. Absence is normal,
 		// but query only counts as closure evidence after those parameters expire.
-		safeAbsent := payment.Status == biz.PaymentStatusClosePending && payment.Action.Type == "" && payment.PrepayAttempts == 0 && payment.PrepayLeaseUntil == nil && payment.ThirdPartyTxID == ""
+		neverIssued := payment.Action.Type == "" && payment.PrepayLeaseUntil == nil && payment.ThirdPartyTxID == ""
+		// A duplicate close job must preserve the same absence proof after the
+		// first settlement changed close_pending to closed.
+		closingOrClosed := payment.Status == biz.PaymentStatusClosePending || payment.Status == biz.PaymentStatusClosed
+		safeAbsent := closingOrClosed && neverIssued && (payment.PrepayAttempts == 0 || locallySignedProduct)
 		if localSigning {
 			if signed.ProviderAccount != "" && signed.Payload != "" && !signed.ExpiresAt.IsZero() {
 				safeAt := signed.ExpiresAt.Add(biz.PaymentExpirySafetyMargin)

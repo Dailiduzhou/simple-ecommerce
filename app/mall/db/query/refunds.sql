@@ -49,11 +49,14 @@ WHERE id = $1
 RETURNING *;
 
 -- name: ListStalePendingRefunds :many
+-- Ordering by (updated_at, id) is stable, and failed retries bump updated_at
+-- (RecordOrderRefundError), so persistently failing records rotate to the
+-- back of the sweep instead of starving later recoverable refunds.
 SELECT *
 FROM order_refunds
 WHERE status = 'pending'
   AND updated_at < now() - make_interval(secs => sqlc.arg(older_than_seconds)::double precision)
-ORDER BY updated_at
+ORDER BY updated_at, id
 LIMIT sqlc.arg(limit_rows);
 
 -- name: RetryOrderRefund :one

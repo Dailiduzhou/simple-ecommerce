@@ -2,7 +2,6 @@ package trace
 
 import (
 	"context"
-	"net/url"
 	"os"
 
 	"go.opentelemetry.io/otel"
@@ -13,19 +12,25 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
+// InitTracer wires the OTLP/gRPC trace exporter. Endpoint configuration is
+// delegated to the OpenTelemetry SDK's standard environment parsing: an
+// OTEL_EXPORTER_OTLP_ENDPOINT (or signal-specific variant) with an https
+// scheme exports over TLS, http/unix stay plaintext, and
+// OTEL_EXPORTER_OTLP_CERTIFICATE / OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE
+// select a trusted CA. Only when no endpoint is configured at all do we fall
+// back to the unauthenticated plaintext collector of the local compose stack.
 func InitTracer(serviceName string) func() {
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	if endpoint == "" {
-		endpoint = "otel-collector:4317"
+	var opts []otlptracegrpc.Option
+	if !otlpEndpointConfigured("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
+		opts = append(opts,
+			otlptracegrpc.WithEndpoint("otel-collector:4317"),
+			otlptracegrpc.WithInsecure(),
+		)
 	}
-	endpoint = grpcEndpoint(endpoint)
 
 	ctx := context.Background()
 
-	exporter, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithEndpoint(endpoint),
-		otlptracegrpc.WithInsecure(),
-	)
+	exporter, err := otlptracegrpc.New(ctx, opts...)
 	if err != nil {
 		panic(err)
 	}
@@ -52,10 +57,18 @@ func InitTracer(serviceName string) func() {
 	}
 }
 
-func grpcEndpoint(value string) string {
-	parsed, err := url.Parse(value)
-	if err == nil && parsed.Host != "" {
-		return parsed.Host
+// otlpEndpointConfigured reports whether any endpoint environment variable is
+// present, in which case the SDK's own parsing must win unconditionally:
+// overriding the endpoint here would strip the scheme again and force
+// plaintext connections onto TLS-only collectors.
+func otlpEndpointConfigured(signalSpecificVars ...string) bool {
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		return true
 	}
-	return value
+	for _, name := range signalSpecificVars {
+		if os.Getenv(name) != "" {
+			return true
+		}
+	}
+	return false
 }
