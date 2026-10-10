@@ -26,3 +26,8 @@ groups:
         for: 0m
         labels: {severity: critical}
         annotations: {summary: "A payment reconciliation job was discarded"}
+      - alert: RefundCompensationStuck
+        expr: increase(payment_refund_reconcile_total{result="deferred"}[30m]) > 2
+        for: 0m
+        labels: {severity: warning}
+        annotations: {summary: "Pending refund compensation keeps failing re-preparation; manual review required"}

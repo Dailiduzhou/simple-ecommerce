@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/go-kratos/kratos/v2/errors"
+
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
 )
 
 func (uc *paymentUsecase) RefundPayment(ctx context.Context, paymentID int64) (*PaymentRefundResult, error) {
@@ -101,8 +103,19 @@ func (uc *paymentUsecase) ReconcilePendingRefunds(ctx context.Context, olderThan
 	for _, refund := range refunds {
 		if err := uc.reconcileRefund(ctx, refund); err != nil {
 			uc.log.WithContext(ctx).Errorw("msg", "reconcile pending refund failed", "payment_id", refund.PaymentID, "refund_id", refund.ID, "out_refund_no", refund.OutRefundNo, "error", err)
+			// Defer the failing record behind the batch instead of letting it
+			// occupy the head of the queue forever: a non-definitive error keeps
+			// the refund pending but bumps updated_at, so the next grace period
+			// passes before it is retried and later recoverable refunds are not
+			// starved by the first hundred unfixable rows. Failures that already
+			// recorded an error in executeRefund bumped updated_at themselves.
+			if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), false); recordErr != nil {
+				uc.log.WithContext(ctx).Errorw("msg", "defer failed refund retry failed", "refund_id", refund.ID, "error", recordErr)
+			}
+			observability.PaymentRefundReconcile(ctx, "deferred")
 			continue
 		}
+		observability.PaymentRefundReconcile(ctx, "settled")
 		settled++
 	}
 	return settled, nil

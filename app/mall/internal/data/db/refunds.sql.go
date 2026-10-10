@@ -145,7 +145,7 @@ SELECT id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, ref
 FROM order_refunds
 WHERE status = 'pending'
   AND updated_at < now() - make_interval(secs => $1::double precision)
-ORDER BY updated_at
+ORDER BY updated_at, id
 LIMIT $2
 `
 
@@ -154,6 +154,9 @@ type ListStalePendingRefundsParams struct {
 	LimitRows        int32
 }
 
+// Ordering by (updated_at, id) is stable, and failed retries bump updated_at
+// (RecordOrderRefundError), so persistently failing records rotate to the
+// back of the sweep instead of starving later recoverable refunds.
 func (q *Queries) ListStalePendingRefunds(ctx context.Context, arg ListStalePendingRefundsParams) ([]OrderRefund, error) {
 	rows, err := q.db.Query(ctx, listStalePendingRefunds, arg.OlderThanSeconds, arg.LimitRows)
 	if err != nil {

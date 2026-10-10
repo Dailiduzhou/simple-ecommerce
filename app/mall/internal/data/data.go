@@ -174,6 +174,10 @@ func NewRiverClient(pool *pgxpool.Pool, workers *river.Workers, periodicJobs []*
 	return NewConfiguredRiverClient(pool, workers, periodicJobs, errorHandler, nil)
 }
 
+// NewConfiguredRiverClient only builds the River client. All schema changes —
+// including River's own migrations — run in RunMigrations under the
+// disable_migrations switch and the dedicated migration_source DSN, so a
+// runtime account without DDL privileges can start the application.
 func NewConfiguredRiverClient(pool *pgxpool.Pool, workers *river.Workers, periodicJobs []*river.PeriodicJob, errorHandler *PaymentRiverErrorHandler, c *conf.Community) (*river.Client[pgx.Tx], error) {
 	if err := conf.ValidateCommunity(c); err != nil {
 		return nil, err
@@ -185,16 +189,7 @@ func NewConfiguredRiverClient(pool *pgxpool.Pool, workers *river.Workers, period
 	if c.GetMediaWorkers() > 0 {
 		media = int(c.MediaWorkers)
 	}
-	driver := riverpgxv5.New(pool)
-	migrator, err := rivermigrate.New(driver, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create river migrator: %w", err)
-	}
-	if _, err := migrator.Migrate(context.Background(), rivermigrate.DirectionUp, nil); err != nil {
-		return nil, fmt.Errorf("run river migrations: %w", err)
-	}
-
-	client, err := river.NewClient(driver, &river.Config{
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
 			"payments":    {MaxWorkers: 10},
 			"orders":      {MaxWorkers: 10},
@@ -248,12 +243,39 @@ func RunMigrations(c *conf.Data) error {
 	if err := m.Up(); err != nil {
 		if stderrors.Is(err, migrate.ErrNoChange) {
 			log.Info("database migrations are up to date")
-			return nil
+		} else {
+			return fmt.Errorf("run database migrations: %w", err)
 		}
-		return fmt.Errorf("run database migrations: %w", err)
+	} else {
+		log.Info("database migrations applied")
 	}
 
-	log.Info("database migrations applied")
+	// River owns its own schema; migrate it in the same controlled phase with
+	// the same dedicated DSN instead of racing every River client against the
+	// runtime pool.
+	if err := runRiverMigrations(source); err != nil {
+		return err
+	}
+	return nil
+}
+
+// runRiverMigrations applies River's schema using the migration DSN, never the
+// runtime pool: the runtime account can then hold only DML privileges.
+func runRiverMigrations(dsn string) error {
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		return fmt.Errorf("create river migration pool: %w", err)
+	}
+	defer pool.Close()
+
+	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+	if err != nil {
+		return fmt.Errorf("create river migrator: %w", err)
+	}
+	if _, err := migrator.Migrate(context.Background(), rivermigrate.DirectionUp, nil); err != nil {
+		return fmt.Errorf("run river migrations: %w", err)
+	}
+	log.Info("river migrations applied")
 	return nil
 }
 
