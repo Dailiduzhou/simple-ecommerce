@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -262,7 +263,11 @@ func RunMigrations(c *conf.Data) error {
 // runRiverMigrations applies River's schema using the migration DSN, never the
 // runtime pool: the runtime account can then hold only DML privileges.
 func runRiverMigrations(dsn string) error {
-	pool, err := pgxpool.New(context.Background(), dsn)
+	config, err := riverMigrationPoolConfig(dsn)
+	if err != nil {
+		return fmt.Errorf("parse river migration DSN: %w", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		return fmt.Errorf("create river migration pool: %w", err)
 	}
@@ -277,6 +282,16 @@ func runRiverMigrations(dsn string) error {
 	}
 	log.Info("river migrations applied")
 	return nil
+}
+
+// Keep migrate's private x-* options out of PostgreSQL startup parameters,
+// while retaining the dedicated account and all real connection settings.
+func riverMigrationPoolConfig(dsn string) (*pgxpool.Config, error) {
+	endpoint, err := url.Parse(dsn)
+	if err != nil {
+		return nil, err
+	}
+	return pgxpool.ParseConfig(migrate.FilterCustomQuery(endpoint).String())
 }
 
 func NewAlipayClient(c *conf.Payment) (*alipayv3.ClientV3, error) {

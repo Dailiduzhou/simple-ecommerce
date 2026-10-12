@@ -110,6 +110,12 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 		return err
 	})
 	if err != nil {
+		// The transaction has rolled back. Clear only this attempt's token;
+		// expiry may have moved a locally signed payment to close_pending.
+		// Never return the signed action when finalize failed its state fence.
+		if recordErr := prepayRepo.RecordPaymentPrepayError(ctx, payment.ID, leaseToken, err.Error()); recordErr != nil {
+			uc.log.WithContext(ctx).Errorw("msg", "record payment finalize error failed", "payment_id", payment.ID, "error", recordErr)
+		}
 		return nil, err
 	}
 	return &PrepayForOrderResult{

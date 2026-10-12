@@ -212,6 +212,10 @@ func TestAccountRevocationThroughTransports(t *testing.T) {
 // with the real Redis-backed limiter; the JWT whitelist no longer exempts them.
 func TestAuthEndpointsAreThrottledThroughHTTP(t *testing.T) {
 	mr := miniredis.RunT(t)
+	// Race-instrumented password checks can exceed the 30-second refill
+	// interval. Freeze Redis TIME until the explicit recovery assertion below.
+	clock := time.Now()
+	mr.SetTime(clock)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rdb.Close() })
 	ac := &conf.Auth{AccessTokenSecret: strings.Repeat("a", 32), RefreshTokenSecret: strings.Repeat("b", 32), AccessTokenTimeout: durationpb.New(time.Hour), RefreshTokenTimeout: durationpb.New(24 * time.Hour), AuthRequestsPerMinute: 3}
@@ -255,7 +259,7 @@ func TestAuthEndpointsAreThrottledThroughHTTP(t *testing.T) {
 	require.NoError(t, err)
 	require.Positive(t, wait)
 	require.LessOrEqual(t, wait, 30)
-	mr.SetTime(time.Now().Add(31 * time.Second))
+	mr.SetTime(clock.Add(31 * time.Second))
 	mr.FastForward(31 * time.Second)
 	require.Equal(t, 401, invoke("/v1/users/login", body, "10.0.0.2:1000").Code, "quota automatically recovers")
 }

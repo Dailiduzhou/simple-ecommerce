@@ -79,6 +79,13 @@ func TestMigrationsUseDedicatedAccountAndHonourDisableIntegration(t *testing.T) 
 	config := &conf.Data{Database: &conf.Data_Database{
 		Source: accountDSN(databases[0], runtime), MigrationSource: accountDSN(databases[0], migrator),
 	}}
+	migrationURL, err := url.Parse(config.Database.MigrationSource)
+	require.NoError(t, err)
+	options := migrationURL.Query()
+	options.Set("x-statement-timeout", "60000")
+	options.Set("x-migrations-table", "mall_schema_migrations")
+	migrationURL.RawQuery = options.Encode()
+	config.Database.MigrationSource = migrationURL.String()
 	pool, cleanup, err := NewPgxPool(config)
 	require.NoError(t, err, "both schemas must migrate using the dedicated account")
 	defer cleanup()

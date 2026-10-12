@@ -393,3 +393,41 @@ func TestApplyPayQuery_RefundConflictOutsidePaidOrderRollsBack(t *testing.T) {
 	err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, Provider: "wechat"}, result)
 	require.ErrorIs(t, err, biz.ErrPaymentStateConflict)
 }
+
+func TestApplyPayQuery_RechecksUnissuedProofUnderLock(t *testing.T) {
+	for _, mutate := range []struct {
+		name  string
+		apply func(*db.Payment)
+	}{
+		{"still creating", func(p *db.Payment) { p.Status = biz.PaymentStatusCreating }},
+		{"action issued", func(p *db.Payment) { p.ActionType = pgtype.Text{String: "invoke", Valid: true} }},
+		{"active lease", func(p *db.Payment) {
+			p.PrepayLeaseUntil = pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}
+		}},
+		{"network attempt", func(p *db.Payment) { p.PayChannel = "wechat:native" }},
+		{"transaction exists", func(p *db.Payment) { p.ThirdPartyTxID = pgtype.Text{String: "tx", Valid: true} }},
+		{"manual reconciliation", func(p *db.Payment) { p.ReconciliationStatus = biz.ReconciliationStatusRequired }},
+	} {
+		t.Run(mutate.name, func(t *testing.T) {
+			q := mockdb.NewMockQuerier(gomock.NewController(t))
+			snapshot := statePayment(biz.PaymentStatusClosePending)
+			snapshot.PayChannel = "alipay:app"
+			snapshot.PrepayAttempts = 1
+			locked := snapshot
+			mutate.apply(&locked)
+			q.EXPECT().GetPayment(gomock.Any(), int64(1)).Return(snapshot, nil)
+			q.EXPECT().GetOrderForUpdate(gomock.Any(), int64(2)).Return(db.Order{ID: 2}, nil)
+			q.EXPECT().ListPaymentsByOrderForUpdate(gomock.Any(), int64(2)).Return([]db.Payment{locked}, nil)
+			repo := NewPaymentRepo(nil, testTxManager{q: q}, log.DefaultLogger)
+			err := repo.ApplyPayQuery(context.Background(), biz.CheckPayArgs{PaymentID: 1, ConfirmUnissued: true}, &biz.PaymentQueryResult{TradeState: biz.TradeStateClosed})
+			require.ErrorIs(t, err, biz.ErrPaymentStateConflict)
+		})
+	}
+}
+
+func TestRecordRefundErrorRequiresPendingRow(t *testing.T) {
+	q := mockdb.NewMockQuerier(gomock.NewController(t))
+	q.EXPECT().RecordOrderRefundError(gomock.Any(), gomock.Any()).Return(db.OrderRefund{}, pgx.ErrNoRows)
+	repo := NewPaymentRepo(&Data{q: q}, nil, log.DefaultLogger)
+	require.ErrorIs(t, repo.RecordPaymentRefundError(context.Background(), 1, "late error", false), biz.ErrPaymentStateConflict)
+}
