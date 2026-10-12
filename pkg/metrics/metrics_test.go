@@ -2,7 +2,6 @@ package metrics_test
 
 import (
 	"context"
-	"crypto/tls"
 	"net"
 	"testing"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel"
 	otlpmetrics "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 // metricsCollector is a minimal OTLP/gRPC metrics receiver: a plaintext dial
@@ -30,19 +28,11 @@ func (c *metricsCollector) Export(context.Context, *otlpmetrics.ExportMetricsSer
 
 func serveOTLPMetrics(t *testing.T, tlsEnabled bool) (addr, caFile string, exports <-chan int) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
 	collector := &metricsCollector{exports: make(chan int, 16)}
-	server := grpc.NewServer()
-	if tlsEnabled {
-		var cert tls.Certificate
-		cert, caFile = testutil.SelfSignedCertificate(t)
-		server = grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{cert}})))
-	}
-	otlpmetrics.RegisterMetricsServiceServer(server, collector)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	return listener.Addr().String(), caFile, collector.exports
+	addr, caFile = testutil.ServeGRPC(t, tlsEnabled, func(server *grpc.Server) {
+		otlpmetrics.RegisterMetricsServiceServer(server, collector)
+	})
+	return addr, caFile, collector.exports
 }
 
 func emitOneMeasurement(t *testing.T, shutdown func()) {
@@ -59,6 +49,7 @@ func emitOneMeasurement(t *testing.T, shutdown func()) {
 func TestInitMeterExportsOverTLSForHTTPSCollector(t *testing.T) {
 	addr, caFile, exports := serveOTLPMetrics(t, true)
 
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://"+addr)
 	t.Setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", caFile)
 	emitOneMeasurement(t, appmetrics.InitMeter("tls-test"))
@@ -74,6 +65,7 @@ func TestInitMeterExportsOverTLSForHTTPSCollector(t *testing.T) {
 func TestInitMeterKeepsHTTPCollectorCompat(t *testing.T) {
 	addr, _, exports := serveOTLPMetrics(t, false)
 
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+addr)
 	emitOneMeasurement(t, appmetrics.InitMeter("http-test"))
 
@@ -81,5 +73,43 @@ func TestInitMeterKeepsHTTPCollectorCompat(t *testing.T) {
 	case <-exports:
 	case <-time.After(5 * time.Second):
 		t.Fatal("no export reached the plaintext collector")
+	}
+}
+
+func TestLegacyAndSignalSpecificEndpoints(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		hostname, signal, tls bool
+	}{
+		{name: "bare-ip"}, {name: "bare-hostname", hostname: true},
+		{name: "signal-bare", signal: true}, {name: "signal-https", signal: true, tls: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, caFile, exports := serveOTLPMetrics(t, tc.tls)
+			if tc.hostname {
+				_, port, err := net.SplitHostPort(addr)
+				require.NoError(t, err)
+				addr = net.JoinHostPort("localhost", port)
+			}
+			endpoint := addr
+			if tc.tls {
+				endpoint = "https://" + addr
+			}
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint)
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", "")
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE", caFile)
+			t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "1000")
+			if tc.signal {
+				t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "invalid-ignored-general-endpoint")
+				t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", endpoint)
+			}
+			emitOneMeasurement(t, appmetrics.InitMeter("endpoint-test"))
+			select {
+			case <-exports:
+			case <-time.After(time.Second):
+				t.Fatal("no export reached configured collector")
+			}
+		})
 	}
 }

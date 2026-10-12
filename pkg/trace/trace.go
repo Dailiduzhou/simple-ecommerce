@@ -2,7 +2,8 @@ package trace
 
 import (
 	"context"
-	"os"
+
+	"github.com/Dailiduzhou/simple-ecommerce/internal/otlpconfig"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -13,7 +14,8 @@ import (
 )
 
 // InitTracer wires the OTLP/gRPC trace exporter. Endpoint configuration is
-// delegated to the OpenTelemetry SDK's standard environment parsing: an
+// normalized for legacy bare host:port addresses, otherwise delegated to the
+// OpenTelemetry SDK's standard environment parsing: an
 // OTEL_EXPORTER_OTLP_ENDPOINT (or signal-specific variant) with an https
 // scheme exports over TLS, http/unix stay plaintext, and
 // OTEL_EXPORTER_OTLP_CERTIFICATE / OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE
@@ -21,11 +23,12 @@ import (
 // back to the unauthenticated plaintext collector of the local compose stack.
 func InitTracer(serviceName string) func() {
 	var opts []otlptracegrpc.Option
-	if !otlpEndpointConfigured("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
-		opts = append(opts,
-			otlptracegrpc.WithEndpoint("otel-collector:4317"),
-			otlptracegrpc.WithInsecure(),
-		)
+	endpoint, err := otlpconfig.EndpointOverride("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	if err != nil {
+		panic(err)
+	}
+	if endpoint != "" {
+		opts = append(opts, otlptracegrpc.WithEndpointURL(endpoint))
 	}
 
 	ctx := context.Background()
@@ -55,20 +58,4 @@ func InitTracer(serviceName string) func() {
 			otel.Handle(err)
 		}
 	}
-}
-
-// otlpEndpointConfigured reports whether any endpoint environment variable is
-// present, in which case the SDK's own parsing must win unconditionally:
-// overriding the endpoint here would strip the scheme again and force
-// plaintext connections onto TLS-only collectors.
-func otlpEndpointConfigured(signalSpecificVars ...string) bool {
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
-		return true
-	}
-	for _, name := range signalSpecificVars {
-		if os.Getenv(name) != "" {
-			return true
-		}
-	}
-	return false
 }
