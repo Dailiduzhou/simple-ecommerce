@@ -603,8 +603,8 @@ func TestClosePayWorker_FailedLocalSigningPrepayProvablyNeverDispatched(t *testi
 }
 
 // A lease held while the close job runs means a prepay could still be signing;
-// absence without the lease having been cleared stays indeterminate.
-func TestClosePayWorker_HeldPrepayLeavesAbsenceIndeterminate(t *testing.T) {
+// wait for it to finish or expire instead of requiring manual reconciliation.
+func TestClosePayWorker_HeldPrepaySnoozes(t *testing.T) {
 	lease := time.Now().Add(30 * time.Second)
 	payment := &biz.PaymentDO{
 		ID: 8, Status: biz.PaymentStatusClosePending, Method: "alipay:app",
@@ -613,9 +613,10 @@ func TestClosePayWorker_HeldPrepayLeavesAbsenceIndeterminate(t *testing.T) {
 	repo := &workerRepo{payment: payment}
 	err := NewClosePayWorker(&workerGateway{err: biz.ErrProviderOrderNotExist}, repo).
 		Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: "alipay"}})
-	require.NoError(t, err)
+	var snooze *river.JobSnoozeError
+	require.ErrorAs(t, err, &snooze)
 	require.False(t, repo.applied)
-	require.NotNil(t, repo.reconciled)
+	require.Nil(t, repo.reconciled)
 }
 
 func (r *workerRepo) GetPaymentForJob(ctx context.Context, id int64) (*biz.PaymentDO, error) {
@@ -654,5 +655,26 @@ func TestManualRetryWorkersFenceVersionAndStatus(t *testing.T) {
 				require.Nil(t, repo.reconciled)
 			})
 		}
+	}
+}
+
+func TestClosePayWorker_ExpiredLeaseIsSafeOnlyForLocalSigning(t *testing.T) {
+	for _, method := range []string{"alipay:app", "alipay:wap", "wechat:native"} {
+		t.Run(method, func(t *testing.T) {
+			lease := time.Now().Add(-time.Minute)
+			repo := &workerRepo{payment: &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusClosePending, Method: method, OutTradeNo: "pay_8", PrepayAttempts: 1, PrepayLeaseToken: "late-signer", PrepayLeaseUntil: &lease}}
+			parsed, err := biz.ParsePaymentMethod(method)
+			require.NoError(t, err)
+			err = NewClosePayWorker(&workerGateway{err: biz.ErrProviderOrderNotExist}, repo).Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: parsed.Provider}})
+			require.NoError(t, err)
+			if parsed.Provider == "alipay" {
+				require.True(t, repo.applied)
+				require.True(t, repo.appliedArgs.ConfirmUnissued, "settlement must recheck absence proof under lock")
+				require.Nil(t, repo.reconciled)
+			} else {
+				require.False(t, repo.applied)
+				require.NotNil(t, repo.reconciled)
+			}
+		})
 	}
 }

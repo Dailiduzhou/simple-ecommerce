@@ -238,7 +238,7 @@ SET status = CASE
     last_error = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $3
-  AND status <> 'success'
+  AND status = 'pending'
 RETURNING id, order_id, user_id, payment_id, out_refund_no, total_amount_minor, refund_amount_minor, currency, reason, purpose, status, last_error, created_at, updated_at
 `
 

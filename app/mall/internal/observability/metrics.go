@@ -52,8 +52,8 @@ func PaymentReconcileJob(ctx context.Context, provider, result string) {
 }
 
 // PaymentRefundReconcile reports the periodic refund compensation sweep.
-// Persistently increasing result="deferred" means refunds keep failing
-// re-preparation and need an operator, not another silent retry.
+// result="deferred" counts only successfully persisted pending retries.
+// Rejections and persistence/state conflicts are counted separately.
 func PaymentRefundReconcile(ctx context.Context, result string) {
 	add(ctx, paymentRefundReconcile, attribute.String("result", result))
 }

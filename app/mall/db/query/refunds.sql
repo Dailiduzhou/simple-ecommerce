@@ -28,7 +28,7 @@ SET status = CASE
     last_error = sqlc.arg(last_error),
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(id)
-  AND status <> 'success'
+  AND status = 'pending'
 RETURNING *;
 
 -- name: MarkOrderRefundSuccess :one
