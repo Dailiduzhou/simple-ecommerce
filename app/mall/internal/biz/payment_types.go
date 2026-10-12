@@ -367,6 +367,7 @@ type PaymentRepo interface {
 	ApplyPayQuery(context.Context, CheckPayArgs, *PaymentQueryResult) error
 	MarkPayClosePending(context.Context, CheckPayArgs) error
 	PreparePaymentRefund(context.Context, int64, string) (*PaymentDO, *PaymentRefund, error)
+	// RecordPaymentRefundError updates only pending refunds; a state race must return an error.
 	RecordPaymentRefundError(context.Context, int64, string, bool) error
 	ApplyPaymentRefund(context.Context, int64, int64) error
 	ListStalePendingRefunds(context.Context, time.Duration, int) ([]PaymentRefund, error)

@@ -20,6 +20,10 @@ type ReconcileRefundsArgs struct{}
 func (ReconcileRefundsArgs) Kind() string { return ReconcileRefundsJobKind }
 
 type CheckPayArgs struct {
+	// ConfirmUnissued is an in-process settlement guard for synthetic closure
+	// after provider absence, never an instruction persisted in a polling job.
+	ConfirmUnissued bool `json:"-"`
+
 	// A committed manual retry gets a fresh unique key, independent of older
 	// scheduled/running polls. It also fences execution and technical failures
 	// to that processing version. Zero retains ordinary polling behavior.

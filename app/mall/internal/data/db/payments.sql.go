@@ -780,7 +780,7 @@ SET last_error = $3,
     prepay_lease_until = NULL,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
-  AND status = 'creating'
+  AND (status = 'creating' OR (status = 'close_pending' AND pay_channel IN ('alipay:app', 'alipay:wap')))
   AND prepay_lease_token = $2
 `
 

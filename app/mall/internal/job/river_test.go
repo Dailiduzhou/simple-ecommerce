@@ -577,6 +577,48 @@ func TestClosePayWorker_MissingActionDoesNotProveNoDispatch(t *testing.T) {
 	require.NotNil(t, repo.reconciled)
 }
 
+// A prepay that failed before signing — for example an adapter rejection in
+// the deadline second — leaves attempts > 0 with no action. Alipay APP/WAP
+// prepay never transmits anything, so provider absence proves the trade was
+// never dispatched and the payment must auto-close: manual reconciliation here
+// would block order expiry and keep the reserved stock locked forever.
+func TestClosePayWorker_FailedLocalSigningPrepayProvablyNeverDispatched(t *testing.T) {
+	for _, product := range []string{"app", "wap"} {
+		for _, status := range []string{biz.PaymentStatusClosePending, biz.PaymentStatusClosed} {
+			t.Run(product+"/"+status, func(t *testing.T) {
+				payment := &biz.PaymentDO{
+					ID: 8, Status: status, Method: "alipay:" + product,
+					OutTradeNo: "pay_8", Amount: 100, Currency: "CNY", PrepayAttempts: 1,
+				}
+				repo := &workerRepo{payment: payment}
+				err := NewClosePayWorker(&workerGateway{err: biz.ErrProviderOrderNotExist}, repo).
+					Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: "alipay", Reason: "order_expired"}})
+				require.NoError(t, err)
+				require.True(t, repo.applied, "the unissued payment must settle as closed")
+				require.Equal(t, biz.TradeStateClosed, repo.appliedResult.TradeState)
+				require.Nil(t, repo.reconciled, "provably unsent prepay failures must not require manual reconciliation")
+			})
+		}
+	}
+}
+
+// A lease held while the close job runs means a prepay could still be signing;
+// wait for it to finish or expire instead of requiring manual reconciliation.
+func TestClosePayWorker_HeldPrepaySnoozes(t *testing.T) {
+	lease := time.Now().Add(30 * time.Second)
+	payment := &biz.PaymentDO{
+		ID: 8, Status: biz.PaymentStatusClosePending, Method: "alipay:app",
+		OutTradeNo: "pay_8", PrepayAttempts: 1, PrepayLeaseUntil: &lease,
+	}
+	repo := &workerRepo{payment: payment}
+	err := NewClosePayWorker(&workerGateway{err: biz.ErrProviderOrderNotExist}, repo).
+		Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: "alipay"}})
+	var snooze *river.JobSnoozeError
+	require.ErrorAs(t, err, &snooze)
+	require.False(t, repo.applied)
+	require.Nil(t, repo.reconciled)
+}
+
 func (r *workerRepo) GetPaymentForJob(ctx context.Context, id int64) (*biz.PaymentDO, error) {
 	return r.GetPayment(ctx, id)
 }
@@ -613,5 +655,26 @@ func TestManualRetryWorkersFenceVersionAndStatus(t *testing.T) {
 				require.Nil(t, repo.reconciled)
 			})
 		}
+	}
+}
+
+func TestClosePayWorker_ExpiredLeaseIsSafeOnlyForLocalSigning(t *testing.T) {
+	for _, method := range []string{"alipay:app", "alipay:wap", "wechat:native"} {
+		t.Run(method, func(t *testing.T) {
+			lease := time.Now().Add(-time.Minute)
+			repo := &workerRepo{payment: &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusClosePending, Method: method, OutTradeNo: "pay_8", PrepayAttempts: 1, PrepayLeaseToken: "late-signer", PrepayLeaseUntil: &lease}}
+			parsed, err := biz.ParsePaymentMethod(method)
+			require.NoError(t, err)
+			err = NewClosePayWorker(&workerGateway{err: biz.ErrProviderOrderNotExist}, repo).Work(context.Background(), &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: 8, Provider: parsed.Provider}})
+			require.NoError(t, err)
+			if parsed.Provider == "alipay" {
+				require.True(t, repo.applied)
+				require.True(t, repo.appliedArgs.ConfirmUnissued, "settlement must recheck absence proof under lock")
+				require.Nil(t, repo.reconciled)
+			} else {
+				require.False(t, repo.applied)
+				require.NotNil(t, repo.reconciled)
+			}
+		})
 	}
 }

@@ -34,9 +34,12 @@ services:
     image: jaegertracing/all-in-one:1.60
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
+    # Monitoring UIs have no built-in authentication: publish them on the
+    # loopback interface only. Remote access should go through an
+    # authenticating reverse proxy, never the published port.
     ports:
-      - "16686:16686"
-      - "4317:4317"
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:4317:4317"
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.132.0
@@ -46,8 +49,8 @@ services:
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
-      - "14317:4317"
-      - "9464:9464"
+      - "127.0.0.1:14317:4317"
+      - "127.0.0.1:9464:9464"
 
   prometheus:
     image: prom/prometheus:v3.5.0
@@ -58,13 +61,13 @@ services:
       - ./deploy/payment-alerts.yaml:/etc/prometheus/payment-alerts.yaml:ro
       - ./deploy/community-alerts.yaml:/etc/prometheus/community-alerts.yaml:ro
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
 
   loki:
     image: grafana/loki:2.9.0
     command: -config.file=/etc/loki/local-config.yaml
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     volumes:
       - loki_data:/loki
 
@@ -82,10 +85,14 @@ services:
     depends_on:
       - loki
     environment:
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      # No anonymous organization admin: anyone who can reach the published
+      # port would otherwise own the Grafana org, its datasources and every
+      # dashboard. Real users authenticate with the provisioned admin account.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./deploy/grafana/datasources:/etc/grafana/provisioning/datasources:ro

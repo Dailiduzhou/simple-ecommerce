@@ -77,6 +77,7 @@ type paymentTestRepo struct {
 	refundApplied         bool
 	refundError           string
 	refundDefinitive      *bool
+	refundErrorCalls      int
 	staleRefunds          []PaymentRefund
 	reconciliationFailure *ReconciliationFailure
 }
@@ -148,6 +149,7 @@ func (r *paymentTestRepo) PreparePaymentRefund(_ context.Context, paymentID int6
 func (r *paymentTestRepo) RecordPaymentRefundError(_ context.Context, _ int64, lastError string, definitive bool) error {
 	r.refundError = lastError
 	r.refundDefinitive = &definitive
+	r.refundErrorCalls++
 	return nil
 }
 func (r *paymentTestRepo) ApplyPaymentRefund(context.Context, int64, int64) error {
@@ -496,6 +498,28 @@ func TestReconcilePendingRefunds_SkipsConflictWithoutSettling(t *testing.T) {
 	settled, err := uc.ReconcilePendingRefunds(context.Background(), 10*time.Minute, 100)
 	require.NoError(t, err)
 	require.Equal(t, 0, settled)
+	require.False(t, gateway.refundCalled)
+}
+
+// Records that fail before any gateway attempt must not occupy the head of the
+// sweep batch forever: each failure is recorded as a non-definitive error,
+// which keeps the refund pending while advancing updated_at, rotating it
+// behind later recoverable refunds until the next grace period.
+func TestReconcilePendingRefunds_FailingRecordDefersInsteadOfStarving(t *testing.T) {
+	payment, refund := refundFixture(PaymentRefundStatusPending)
+	conflicting := *refund
+	conflicting.ID = 99
+	second := *refund
+	second.ID = 13
+	repo := &paymentTestRepo{payment: payment, refund: &conflicting, staleRefunds: []PaymentRefund{*refund, second}}
+	gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsRefund: true}}
+	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
+	settled, err := uc.ReconcilePendingRefunds(context.Background(), 10*time.Minute, 100)
+	require.NoError(t, err)
+	require.Equal(t, 0, settled)
+	require.Equal(t, 2, repo.refundErrorCalls, "every failing record must be deferred, including those failing before the gateway call")
+	require.NotNil(t, repo.refundDefinitive)
+	require.False(t, *repo.refundDefinitive, "deferral must keep the refund pending for a later retry with the original number")
 	require.False(t, gateway.refundCalled)
 }
 

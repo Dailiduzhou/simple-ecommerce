@@ -26,3 +26,18 @@ groups:
         for: 0m
         labels: {severity: critical}
         annotations: {summary: "A payment reconciliation job was discarded"}
+      - alert: RefundCompensationStuck
+        expr: increase(payment_refund_reconcile_total{result="deferred"}[30m]) > 2
+        for: 0m
+        labels: {severity: warning}
+        annotations: {summary: "Pending refund compensation keeps failing; manual review required"}
+      - alert: RefundCompensationRejected
+        expr: increase(payment_refund_reconcile_total{result="rejected"}[5m]) > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations: {summary: "Provider rejected a refund; automatic compensation has stopped"}
+      - alert: RefundCompensationRecordError
+        expr: increase(payment_refund_reconcile_total{result="record_error"}[5m]) > 0
+        for: 0m
+        labels: {severity: warning}
+        annotations: {summary: "Refund compensation could not persist its failure outcome"}
