@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"strings"
+	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
@@ -46,6 +47,15 @@ func (r *PaymentRepo) ApplyPayQuery(ctx context.Context, args biz.CheckPayArgs, 
 		}
 		if !found {
 			return biz.ErrPaymentNotFound
+		}
+		// Provider absence is not an authoritative terminal result. Re-check
+		// the unissued proof under the order/payment locks before synthesizing
+		// closure, including any lease/action changes since the worker's read.
+		if args.ConfirmUnissued && (result.TradeState != biz.TradeStateClosed ||
+			!biz.CanConfirmUnissuedPayment(toBizPayment(payment), time.Now()) ||
+			(args.ReconciliationVersion == 0 && biz.ReconciliationNeedsReview(payment.ReconciliationStatus)) ||
+			!biz.ReconciliationJobCurrent(args.ReconciliationVersion, payment.ReconciliationVersion, payment.ReconciliationStatus)) {
+			return biz.ErrPaymentStateConflict
 		}
 		method, parseErr := biz.ParsePaymentMethod(payment.PayChannel)
 		if parseErr != nil {

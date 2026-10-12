@@ -44,9 +44,23 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 		return river.JobCancel(fmt.Errorf("close_pay provider does not match payment"))
 	}
 	var signed biz.SignedPaymentPayload
-	localSigning := method.Provider == "alipay" && (method.Product == "app" || method.Product == "wap") && payment.Action.Type != ""
+	// Alipay APP/WAP prepay only signs parameters locally: nothing reaches the
+	// provider until the buyer invokes the signed payload. For those products a
+	// close-pending payment that never persisted an action cannot issue one,
+	// even when prepay attempts failed after incrementing the counter — a
+	// deadline-second adapter failure must not strand the order in manual
+	// reconciliation and keep its stock reserved. Wechat prepay is a network
+	// call, so a failed attempt stays indeterminate and never proves absence.
+	locallySignedProduct := method.Provider == "alipay" && (method.Product == "app" || method.Product == "wap")
+	localSigning := locallySignedProduct && payment.Action.Type != ""
 	if localSigning {
 		localSigning = json.Unmarshal(payment.Action.Payload, &signed) == nil
+	}
+	// An active local signer may still finish. Wait without consuming retries
+	// rather than creating a permanent manual-reconciliation incident.
+	if locallySignedProduct && payment.Status == biz.PaymentStatusClosePending && payment.Action.Type == "" &&
+		payment.PrepayLeaseUntil != nil && payment.PrepayLeaseUntil.After(time.Now()) {
+		return river.JobSnooze(max(time.Second, time.Until(*payment.PrepayLeaseUntil)))
 	}
 	queryRequest := biz.PaymentQueryRequest{Method: method, OutTradeNo: payment.OutTradeNo,
 		TransactionID: payment.ThirdPartyTxID, ExpectedProviderAccount: signed.ProviderAccount}
@@ -56,7 +70,9 @@ func (w *ClosePayWorker) Work(ctx context.Context, job *river.Job[biz.ClosePayAr
 	if errors.Is(err, biz.ErrProviderOrderNotExist) {
 		// APP/WAP only generate signed parameters locally. Absence is normal,
 		// but query only counts as closure evidence after those parameters expire.
-		safeAbsent := payment.Status == biz.PaymentStatusClosePending && payment.Action.Type == "" && payment.PrepayAttempts == 0 && payment.PrepayLeaseUntil == nil && payment.ThirdPartyTxID == ""
+		safeAbsent := biz.CanConfirmUnissuedPayment(payment, queryStarted)
+		applyArgs.ConfirmUnissued = safeAbsent
+
 		if localSigning {
 			if signed.ProviderAccount != "" && signed.Payload != "" && !signed.ExpiresAt.IsZero() {
 				safeAt := signed.ExpiresAt.Add(biz.PaymentExpirySafetyMargin)

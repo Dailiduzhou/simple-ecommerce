@@ -17,6 +17,7 @@ var (
 	paymentCallback               = counter("payment_callback_total")
 	paymentCallbackPersistFailure = counter("payment_callback_persist_failure_total")
 	paymentReconcileJob           = counter("payment_reconcile_job_total")
+	paymentRefundReconcile        = counter("payment_refund_reconcile_total")
 	paymentReconciliationAction   = counter("payment_reconciliation_action_total")
 	paymentReconcileRequired      = counter("payment_reconcile_required_total")
 	riverJobDiscarded             = counter("river_job_discarded_total")
@@ -48,6 +49,13 @@ func PaymentCallbackPersistFailure(ctx context.Context, provider string) {
 }
 func PaymentReconcileJob(ctx context.Context, provider, result string) {
 	add(ctx, paymentReconcileJob, attribute.String("provider", provider), attribute.String("result", result))
+}
+
+// PaymentRefundReconcile reports the periodic refund compensation sweep.
+// result="deferred" counts only successfully persisted pending retries.
+// Rejections and persistence/state conflicts are counted separately.
+func PaymentRefundReconcile(ctx context.Context, result string) {
+	add(ctx, paymentRefundReconcile, attribute.String("result", result))
 }
 func PaymentReconcileRequired(ctx context.Context, provider string) {
 	add(ctx, paymentReconcileRequired, attribute.String("provider", provider))

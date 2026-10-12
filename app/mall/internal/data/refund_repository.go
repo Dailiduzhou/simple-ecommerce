@@ -150,7 +150,7 @@ func (r *PaymentRepo) RecordPaymentRefundError(ctx context.Context, refundID int
 		Definitive: definitive, LastError: lastError, ID: refundID,
 	})
 	if stderrors.Is(err, pgx.ErrNoRows) {
-		return nil
+		return biz.ErrPaymentStateConflict
 	}
 	return err
 }

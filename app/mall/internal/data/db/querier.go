@@ -143,6 +143,9 @@ type Querier interface {
 	ListReconciliationCases(ctx context.Context, arg ListReconciliationCasesParams) ([]Payment, error)
 	ListRootComments(ctx context.Context, arg ListRootCommentsParams) ([]ListRootCommentsRow, error)
 	ListShippingAddressesByUser(ctx context.Context, arg ListShippingAddressesByUserParams) ([]ShippingAddress, error)
+	// Ordering by (updated_at, id) is stable, and failed retries bump updated_at
+	// (RecordOrderRefundError), so persistently failing records rotate to the
+	// back of the sweep instead of starving later recoverable refunds.
 	ListStalePendingRefunds(ctx context.Context, arg ListStalePendingRefundsParams) ([]OrderRefund, error)
 	ListSubCategories(ctx context.Context, arg ListSubCategoriesParams) ([]Category, error)
 	ListTopCategories(ctx context.Context, arg ListTopCategoriesParams) ([]Category, error)

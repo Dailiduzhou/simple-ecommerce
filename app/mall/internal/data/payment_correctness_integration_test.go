@@ -203,6 +203,45 @@ func TestCloseRaceAndUnopenedAlipayStockIntegration(t *testing.T) {
 	}
 }
 
+// A failure before local APP/WAP signing leaves prepay attempts but no action.
+// Provider absence then proves nothing was dispatched. Replaying the close job
+// must restore stock only once and must not reopen manual reconciliation.
+func TestFailedAlipayPrepayAbsenceStillReleasesStockIntegration(t *testing.T) {
+	for _, product := range []string{"app", "wap"} {
+		t.Run(product, func(t *testing.T) {
+			f := newCorrectnessFixture(t)
+			orderID, paymentID, _ := f.seedPayment(t, biz.PaymentStatusClosePending)
+			_, err := f.pool.Exec(f.ctx, `INSERT INTO order_items (order_id, product_id, quantity, unit_price_minor, product_name_snapshot) VALUES ($1,$2,1,12345,'snapshot')`, orderID, f.productID)
+			require.NoError(t, err)
+			_, err = f.pool.Exec(f.ctx, `UPDATE products SET stock=99 WHERE id=$1`, f.productID)
+			require.NoError(t, err)
+			_, err = f.pool.Exec(f.ctx, `UPDATE payments SET pay_channel=$2, prepay_attempts=1, last_error='prepay failed before signing' WHERE id=$1`, paymentID, "alipay:"+product)
+			require.NoError(t, err)
+
+			repo := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
+			payment, err := repo.GetPayment(f.ctx, paymentID)
+			require.NoError(t, err)
+			worker := malljob.NewClosePayWorker(&integrationCloseGateway{payment: payment, absent: true}, repo)
+			job := &river.Job[biz.ClosePayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.ClosePayArgs{PaymentID: paymentID, Provider: "alipay", Reason: "order_expired"}}
+			require.NoError(t, worker.Work(f.ctx, job))
+			require.NoError(t, worker.Work(f.ctx, job), "a duplicate close job must not restore the stock twice")
+
+			var orderStatus, paymentStatus, reconciliation string
+			var stock int64
+			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT status FROM orders WHERE id=$1`, orderID).Scan(&orderStatus))
+			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT status, coalesce(reconciliation_status,'') FROM payments WHERE id=$1`, paymentID).Scan(&paymentStatus, &reconciliation))
+			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id=$1`, f.productID).Scan(&stock))
+			require.Equal(t, biz.OrderStatusCancelled, orderStatus)
+			require.Equal(t, biz.PaymentStatusClosed, paymentStatus)
+			require.NotEqual(t, biz.ReconciliationStatusRequired, reconciliation, "provably unsent prepay failures must not require manual reconciliation")
+			require.Equal(t, int64(100), stock)
+			var failures int
+			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT count(*) FROM payment_reconciliation_failures WHERE payment_id=$1`, paymentID).Scan(&failures))
+			require.Zero(t, failures, "duplicate close jobs must not create reconciliation failures")
+		})
+	}
+}
+
 func TestOverdueRiverScanReachesLost101stJobIntegration(t *testing.T) {
 	f := newCorrectnessFixture(t)
 	mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)

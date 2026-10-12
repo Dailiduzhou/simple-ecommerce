@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/go-kratos/kratos/v2/errors"
+
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
 )
 
 func (uc *paymentUsecase) RefundPayment(ctx context.Context, paymentID int64) (*PaymentRefundResult, error) {
@@ -38,7 +40,11 @@ func (uc *paymentUsecase) RefundPayment(ctx context.Context, paymentID int64) (*
 	if err != nil {
 		return nil, err
 	}
-	return uc.executeRefund(ctx, method, payment, refund)
+	result, err := uc.executeRefund(ctx, method, payment, refund)
+	if err != nil {
+		uc.recordRefundFailure(ctx, refund.ID, result, err)
+	}
+	return result, err
 }
 
 // executeRefund drives the gateway call and local settlement for a prepared
@@ -60,22 +66,12 @@ func (uc *paymentUsecase) executeRefund(ctx context.Context, method PaymentMetho
 		Reason: refund.Reason,
 	})
 	if err != nil {
-		// Only an explicit provider business rejection is definitive. Transient
-		// transport or system errors keep the record pending so the
-		// reconciliation worker can retry it with the same OutRefundNo.
-		definitive := result != nil && result.Rejection
-		if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), definitive); recordErr != nil {
-			uc.log.WithContext(ctx).Errorw("msg", "record payment refund error failed", "payment_id", payment.ID, "refund_id", refund.ID, "error", recordErr)
-		}
 		return result, err
 	}
-	if result == nil || !result.Success {
-		err = errors.New(502, "PAYMENT_REFUND_FAILED", "payment provider did not confirm refund")
-		if recordErr := uc.paymentRepo.RecordPaymentRefundError(ctx, refund.ID, err.Error(), false); recordErr != nil {
-			uc.log.WithContext(ctx).Errorw("msg", "record payment refund rejection failed", "payment_id", payment.ID, "refund_id", refund.ID, "error", recordErr)
-		}
-		return result, err
+	if result == nil || !result.Success || result.Rejection {
+		return result, errors.New(502, "PAYMENT_REFUND_FAILED", "payment provider did not confirm refund")
 	}
+
 	if err := uc.paymentRepo.ApplyPaymentRefund(ctx, payment.ID, refund.ID); err != nil {
 		return nil, err
 	}
@@ -99,40 +95,58 @@ func (uc *paymentUsecase) ReconcilePendingRefunds(ctx context.Context, olderThan
 	}
 	settled := 0
 	for _, refund := range refunds {
-		if err := uc.reconcileRefund(ctx, refund); err != nil {
+		result, err := uc.reconcileRefund(ctx, refund)
+		if err != nil {
 			uc.log.WithContext(ctx).Errorw("msg", "reconcile pending refund failed", "payment_id", refund.PaymentID, "refund_id", refund.ID, "out_refund_no", refund.OutRefundNo, "error", err)
+			observability.PaymentRefundReconcile(ctx, uc.recordRefundFailure(ctx, refund.ID, result, err))
 			continue
 		}
+
+		observability.PaymentRefundReconcile(ctx, "settled")
 		settled++
 	}
 	return settled, nil
 }
 
-func (uc *paymentUsecase) reconcileRefund(ctx context.Context, refund PaymentRefund) error {
+func (uc *paymentUsecase) reconcileRefund(ctx context.Context, refund PaymentRefund) (*PaymentRefundResult, error) {
 	payment, err := uc.paymentRepo.GetPayment(ctx, refund.PaymentID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	method, err := ParsePaymentMethod(payment.Method)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	capabilities, err := uc.gateway.Capabilities(method)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !capabilities.SupportsRefund {
-		return fmt.Errorf("provider %s does not support refund", method.Provider)
+		return nil, fmt.Errorf("provider %s does not support refund", method.Provider)
 	}
 	// Re-preparing under the payment lock re-validates amounts and state, and
 	// returns the existing refund record instead of creating a new one.
 	current, prepared, err := uc.paymentRepo.PreparePaymentRefund(ctx, refund.PaymentID, refund.OutRefundNo)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if prepared.ID != refund.ID {
-		return ErrPaymentStateConflict
+		return nil, ErrPaymentStateConflict
 	}
-	_, err = uc.executeRefund(ctx, method, current, prepared)
-	return err
+	return uc.executeRefund(ctx, method, current, prepared)
+}
+
+// Record exactly once, and count a deferral only after the pending row was
+// successfully updated. Provider rejections terminate retries, while transport,
+// preparation and settlement errors retain pending and advance its queue time.
+func (uc *paymentUsecase) recordRefundFailure(ctx context.Context, refundID int64, result *PaymentRefundResult, cause error) string {
+	definitive := result != nil && result.Rejection
+	if err := uc.paymentRepo.RecordPaymentRefundError(ctx, refundID, cause.Error(), definitive); err != nil {
+		uc.log.WithContext(ctx).Errorw("msg", "record payment refund error failed", "refund_id", refundID, "error", err)
+		return "record_error"
+	}
+	if definitive {
+		return "rejected"
+	}
+	return "deferred"
 }
