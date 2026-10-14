@@ -87,10 +87,10 @@ SET stock = stock + $2,
 WHERE id = $1
   AND deleted_at IS NULL;
 
--- name: SoftDeleteProduct :exec
+-- name: SoftDeleteProduct :execrows
 UPDATE products
-SET deleted_at = CURRENT_TIMESTAMP
-WHERE id = $1;
+SET deleted_at = CURRENT_TIMESTAMP, category_id = NULL
+WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: CountProducts :one
 SELECT count(*)
