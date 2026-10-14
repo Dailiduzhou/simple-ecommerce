@@ -66,7 +66,7 @@ WHERE category_id = $1
   AND deleted_at IS NULL
 `
 
-func (q *Queries) CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error) {
+func (q *Queries) CountProductsByCategory(ctx context.Context, categoryID pgtype.Int8) (int64, error) {
 	row := q.db.QueryRow(ctx, countProductsByCategory, categoryID)
 	var count int64
 	err := row.Scan(&count)
@@ -90,7 +90,7 @@ RETURNING id, category_id, name, price_minor, discount, stock, status, cover_ima
 `
 
 type CreateProductParams struct {
-	CategoryID  int64
+	CategoryID  pgtype.Int8
 	Name        string
 	PriceMinor  int64
 	Discount    decimal.Decimal
@@ -287,7 +287,7 @@ LIMIT $2 OFFSET $3
 `
 
 type ListProductsByCategoryParams struct {
-	CategoryID int64
+	CategoryID pgtype.Int8
 	Limit      int32
 	Offset     int32
 }
@@ -327,15 +327,18 @@ func (q *Queries) ListProductsByCategory(ctx context.Context, arg ListProductsBy
 	return items, nil
 }
 
-const softDeleteProduct = `-- name: SoftDeleteProduct :exec
+const softDeleteProduct = `-- name: SoftDeleteProduct :execrows
 UPDATE products
-SET deleted_at = CURRENT_TIMESTAMP
-WHERE id = $1
+SET deleted_at = CURRENT_TIMESTAMP, category_id = NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-func (q *Queries) SoftDeleteProduct(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, softDeleteProduct, id)
-	return err
+func (q *Queries) SoftDeleteProduct(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteProduct, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateProduct = `-- name: UpdateProduct :one
@@ -355,7 +358,7 @@ RETURNING id, category_id, name, price_minor, discount, stock, status, cover_ima
 
 type UpdateProductParams struct {
 	ID          int64
-	CategoryID  int64
+	CategoryID  pgtype.Int8
 	Name        string
 	PriceMinor  int64
 	Discount    decimal.Decimal

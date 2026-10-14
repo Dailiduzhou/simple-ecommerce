@@ -161,7 +161,10 @@ func (r *CommentRepo) Delete(ctx context.Context, a biz.Actor, postID, id int64)
 		if e = a.Owns(c.AuthorID.Int64, true); e != nil {
 			return e
 		}
-		_, e = q.DeleteComment(ctx, db.DeleteCommentParams{PostID: postID, ID: id, ActorID: communityID(a.ID), IsAdmin: a.Admin})
+		deleted, e := q.DeleteComment(ctx, db.DeleteCommentParams{PostID: postID, ID: id, ActorID: communityID(a.ID), IsAdmin: a.Admin})
+		if e == nil && deleted == 0 {
+			return communityv1.ErrorCommentNotFound("comment not found")
+		}
 		return e
 	})
 }

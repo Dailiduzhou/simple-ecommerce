@@ -90,14 +90,18 @@ func (u *MediaUsecase) CreateUpload(ctx context.Context, a Actor, mime string, s
 	name := hex.EncodeToString(key)
 	now := time.Now().UTC()
 	asset := MediaAsset{Object: ObjectRef{provider, bucket, "images/" + name}, StagingKey: "uploads/" + name, ContentType: mime, SizeBytes: size, ExpiresAt: now.Add(u.policy.UnusedRetention), UploadExpiresAt: now.Add(u.policy.UploadTTL)}
+	ref := asset.Object
+	ref.Key = asset.StagingKey
+	grant, e := u.storage.CreateUpload(ctx, ref, mime, size, asset.UploadExpiresAt)
+	if e != nil {
+		return nil, UploadGrant{}, e
+	}
+	// Do not persist an unusable upload intent when storage is unavailable.
 	assetPtr, e := u.repo.Create(ctx, a.ID, asset)
 	if e != nil {
 		return nil, UploadGrant{}, e
 	}
-	ref := asset.Object
-	ref.Key = asset.StagingKey
-	grant, e := u.storage.CreateUpload(ctx, ref, mime, size, asset.UploadExpiresAt)
-	return assetPtr, grant, e
+	return assetPtr, grant, nil
 }
 
 func (u *MediaUsecase) Complete(ctx context.Context, a Actor, id int64) (*MediaAsset, error) {

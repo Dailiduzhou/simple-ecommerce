@@ -26,13 +26,12 @@ type Querier interface {
 	ClearBrowsingHistory(ctx context.Context, userID int64) error
 	ClearDefaultShippingAddress(ctx context.Context, userID int64) error
 	ConfirmPaymentRefunded(ctx context.Context, id int64) (Payment, error)
-	// Any product row still owns a foreign key to the category; soft-deleted rows
-	// count too, because the FK is not conditional on deleted_at.
-	CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error)
+	// Soft-deleted products detach their category reference.
+	CountCategoryProductReferences(ctx context.Context, categoryID pgtype.Int8) (int64, error)
 	CountOngoingOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CountProducts(ctx context.Context) (int64, error)
-	CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error)
+	CountProductsByCategory(ctx context.Context, categoryID pgtype.Int8) (int64, error)
 	CountSubCategories(ctx context.Context, parentID pgtype.Int8) (int64, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateComment(ctx context.Context, arg CreateCommentParams) (PostComment, error)
@@ -59,7 +58,7 @@ type Querier interface {
 	// check-then-delete 的 TOCTOU 竞争。返回 0 行表示未删除。
 	DeleteCategoryIfUnused(ctx context.Context, id int64) (int64, error)
 	DeleteComment(ctx context.Context, arg DeleteCommentParams) (int64, error)
-	DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) error
+	DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) (int64, error)
 	DeleteUser(ctx context.Context, id int64) error
 	DeleteUserComments(ctx context.Context, authorID pgtype.Int8) error
 	FailPaymentPrepay(ctx context.Context, arg FailPaymentPrepayParams) (Payment, error)
@@ -212,7 +211,7 @@ type Querier interface {
 	SetPaymentNotificationRiverJob(ctx context.Context, arg SetPaymentNotificationRiverJobParams) error
 	SoftDeleteEvent(ctx context.Context, id int64) error
 	SoftDeletePost(ctx context.Context, arg SoftDeletePostParams) (int64, error)
-	SoftDeleteProduct(ctx context.Context, id int64) error
+	SoftDeleteProduct(ctx context.Context, id int64) (int64, error)
 	TouchDeletingMedia(ctx context.Context, id int64) error
 	TouchMediaStagingCleanup(ctx context.Context, id int64) error
 	UnbindPostImages(ctx context.Context, postID int64) error

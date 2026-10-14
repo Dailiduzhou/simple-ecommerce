@@ -27,7 +27,7 @@ func invalidateProductCachesForOrder(ctx context.Context, data *Data, logger *lo
 	generations := []string{"product:list:gen"}
 	deletes := make([]string, 0, len(rows))
 	for _, row := range rows {
-		generations = append(generations, redisKey("product", row.ID, "gen"), redisKey("product", "category", row.CategoryID, "gen"))
+		generations = append(generations, redisKey("product", row.ID, "gen"), redisKey("product", "category", row.CategoryID.Int64, "gen"))
 		deletes = append(deletes, redisKey("product", row.ID))
 	}
 	scheduleCacheInvalidation(ctx, data.rdb, logger, generations, deletes)

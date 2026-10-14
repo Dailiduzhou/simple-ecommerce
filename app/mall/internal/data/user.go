@@ -358,12 +358,15 @@ func (r *ShippingAddressRepo) SetDefaultShippingAddress(ctx context.Context, id 
 }
 
 func (r *ShippingAddressRepo) DeleteShippingAddress(ctx context.Context, id int64, userID int64) error {
-	err := querierFromContext(ctx, r.data.q).DeleteShippingAddress(ctx, db.DeleteShippingAddressParams{
+	deleted, err := querierFromContext(ctx, r.data.q).DeleteShippingAddress(ctx, db.DeleteShippingAddressParams{
 		ID:     id,
 		UserID: userID,
 	})
 	if err != nil {
 		return err
+	}
+	if deleted == 0 {
+		return biz.ErrAddressNotFound
 	}
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressGenerationKey(userID, id))
 	bumpCacheGeneration(ctx, r.data.rdb, r.log, shippingAddressListGenerationKey(userID))

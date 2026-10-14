@@ -14,12 +14,11 @@ import (
 const countCategoryProductReferences = `-- name: CountCategoryProductReferences :one
 SELECT COUNT(*)
 FROM products
-WHERE category_id = $1
+WHERE category_id = $1 AND deleted_at IS NULL
 `
 
-// Any product row still owns a foreign key to the category; soft-deleted rows
-// count too, because the FK is not conditional on deleted_at.
-func (q *Queries) CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error) {
+// Soft-deleted products detach their category reference.
+func (q *Queries) CountCategoryProductReferences(ctx context.Context, categoryID pgtype.Int8) (int64, error) {
 	row := q.db.QueryRow(ctx, countCategoryProductReferences, categoryID)
 	var count int64
 	err := row.Scan(&count)
@@ -69,7 +68,7 @@ const deleteCategoryIfUnused = `-- name: DeleteCategoryIfUnused :execrows
 DELETE FROM categories
 WHERE categories.id = $1
   AND NOT EXISTS (SELECT 1 FROM categories child WHERE child.parent_id = categories.id)
-  AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = categories.id)
+  AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = categories.id AND p.deleted_at IS NULL)
 `
 
 // 单条语句完成"没有子类、没有被商品引用"检查与删除：避免应用层

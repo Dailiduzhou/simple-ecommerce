@@ -106,6 +106,8 @@ func (uc *paymentUsecase) ClosePayment(ctx context.Context, outTradeNo string, u
 		return nil, errors.ServiceUnavailable("PAYMENT_MQ_NOT_CONFIGURED", "payment mq is required for reliable close")
 	}
 	closeArgs := CheckPayArgs{PaymentID: payment.ID, Provider: method.Provider, Trigger: "api_close"}
+	// This transition atomically enqueues close_pay. Do not roll it back after
+	// an ambiguous provider failure: retries/expiry must fence issued actions.
 	if err := uc.paymentRepo.MarkPayClosePending(ctx, closeArgs); err != nil {
 		return nil, err
 	}

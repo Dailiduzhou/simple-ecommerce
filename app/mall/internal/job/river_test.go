@@ -678,3 +678,25 @@ func TestClosePayWorker_ExpiredLeaseIsSafeOnlyForLocalSigning(t *testing.T) {
 		})
 	}
 }
+
+func TestAlipayPollAbsenceWaitsAndHandsOffToDurableClose(t *testing.T) {
+	for _, expired := range []bool{false, true} {
+		repo := &workerRepo{payment: &biz.PaymentDO{ID: 8, Status: biz.PaymentStatusPending, Method: "alipay:wap", OutTradeNo: "pay_8"}}
+		worker := NewCheckPayWorker(&workerGateway{err: biz.ErrProviderOrderNotExist}, repo, log.DefaultLogger)
+		worker.recordOutput = func(context.Context, pollOutput) error { return nil }
+		deadline := time.Now().Add(time.Hour)
+		if expired {
+			deadline = time.Now().Add(-time.Hour)
+		}
+		err := worker.Work(context.Background(), &river.Job[biz.CheckPayArgs]{JobRow: &rivertype.JobRow{Attempt: 1}, Args: biz.CheckPayArgs{PaymentID: 8, Provider: "alipay", MaxPolls: 1, OrderExpiresAt: deadline}})
+		if expired {
+			require.NoError(t, err)
+			require.Equal(t, 1, repo.closePendingCalls)
+		} else {
+			var snooze *river.JobSnoozeError
+			require.ErrorAs(t, err, &snooze)
+			require.Zero(t, repo.closePendingCalls)
+		}
+		require.False(t, repo.applied, "absence must not release stock")
+	}
+}

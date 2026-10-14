@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createOrderItem = `-- name: CreateOrderItem :one
@@ -150,7 +152,7 @@ JOIN order_items oi ON oi.product_id = p.id WHERE oi.order_id = $1
 
 type ListOrderProductCacheTargetsRow struct {
 	ID         int64
-	CategoryID int64
+	CategoryID pgtype.Int8
 }
 
 func (q *Queries) ListOrderProductCacheTargets(ctx context.Context, orderID int64) ([]ListOrderProductCacheTargetsRow, error) {

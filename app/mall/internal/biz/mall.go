@@ -3,10 +3,11 @@ package biz
 import (
 	"context"
 	"math"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
-	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/shopspring/decimal"
 )
@@ -16,7 +17,7 @@ import (
 func ProductPriceMinor(price decimal.Decimal) (int64, error) {
 	minor := price.Shift(2)
 	if minor.IsNegative() || !minor.Equal(minor.Truncate(0)) || minor.GreaterThan(decimal.NewFromInt(math.MaxInt64)) {
-		return 0, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must be non-negative, use at most two decimal places and fit int64 minor units")
+		return 0, mallv1.ErrorProductPriceInvalid("price must be non-negative, use at most two decimal places and fit int64 minor units")
 	}
 	return minor.IntPart(), nil
 }
@@ -26,7 +27,7 @@ func ProductPriceMinor(price decimal.Decimal) (int64, error) {
 // both are rejected instead of silently mischarging.
 func ProductDiscount(discount decimal.Decimal) error {
 	if !discount.IsPositive() || discount.GreaterThan(decimal.NewFromInt(1)) || !discount.Equal(discount.Round(2)) {
-		return errors.BadRequest("PRODUCT_DISCOUNT_INVALID", "discount must be in (0,1] with at most two decimal places")
+		return mallv1.ErrorProductDiscountInvalid("discount must be in (0,1] with at most two decimal places")
 	}
 	return nil
 }
@@ -38,7 +39,7 @@ func ProductDiscount(discount decimal.Decimal) error {
 // totals with a domain conflict, and a rendered price of 0 is truthful.
 func EffectivePriceMinor(priceMinor int64, discount decimal.Decimal) (int64, error) {
 	if priceMinor < 0 {
-		return 0, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must be non-negative")
+		return 0, mallv1.ErrorProductPriceInvalid("price must be non-negative")
 	}
 	if err := ProductDiscount(discount); err != nil {
 		return 0, err
@@ -104,21 +105,26 @@ func NewProductUsecase(repo ProductRepo, logger log.Logger) ProductUsecase {
 }
 
 func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || utf8.RuneCountInString(name) > 255 {
+		return nil, mallv1.ErrorProductNameInvalid("product name must contain 1 to 255 characters")
+	}
+	if stock < 0 {
+		return nil, mallv1.ErrorProductStockInvalid("stock must be non-negative")
+	}
 	if err := ValidateProductStatus(int32(status)); err != nil {
 		return nil, err
 	}
 	price, err := decimal.NewFromString(priceStr)
 	if err != nil {
-		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
-		return nil, err
+		return nil, mallv1.ErrorProductPriceInvalid("price must be a decimal number")
 	}
 	if _, err := ProductPriceMinor(price); err != nil {
 		return nil, err
 	}
 	discount, err := decimal.NewFromString(discountStr)
 	if err != nil {
-		uc.log.WithContext(ctx).Errorf("invalid discount: %v", err)
-		return nil, err
+		return nil, mallv1.ErrorProductDiscountInvalid("discount must be a decimal number")
 	}
 	if err := ProductDiscount(discount); err != nil {
 		return nil, err
@@ -149,18 +155,20 @@ func (uc *productUsecase) ListProducts(ctx context.Context, categoryID int64, pa
 }
 
 func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || utf8.RuneCountInString(name) > 255 {
+		return nil, mallv1.ErrorProductNameInvalid("product name must contain 1 to 255 characters")
+	}
 	price, err := decimal.NewFromString(priceStr)
 	if err != nil {
-		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
-		return nil, err
+		return nil, mallv1.ErrorProductPriceInvalid("price must be a decimal number")
 	}
 	if _, err := ProductPriceMinor(price); err != nil {
 		return nil, err
 	}
 	discount, err := decimal.NewFromString(discountStr)
 	if err != nil {
-		uc.log.WithContext(ctx).Errorf("invalid discount: %v", err)
-		return nil, err
+		return nil, mallv1.ErrorProductDiscountInvalid("discount must be a decimal number")
 	}
 	if err := ProductDiscount(discount); err != nil {
 		return nil, err
@@ -213,9 +221,8 @@ type CategoryUsecase interface {
 	DeleteCategory(ctx context.Context, id int64) error
 }
 
-// Category deletion is refused while anything still references the row: the
-// category tree and product FKs must be reparented first (closed loop instead
-// of a silent FK failure or an accidental ON DELETE SET NULL reparent).
+// Category deletion is refused while active products or child categories refer
+// to it. Soft-deleting a product detaches its category reference.
 var (
 	ErrCategoryNotFound    = mallv1.ErrorCategoryNotFound("category not found")
 	ErrCategoryHasProducts = mallv1.ErrorCategoryHasProducts("category still has products")

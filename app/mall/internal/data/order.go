@@ -9,6 +9,8 @@ import (
 	"sort"
 	"time"
 
+	orderv1 "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
+	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	"github.com/go-kratos/kratos/v2/log"
@@ -102,7 +104,10 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 				}
 				return err
 			}
-			if product.Status != 1 || product.Stock < item.Quantity {
+			if product.Status != 1 {
+				return userv1.ErrorProductNotAvailable("product is not available")
+			}
+			if product.Stock < item.Quantity {
 				return biz.ErrInsufficientStock
 			}
 			// Charge the discounted price and snapshot it on the item, so the
@@ -148,7 +153,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			}); err != nil {
 				return err
 			}
-			items = append(items, toBizOrderItem(snapshot.input.ProductID, snapshot.product.CategoryID, snapshot.input.Quantity, snapshot.unitPrice, snapshot.product.Name, snapshot.product.CoverImage))
+			items = append(items, toBizOrderItem(snapshot.input.ProductID, snapshot.product.CategoryID.Int64, snapshot.input.Quantity, snapshot.unitPrice, snapshot.product.Name, snapshot.product.CoverImage))
 		}
 		result = toBizOrder(order)
 		result.Items = items
@@ -337,7 +342,7 @@ func (r *OrderRepo) CancelOrderByUser(ctx context.Context, id, userID int64) err
 			return err
 		}
 		if order.Status == biz.OrderStatusCancelled {
-			return nil
+			return orderv1.ErrorOrderAlreadyCancelled("order is already cancelled")
 		}
 		if order.Status != biz.OrderStatusPendingPayment {
 			return biz.ErrOrderCannotCancel

@@ -187,11 +187,16 @@ func TestStockAdjustmentLeavesRoomForCancelAndRefundIntegration(t *testing.T) {
 			adjustment, err := products.AdjustStock(f.ctx, input)
 			require.NoError(t, err)
 			require.EqualValues(t, math.MaxInt32-1, adjustment.ResultingStock)
-			for range 2 {
+			for attempt := range 2 {
 				if operation == "refund" {
 					require.NoError(t, payments.ApplyPaymentRefund(f.ctx, paymentID, refundID))
 				} else {
-					require.NoError(t, orders.CancelOrderByUser(f.ctx, order.ID, f.userID))
+					err := orders.CancelOrderByUser(f.ctx, order.ID, f.userID)
+					if attempt == 0 {
+						require.NoError(t, err)
+					} else {
+						require.Equal(t, "ORDER_ALREADY_CANCELLED", kerrors.Reason(err))
+					}
 				}
 			}
 			require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id=$1`, f.productID).Scan(&stock))

@@ -234,7 +234,7 @@ func TestCategoryRepo_DeleteCategory_RefusesWhenReferenced(t *testing.T) {
 
 	mockQ.EXPECT().DeleteCategoryIfUnused(gomock.Any(), int64(3)).Return(int64(0), nil)
 	mockQ.EXPECT().GetCategory(gomock.Any(), int64(3)).Return(db.Category{ID: 3}, nil)
-	mockQ.EXPECT().CountCategoryProductReferences(gomock.Any(), int64(3)).Return(int64(0), nil)
+	mockQ.EXPECT().CountCategoryProductReferences(gomock.Any(), productCategoryID(3)).Return(int64(0), nil)
 	mockQ.EXPECT().CountSubCategories(gomock.Any(), pgtype.Int8{Int64: 3, Valid: true}).Return(int64(2), nil)
 
 	d := newTestData(t, mockQ, mr)
@@ -250,7 +250,7 @@ func TestCategoryRepo_DeleteCategory_RefusesWhenProductsReferenceIt(t *testing.T
 
 	mockQ.EXPECT().DeleteCategoryIfUnused(gomock.Any(), int64(3)).Return(int64(0), nil)
 	mockQ.EXPECT().GetCategory(gomock.Any(), int64(3)).Return(db.Category{ID: 3}, nil)
-	mockQ.EXPECT().CountCategoryProductReferences(gomock.Any(), int64(3)).Return(int64(4), nil)
+	mockQ.EXPECT().CountCategoryProductReferences(gomock.Any(), productCategoryID(3)).Return(int64(4), nil)
 
 	repo := NewCategoryRepo(newTestData(t, mockQ, mr), log.DefaultLogger)
 	require.ErrorIs(t, repo.DeleteCategory(context.Background(), 3), biz.ErrCategoryHasProducts)
