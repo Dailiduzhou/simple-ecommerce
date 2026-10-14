@@ -2,6 +2,9 @@
 # quay.io/minio/minio or Docker Hub minio/minio image repositories.
 # Keep the same fixed MinIO release for CI and local development.
 FROM golang:1.24-bookworm AS build
+# proxy.golang.org is unreachable from some build hosts; mirror the setting used
+# by app/mall/Dockerfile so the MinIO source build resolves modules reliably.
+ENV GOPROXY=https://goproxy.cn,direct
 RUN CGO_ENABLED=0 GOBIN=/out go install github.com/minio/minio@RELEASE.2025-04-22T22-12-26Z
 
 FROM alpine:3.22
