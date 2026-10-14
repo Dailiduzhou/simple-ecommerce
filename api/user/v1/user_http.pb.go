@@ -43,14 +43,22 @@ type UserHTTPServer interface {
 	ChangePassword(context.Context, *ChangePasswordRequest) (*ChangePasswordReply, error)
 	ClearBrowsingHistory(context.Context, *ClearBrowsingHistoryRequest) (*ClearBrowsingHistoryReply, error)
 	// CreateShippingAddress Shipping Addresses
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	CreateShippingAddress(context.Context, *CreateShippingAddressRequest) (*ShippingAddress, error)
 	DeleteBrowsingHistoryItem(context.Context, *DeleteBrowsingHistoryItemRequest) (*DeleteBrowsingHistoryItemReply, error)
+	// DeleteShippingAddress Delete shipping address
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	DeleteShippingAddress(context.Context, *DeleteShippingAddressRequest) (*DeleteShippingAddressReply, error)
 	// DeleteUser Physically deletes accounts without retained transaction/audit history.
 	// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	DeleteUser(context.Context, *DeleteUserRequest) (*DeleteUserReply, error)
+	// GetUser Get user
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	GetUser(context.Context, *GetUserRequest) (*UserInfo, error)
 	ListBrowsingHistory(context.Context, *ListBrowsingHistoryRequest) (*ListBrowsingHistoryReply, error)
+	// ListShippingAddresses List shipping addresses
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	ListShippingAddresses(context.Context, *ListShippingAddressesRequest) (*ListShippingAddressesReply, error)
 	// Login Password checks share an account quota across all IPs (default burst 5,
 	// one check replenished every 30 seconds). Rejections do not extend the wait.
@@ -61,8 +69,14 @@ type UserHTTPServer interface {
 	RecordProductView(context.Context, *RecordProductViewRequest) (*RecordProductViewReply, error)
 	RefreshToken(context.Context, *RefreshRequest) (*RefreshReply, error)
 	Register(context.Context, *RegisterRequest) (*RegisterReply, error)
+	// SetDefaultShippingAddress Set default shipping address
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	SetDefaultShippingAddress(context.Context, *SetDefaultShippingAddressRequest) (*SetDefaultShippingAddressReply, error)
+	// UpdateShippingAddress Update shipping address
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	UpdateShippingAddress(context.Context, *UpdateShippingAddressRequest) (*ShippingAddress, error)
+	// UpdateUser Update user
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	UpdateUser(context.Context, *UpdateUserRequest) (*UserInfo, error)
 }
 
@@ -473,14 +487,22 @@ type UserHTTPClient interface {
 	ChangePassword(ctx context.Context, req *ChangePasswordRequest, opts ...http.CallOption) (rsp *ChangePasswordReply, err error)
 	ClearBrowsingHistory(ctx context.Context, req *ClearBrowsingHistoryRequest, opts ...http.CallOption) (rsp *ClearBrowsingHistoryReply, err error)
 	// CreateShippingAddress Shipping Addresses
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	CreateShippingAddress(ctx context.Context, req *CreateShippingAddressRequest, opts ...http.CallOption) (rsp *ShippingAddress, err error)
 	DeleteBrowsingHistoryItem(ctx context.Context, req *DeleteBrowsingHistoryItemRequest, opts ...http.CallOption) (rsp *DeleteBrowsingHistoryItemReply, err error)
+	// DeleteShippingAddress Delete shipping address
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	DeleteShippingAddress(ctx context.Context, req *DeleteShippingAddressRequest, opts ...http.CallOption) (rsp *DeleteShippingAddressReply, err error)
 	// DeleteUser Physically deletes accounts without retained transaction/audit history.
 	// Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	DeleteUser(ctx context.Context, req *DeleteUserRequest, opts ...http.CallOption) (rsp *DeleteUserReply, err error)
+	// GetUser Get user
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	GetUser(ctx context.Context, req *GetUserRequest, opts ...http.CallOption) (rsp *UserInfo, err error)
 	ListBrowsingHistory(ctx context.Context, req *ListBrowsingHistoryRequest, opts ...http.CallOption) (rsp *ListBrowsingHistoryReply, err error)
+	// ListShippingAddresses List shipping addresses
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	ListShippingAddresses(ctx context.Context, req *ListShippingAddressesRequest, opts ...http.CallOption) (rsp *ListShippingAddressesReply, err error)
 	// Login Password checks share an account quota across all IPs (default burst 5,
 	// one check replenished every 30 seconds). Rejections do not extend the wait.
@@ -491,8 +513,14 @@ type UserHTTPClient interface {
 	RecordProductView(ctx context.Context, req *RecordProductViewRequest, opts ...http.CallOption) (rsp *RecordProductViewReply, err error)
 	RefreshToken(ctx context.Context, req *RefreshRequest, opts ...http.CallOption) (rsp *RefreshReply, err error)
 	Register(ctx context.Context, req *RegisterRequest, opts ...http.CallOption) (rsp *RegisterReply, err error)
+	// SetDefaultShippingAddress Set default shipping address
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	SetDefaultShippingAddress(ctx context.Context, req *SetDefaultShippingAddressRequest, opts ...http.CallOption) (rsp *SetDefaultShippingAddressReply, err error)
+	// UpdateShippingAddress Update shipping address
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	UpdateShippingAddress(ctx context.Context, req *UpdateShippingAddressRequest, opts ...http.CallOption) (rsp *ShippingAddress, err error)
+	// UpdateUser Update user
+	// Only the resource owner may call this operation; administrators have no ownership exemption.
 	UpdateUser(ctx context.Context, req *UpdateUserRequest, opts ...http.CallOption) (rsp *UserInfo, err error)
 }
 
@@ -533,6 +561,7 @@ func (c *UserHTTPClientImpl) ClearBrowsingHistory(ctx context.Context, in *Clear
 }
 
 // CreateShippingAddress Shipping Addresses
+// Only the resource owner may call this operation; administrators have no ownership exemption.
 func (c *UserHTTPClientImpl) CreateShippingAddress(ctx context.Context, in *CreateShippingAddressRequest, opts ...http.CallOption) (*ShippingAddress, error) {
 	var out ShippingAddress
 	pattern := "/v1/users/{user_id}/addresses"
@@ -559,6 +588,8 @@ func (c *UserHTTPClientImpl) DeleteBrowsingHistoryItem(ctx context.Context, in *
 	return &out, nil
 }
 
+// DeleteShippingAddress Delete shipping address
+// Only the resource owner may call this operation; administrators have no ownership exemption.
 func (c *UserHTTPClientImpl) DeleteShippingAddress(ctx context.Context, in *DeleteShippingAddressRequest, opts ...http.CallOption) (*DeleteShippingAddressReply, error) {
 	var out DeleteShippingAddressReply
 	pattern := "/v1/users/{user_id}/addresses/{id}"
@@ -574,6 +605,7 @@ func (c *UserHTTPClientImpl) DeleteShippingAddress(ctx context.Context, in *Dele
 
 // DeleteUser Physically deletes accounts without retained transaction/audit history.
 // Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
+// Only the resource owner may call this operation; administrators have no ownership exemption.
 func (c *UserHTTPClientImpl) DeleteUser(ctx context.Context, in *DeleteUserRequest, opts ...http.CallOption) (*DeleteUserReply, error) {
 	var out DeleteUserReply
 	pattern := "/v1/users/{id}"
@@ -587,6 +619,8 @@ func (c *UserHTTPClientImpl) DeleteUser(ctx context.Context, in *DeleteUserReque
 	return &out, nil
 }
 
+// GetUser Get user
+// Only the resource owner may call this operation; administrators have no ownership exemption.
 func (c *UserHTTPClientImpl) GetUser(ctx context.Context, in *GetUserRequest, opts ...http.CallOption) (*UserInfo, error) {
 	var out UserInfo
 	pattern := "/v1/users/{id}"
@@ -613,6 +647,8 @@ func (c *UserHTTPClientImpl) ListBrowsingHistory(ctx context.Context, in *ListBr
 	return &out, nil
 }
 
+// ListShippingAddresses List shipping addresses
+// Only the resource owner may call this operation; administrators have no ownership exemption.
 func (c *UserHTTPClientImpl) ListShippingAddresses(ctx context.Context, in *ListShippingAddressesRequest, opts ...http.CallOption) (*ListShippingAddressesReply, error) {
 	var out ListShippingAddressesReply
 	pattern := "/v1/users/{user_id}/addresses"
@@ -695,6 +731,8 @@ func (c *UserHTTPClientImpl) Register(ctx context.Context, in *RegisterRequest, 
 	return &out, nil
 }
 
+// SetDefaultShippingAddress Set default shipping address
+// Only the resource owner may call this operation; administrators have no ownership exemption.
 func (c *UserHTTPClientImpl) SetDefaultShippingAddress(ctx context.Context, in *SetDefaultShippingAddressRequest, opts ...http.CallOption) (*SetDefaultShippingAddressReply, error) {
 	var out SetDefaultShippingAddressReply
 	pattern := "/v1/users/{user_id}/addresses/{id}/default"
@@ -708,6 +746,8 @@ func (c *UserHTTPClientImpl) SetDefaultShippingAddress(ctx context.Context, in *
 	return &out, nil
 }
 
+// UpdateShippingAddress Update shipping address
+// Only the resource owner may call this operation; administrators have no ownership exemption.
 func (c *UserHTTPClientImpl) UpdateShippingAddress(ctx context.Context, in *UpdateShippingAddressRequest, opts ...http.CallOption) (*ShippingAddress, error) {
 	var out ShippingAddress
 	pattern := "/v1/users/{user_id}/addresses/{id}"
@@ -721,6 +761,8 @@ func (c *UserHTTPClientImpl) UpdateShippingAddress(ctx context.Context, in *Upda
 	return &out, nil
 }
 
+// UpdateUser Update user
+// Only the resource owner may call this operation; administrators have no ownership exemption.
 func (c *UserHTTPClientImpl) UpdateUser(ctx context.Context, in *UpdateUserRequest, opts ...http.CallOption) (*UserInfo, error) {
 	var out UserInfo
 	pattern := "/v1/users/{id}"

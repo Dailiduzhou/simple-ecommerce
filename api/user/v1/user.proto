@@ -39,9 +39,13 @@ service User {
       body: "*"
     };
   }
+  // Get user
+  // Only the resource owner may call this operation; administrators have no ownership exemption.
   rpc GetUser(GetUserRequest) returns (UserInfo) {
     option (google.api.http) = {get: "/v1/users/{id}"};
   }
+  // Update user
+  // Only the resource owner may call this operation; administrators have no ownership exemption.
   rpc UpdateUser(UpdateUserRequest) returns (UserInfo) {
     option (google.api.http) = {
       put: "/v1/users/{id}"
@@ -58,32 +62,42 @@ service User {
   }
   // Physically deletes accounts without retained transaction/audit history.
   // Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
+  // Only the resource owner may call this operation; administrators have no ownership exemption.
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {
     option (google.api.http) = {delete: "/v1/users/{id}"};
   }
 
   // Shipping Addresses
+  // Only the resource owner may call this operation; administrators have no ownership exemption.
   rpc CreateShippingAddress(CreateShippingAddressRequest) returns (ShippingAddress) {
     option (google.api.http) = {
       post: "/v1/users/{user_id}/addresses"
       body: "*"
     };
   }
+  // List shipping addresses
+  // Only the resource owner may call this operation; administrators have no ownership exemption.
   rpc ListShippingAddresses(ListShippingAddressesRequest) returns (ListShippingAddressesReply) {
     option (google.api.http) = {get: "/v1/users/{user_id}/addresses"};
   }
+  // Update shipping address
+  // Only the resource owner may call this operation; administrators have no ownership exemption.
   rpc UpdateShippingAddress(UpdateShippingAddressRequest) returns (ShippingAddress) {
     option (google.api.http) = {
       put: "/v1/users/{user_id}/addresses/{id}"
       body: "*"
     };
   }
+  // Set default shipping address
+  // Only the resource owner may call this operation; administrators have no ownership exemption.
   rpc SetDefaultShippingAddress(SetDefaultShippingAddressRequest) returns (SetDefaultShippingAddressReply) {
     option (google.api.http) = {
       post: "/v1/users/{user_id}/addresses/{id}/default"
       body: "*"
     };
   }
+  // Delete shipping address
+  // Only the resource owner may call this operation; administrators have no ownership exemption.
   rpc DeleteShippingAddress(DeleteShippingAddressRequest) returns (DeleteShippingAddressReply) {
     option (google.api.http) = {delete: "/v1/users/{user_id}/addresses/{id}"};
   }

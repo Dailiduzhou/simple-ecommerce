@@ -34,6 +34,9 @@ const OperationPaymentRetryPaymentReconciliation = "/api.payment.v1.Payment/Retr
 
 type PaymentHTTPServer interface {
 	// ClosePayment 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+	// Close intent and a retry job are persisted atomically before contacting the provider.
+	// On failure close_pending remains fenced: issued Alipay actions require confirmed closure
+	// or a fresh absence query after their expiry plus a safety margin before stock is released.
 	ClosePayment(context.Context, *ClosePaymentReq) (*ClosePaymentReply, error)
 	// CreatePayment 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
 	// 同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
@@ -46,6 +49,8 @@ type PaymentHTTPServer interface {
 	ListPaymentReconciliationActions(context.Context, *ListReconciliationActionsRequest) (*ListReconciliationActionsReply, error)
 	ListPaymentReconciliations(context.Context, *ListReconciliationCasesRequest) (*ListReconciliationCasesReply, error)
 	// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+	// Alipay APP/WAP may return 404 PAYMENT_PROVIDER_ORDER_NOT_EXIST until the buyer opens the signed action.
+	// This does not mean the local payment is closed; background polling waits through the payment window.
 	QueryPayment(context.Context, *QueryPaymentReq) (*QueryPaymentReply, error)
 	// RefundPayment 管理员对指定支付发起整笔全额退款。
 	RefundPayment(context.Context, *RefundPaymentRequest) (*RefundPaymentReply, error)
@@ -342,6 +347,9 @@ func _Payment_GetMQJob0_HTTP_Handler(srv PaymentHTTPServer) func(ctx http.Contex
 
 type PaymentHTTPClient interface {
 	// ClosePayment 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+	// Close intent and a retry job are persisted atomically before contacting the provider.
+	// On failure close_pending remains fenced: issued Alipay actions require confirmed closure
+	// or a fresh absence query after their expiry plus a safety margin before stock is released.
 	ClosePayment(ctx context.Context, req *ClosePaymentReq, opts ...http.CallOption) (rsp *ClosePaymentReply, err error)
 	// CreatePayment 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
 	// 同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
@@ -354,6 +362,8 @@ type PaymentHTTPClient interface {
 	ListPaymentReconciliationActions(ctx context.Context, req *ListReconciliationActionsRequest, opts ...http.CallOption) (rsp *ListReconciliationActionsReply, err error)
 	ListPaymentReconciliations(ctx context.Context, req *ListReconciliationCasesRequest, opts ...http.CallOption) (rsp *ListReconciliationCasesReply, err error)
 	// QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+	// Alipay APP/WAP may return 404 PAYMENT_PROVIDER_ORDER_NOT_EXIST until the buyer opens the signed action.
+	// This does not mean the local payment is closed; background polling waits through the payment window.
 	QueryPayment(ctx context.Context, req *QueryPaymentReq, opts ...http.CallOption) (rsp *QueryPaymentReply, err error)
 	// RefundPayment 管理员对指定支付发起整笔全额退款。
 	RefundPayment(ctx context.Context, req *RefundPaymentRequest, opts ...http.CallOption) (rsp *RefundPaymentReply, err error)
@@ -371,6 +381,9 @@ func NewPaymentHTTPClient(client *http.Client) PaymentHTTPClient {
 }
 
 // ClosePayment 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+// Close intent and a retry job are persisted atomically before contacting the provider.
+// On failure close_pending remains fenced: issued Alipay actions require confirmed closure
+// or a fresh absence query after their expiry plus a safety margin before stock is released.
 func (c *PaymentHTTPClientImpl) ClosePayment(ctx context.Context, in *ClosePaymentReq, opts ...http.CallOption) (*ClosePaymentReply, error) {
 	var out ClosePaymentReply
 	pattern := "/v1/payments/lookup/close"
@@ -479,6 +492,8 @@ func (c *PaymentHTTPClientImpl) ListPaymentReconciliations(ctx context.Context, 
 }
 
 // QueryPayment 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+// Alipay APP/WAP may return 404 PAYMENT_PROVIDER_ORDER_NOT_EXIST until the buyer opens the signed action.
+// This does not mean the local payment is closed; background polling waits through the payment window.
 func (c *PaymentHTTPClientImpl) QueryPayment(ctx context.Context, in *QueryPaymentReq, opts ...http.CallOption) (*QueryPaymentReply, error) {
 	var out QueryPaymentReply
 	pattern := "/v1/payments/lookup"
