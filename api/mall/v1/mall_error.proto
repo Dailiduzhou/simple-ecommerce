@@ -19,5 +19,10 @@ enum ErrorReason {
   PRODUCT_STATUS_INVALID = 4 [(errors.code) = 400];
   CATEGORY_HAS_PRODUCTS = 5 [(errors.code) = 409];
   CATEGORY_HAS_CHILDREN = 8 [(errors.code) = 409];
+  PRODUCT_PRICE_INVALID = 9 [(errors.code) = 400];
+  PRODUCT_DISCOUNT_INVALID = 10 [(errors.code) = 400];
+  PRODUCT_NAME_INVALID = 11 [(errors.code) = 400];
+  PRODUCT_STOCK_INVALID = 12 [(errors.code) = 400];
+  PRODUCT_INVALID = 13 [(errors.code) = 400];
   SHIPPING_ADDRESS_NOT_FOUND = 6 [(errors.code) = 404];
 }

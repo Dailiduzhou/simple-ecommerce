@@ -107,6 +107,66 @@ func ErrorCategoryHasChildren(format string, args ...interface{}) *errors.Error 
 	return errors.New(409, ErrorReason_CATEGORY_HAS_CHILDREN.String(), fmt.Sprintf(format, args...))
 }
 
+func IsProductPriceInvalid(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PRODUCT_PRICE_INVALID.String() && e.Code == 400
+}
+
+func ErrorProductPriceInvalid(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_PRODUCT_PRICE_INVALID.String(), fmt.Sprintf(format, args...))
+}
+
+func IsProductDiscountInvalid(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PRODUCT_DISCOUNT_INVALID.String() && e.Code == 400
+}
+
+func ErrorProductDiscountInvalid(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_PRODUCT_DISCOUNT_INVALID.String(), fmt.Sprintf(format, args...))
+}
+
+func IsProductNameInvalid(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PRODUCT_NAME_INVALID.String() && e.Code == 400
+}
+
+func ErrorProductNameInvalid(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_PRODUCT_NAME_INVALID.String(), fmt.Sprintf(format, args...))
+}
+
+func IsProductStockInvalid(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PRODUCT_STOCK_INVALID.String() && e.Code == 400
+}
+
+func ErrorProductStockInvalid(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_PRODUCT_STOCK_INVALID.String(), fmt.Sprintf(format, args...))
+}
+
+func IsProductInvalid(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_PRODUCT_INVALID.String() && e.Code == 400
+}
+
+func ErrorProductInvalid(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_PRODUCT_INVALID.String(), fmt.Sprintf(format, args...))
+}
+
 func IsShippingAddressNotFound(err error) bool {
 	if err == nil {
 		return false

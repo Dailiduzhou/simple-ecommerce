@@ -25,6 +25,8 @@ service Payment {
   }
 
   // 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+  // Alipay APP/WAP may return 404 PAYMENT_PROVIDER_ORDER_NOT_EXIST until the buyer opens the signed action.
+  // This does not mean the local payment is closed; background polling waits through the payment window.
   rpc QueryPayment(QueryPaymentReq) returns (QueryPaymentReply) {
     option (google.api.http) = {
       get: "/v1/payments/lookup"
@@ -32,6 +34,9 @@ service Payment {
   }
 
   // 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+  // Close intent and a retry job are persisted atomically before contacting the provider.
+  // On failure close_pending remains fenced: issued Alipay actions require confirmed closure
+  // or a fresh absence query after their expiry plus a safety margin before stock is released.
   rpc ClosePayment(ClosePaymentReq) returns (ClosePaymentReply) {
     option (google.api.http) = {
       post: "/v1/payments/lookup/close"
