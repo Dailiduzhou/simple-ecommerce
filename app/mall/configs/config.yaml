@@ -9,6 +9,8 @@ server:
     # limiting. Leave empty when the service is exposed directly; every entry
     # lets that hop decide the client address.
     trusted_proxies: []
+    cors_allowed_origins: "${HTTP_CORS_ALLOWED_ORIGINS:}"
+    cors_allow_credentials: "${HTTP_CORS_ALLOW_CREDENTIALS:false}"
   grpc:
     addr: 0.0.0.0:9000
     timeout: 10s

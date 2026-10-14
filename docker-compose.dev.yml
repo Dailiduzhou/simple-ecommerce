@@ -30,7 +30,7 @@ services:
       timeout: 3s
       retries: 20
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -46,7 +46,7 @@ services:
       timeout: 3s
       retries: 20
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   jaeger:
     image: jaegertracing/all-in-one:1.60
@@ -131,6 +131,8 @@ services:
         condition: service_started
     environment:
       APP_IS_PRODUCTION: ${APP_IS_PRODUCTION:-false}
+      HTTP_CORS_ALLOWED_ORIGINS: ${HTTP_CORS_ALLOWED_ORIGINS:-}
+      HTTP_CORS_ALLOW_CREDENTIALS: ${HTTP_CORS_ALLOW_CREDENTIALS:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DATABASE_SOURCE: ${DATABASE_SOURCE:-postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
@@ -170,7 +172,7 @@ services:
       - mall_logs:/app/logs
     ports:
       - "8000:8000"
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
 
 volumes:
   minio_data:

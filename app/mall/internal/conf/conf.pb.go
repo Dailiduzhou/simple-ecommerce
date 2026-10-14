@@ -943,8 +943,11 @@ type Server_HTTP struct {
 	// CIDRs of reverse proxies whose X-Forwarded-For may be trusted. Empty
 	// means no proxy is trusted and the transport peer address is used.
 	TrustedProxies []string `protobuf:"bytes,4,rep,name=trusted_proxies,json=trustedProxies,proto3" json:"trusted_proxies,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Comma-separated exact HTTP(S) origins. Empty disables production CORS.
+	CorsAllowedOrigins   string `protobuf:"bytes,5,opt,name=cors_allowed_origins,json=corsAllowedOrigins,proto3" json:"cors_allowed_origins,omitempty"`
+	CorsAllowCredentials bool   `protobuf:"varint,6,opt,name=cors_allow_credentials,json=corsAllowCredentials,proto3" json:"cors_allow_credentials,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Server_HTTP) Reset() {
@@ -1003,6 +1006,20 @@ func (x *Server_HTTP) GetTrustedProxies() []string {
 		return x.TrustedProxies
 	}
 	return nil
+}
+
+func (x *Server_HTTP) GetCorsAllowedOrigins() string {
+	if x != nil {
+		return x.CorsAllowedOrigins
+	}
+	return ""
+}
+
+func (x *Server_HTTP) GetCorsAllowCredentials() bool {
+	if x != nil {
+		return x.CorsAllowCredentials
+	}
+	return false
 }
 
 type Server_GRPC struct {
@@ -1259,16 +1276,18 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\fphone_secret\x18\x05 \x01(\tR\vphoneSecret\x127\n" +
 	"\x18auth_requests_per_minute\x18\x06 \x01(\x05R\x15authRequestsPerMinute\x12.\n" +
 	"\x13login_account_burst\x18\a \x01(\x05R\x11loginAccountBurst\x12O\n" +
-	"\x16login_account_interval\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginAccountInterval\"\x9e\x03\n" +
+	"\x16login_account_interval\x18\b \x01(\v2\x19.google.protobuf.DurationR\x14loginAccountInterval\"\x86\x04\n" +
 	"\x06Server\x12+\n" +
 	"\x04http\x18\x01 \x01(\v2\x17.kratos.api.Server.HTTPR\x04http\x12+\n" +
 	"\x04grpc\x18\x02 \x01(\v2\x17.kratos.api.Server.GRPCR\x04grpc\x12(\n" +
-	"\ris_production\x18\x03 \x01(\bH\x00R\fisProduction\x88\x01\x01\x1a\x92\x01\n" +
+	"\ris_production\x18\x03 \x01(\bH\x00R\fisProduction\x88\x01\x01\x1a\xfa\x01\n" +
 	"\x04HTTP\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +
 	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeout\x12'\n" +
-	"\x0ftrusted_proxies\x18\x04 \x03(\tR\x0etrustedProxies\x1ai\n" +
+	"\x0ftrusted_proxies\x18\x04 \x03(\tR\x0etrustedProxies\x120\n" +
+	"\x14cors_allowed_origins\x18\x05 \x01(\tR\x12corsAllowedOrigins\x124\n" +
+	"\x16cors_allow_credentials\x18\x06 \x01(\bR\x14corsAllowCredentials\x1ai\n" +
 	"\x04GRPC\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +
