@@ -111,3 +111,58 @@ func TestAnonymousBusinessPaymentAPIStillRequiresJWT(t *testing.T) {
 	server.ServeHTTP(response, request)
 	require.Equal(t, http.StatusUnauthorized, response.Code)
 }
+
+func TestAuthenticationPrecedesProtoValidation(t *testing.T) {
+	server := newHTTPTestServer(&callbackPaymentUsecase{})
+	request := httptest.NewRequest(http.MethodPost, "/v1/orders", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	require.Equal(t, http.StatusUnauthorized, response.Code)
+}
+
+func TestPathCodecErrorIsSanitized(t *testing.T) {
+	server := newHTTPTestServer(&callbackPaymentUsecase{})
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/users/register", nil))
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Contains(t, response.Body.String(), "INVALID_ARGUMENT")
+	require.NotContains(t, response.Body.String(), "strconv")
+	require.NotContains(t, response.Body.String(), "parsing field")
+}
+
+func TestProductionCORSAllowlist(t *testing.T) {
+	production := true
+	server := newHTTPTestServerWithConfig(&callbackPaymentUsecase{}, &conf.Server{IsProduction: &production, Http: &conf.Server_HTTP{CorsAllowedOrigins: "https://shop.example"}})
+	for _, tc := range []struct {
+		origin, method, headers string
+		code                    int
+	}{
+		{"https://shop.example", "POST", "Authorization, Content-Type", 204},
+		{"http://evil.example", "GET", "", 403},
+		{"https://shop.example.evil.example", "GET", "", 403},
+		{"null", "GET", "", 403},
+		{"https://shop.example", "TRACE", "", 403},
+		{"https://shop.example", "POST", "X-Arbitrary-Header", 403},
+	} {
+		req := httptest.NewRequest(http.MethodOptions, "/v1/orders", nil)
+		req.Header.Set("Origin", tc.origin)
+		req.Header.Set("Access-Control-Request-Method", tc.method)
+		req.Header.Set("Access-Control-Request-Headers", tc.headers)
+		res := httptest.NewRecorder()
+		server.ServeHTTP(res, req)
+		require.Equal(t, tc.code, res.Code)
+		require.Empty(t, res.Header().Get("Access-Control-Allow-Credentials"))
+		if tc.code == 204 {
+			require.Equal(t, tc.origin, res.Header().Get("Access-Control-Allow-Origin"))
+		} else {
+			require.Empty(t, res.Header().Get("Access-Control-Allow-Origin"))
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v1/orders/1", nil)
+	req.Header.Set("Origin", "https://shop.example")
+	res := httptest.NewRecorder()
+	server.ServeHTTP(res, req)
+	require.Equal(t, http.StatusUnauthorized, res.Code)
+	require.Equal(t, "https://shop.example", res.Header().Get("Access-Control-Allow-Origin"))
+}
