@@ -53,3 +53,33 @@ func TestMonitoringStackIsNotExposedUnauthenticated(t *testing.T) {
 		})
 	}
 }
+
+func TestProductionDeploymentSecurityDefaults(t *testing.T) {
+	for _, file := range []string{"../docker-compose.yml", "../docker-compose.dev.yml"} {
+		raw, err := os.ReadFile(file)
+		require.NoError(t, err)
+		var compose struct {
+			Services map[string]struct {
+				Environment map[string]string `yaml:"environment"`
+				Ports       []string          `yaml:"ports"`
+			}
+		}
+		require.NoError(t, yaml.Unmarshal(raw, &compose))
+		for name, service := range compose.Services {
+			for _, port := range service.Ports {
+				if name == "mall" && port == "8000:8000" {
+					continue
+				}
+				require.True(t, strings.HasPrefix(port, "127.0.0.1:"), "private service port: %s %s", name, port)
+			}
+		}
+		if file == "../docker-compose.yml" {
+			env := compose.Services["mall"].Environment
+			require.Equal(t, "true", env["APP_IS_PRODUCTION"])
+			require.Equal(t, "true", env["STORAGE_USE_TLS"])
+			require.Equal(t, "true", env["STORAGE_PUBLIC_USE_TLS"])
+			require.Equal(t, "false", env["STORAGE_ALLOW_INSECURE"])
+			require.NotContains(t, env["STORAGE_PUBLIC_ENDPOINT"], "localhost")
+		}
+	}
+}
