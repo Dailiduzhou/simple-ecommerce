@@ -1,0 +1,35 @@
+# Build context is the repository root (docker build -f app/mall/Dockerfile .).
+# The builder stage only needs go.mod, go.sum, api/, app/mall/, internal/ and
+# pkg/, so everything listed here is dead weight in the context tarball
+# (it was ~85 MB before, ~3 MB after).
+
+# --- VCS and local tooling caches (the bulk of it) ---
+.git
+.gitignore
+.codegraph
+.agents
+.claude
+.codex
+.commandcode
+.github
+
+# --- local secrets; configuration is mounted at /data/conf, never baked in ---
+.env
+.env.*
+
+# --- docs, audits, generated API specs ---
+docs/
+*.md
+
+# --- assets used at runtime/CI, never copied into the image ---
+deploy/
+docker-compose*.yml
+tools/
+third_party/
+
+# --- editor and OS noise ---
+.idea/
+.vscode/
+.DS_Store
+*.log
+*.tmp
