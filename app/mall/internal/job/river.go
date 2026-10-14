@@ -71,6 +71,14 @@ func (w *CheckPayWorker) Work(ctx context.Context, job *river.Job[biz.CheckPayAr
 	}
 
 	result, err := w.paymentGateway.Query(ctx, biz.PaymentQueryRequest{Method: method, OutTradeNo: payment.OutTradeNo, TransactionID: payment.ThirdPartyTxID})
+	// Locally signed Alipay actions do not exist at the provider until opened.
+	// Treat ordinary poll absence as pending, not a technical failure that burns
+	// all River attempts. Notification checks still require provider evidence.
+	if errors.Is(err, biz.ErrProviderOrderNotExist) && args.NotificationID == 0 &&
+		method.Provider == "alipay" && (method.Product == "wap" || method.Product == "app") {
+		err = nil
+		result = &biz.PaymentQueryResult{TradeState: biz.TradeStateNotPay}
+	}
 	if err != nil {
 		observability.PaymentReconcileJob(ctx, args.Provider, "technical_error")
 		return w.retryable(ctx, args, err)

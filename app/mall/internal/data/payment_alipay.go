@@ -207,6 +207,11 @@ func (a *AlipayPaymentAdapter) Close(ctx context.Context, req biz.PaymentCloseRe
 		result.Success = true
 		return result, nil
 	}
+	// Absence is not proof of closure: previously issued APP/WAP links may
+	// still be invoked. The durable close worker confirms absence after expiry.
+	if response.ErrResponse.Code == alipayCodeTradeNotExist {
+		return result, biz.ErrProviderOrderNotExist
+	}
 	if response.ErrResponse.Code == "ACQ.TRADE_STATUS_ERROR" {
 		return result, biz.ErrProviderTradeStateConflict
 	}
@@ -214,7 +219,8 @@ func (a *AlipayPaymentAdapter) Close(ctx context.Context, req biz.PaymentCloseRe
 		result.Success = true
 		return result, nil
 	}
-	return result, fmt.Errorf("alipay close rejected: HTTP %d %s %s", response.StatusCode, response.ErrResponse.Code, response.ErrResponse.Message)
+	a.log.WithContext(ctx).Errorf("alipay close rejected: HTTP %d %s %s", response.StatusCode, response.ErrResponse.Code, response.ErrResponse.Message)
+	return result, errors.Conflict("PAYMENT_PROVIDER_REJECTED", "provider rejected the close request")
 }
 
 func (a *AlipayPaymentAdapter) Refund(ctx context.Context, req biz.PaymentRefundRequest) (*biz.PaymentRefundResult, error) {

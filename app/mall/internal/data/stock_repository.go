@@ -26,7 +26,7 @@ func (r *ProductRepo) AdjustStock(ctx context.Context, input biz.StockAdjustment
 		if err != nil {
 			return err
 		}
-		categoryID = product.CategoryID
+		categoryID = product.CategoryID.Int64
 		adjustment, err = q.GetStockAdjustment(ctx, db.GetStockAdjustmentParams{ProductID: input.ProductID, IdempotencyKey: input.IdempotencyKey})
 		if err == nil {
 			if adjustment.ActorID != input.ActorID || adjustment.Delta != input.Delta || adjustment.Reason != input.Reason {

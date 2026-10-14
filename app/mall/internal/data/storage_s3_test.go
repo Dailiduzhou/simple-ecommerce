@@ -2,7 +2,11 @@ package data
 
 import (
 	"context"
+	mediav1 "github.com/Dailiduzhou/simple-ecommerce/api/media/v1"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +45,14 @@ func TestStorageFactoryAndSeparateSigningEndpoint(t *testing.T) {
 	require.NoError(t, e)
 	require.Equal(t, "https", u.Scheme)
 	require.Equal(t, "images.example.test", u.Host)
+	// Probe only the internal endpoint; signing continues to use the public host.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodHead, r.Method)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	s, e = NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: strings.TrimPrefix(server.URL, "http://"), PublicEndpoint: "images.example.test", PublicUseTls: true, AllowInsecure: true, Bucket: "private", AccessKeyEnv: "TEST_S3_ACCESS", SecretKeyEnv: "TEST_S3_SECRET"})
+	require.NoError(t, e)
 	ref.Key = "uploads/unique"
 	g, e := s.CreateUpload(context.Background(), ref, "image/png", 100, time.Now().Add(time.Minute))
 	require.NoError(t, e)
@@ -63,5 +75,23 @@ func TestCommunityAndMediaPoliciesRejectDangerousConfiguration(t *testing.T) {
 	for _, c := range []*conf.Storage{{ReadTtlSeconds: 901}, {UploadTtlSeconds: 3601}, {UnusedRetentionHours: -1}} {
 		_, e := NewMediaPolicy(c)
 		require.Error(t, e)
+	}
+}
+
+func TestStorageUploadProbeFailsClosed(t *testing.T) {
+	t.Setenv("TEST_S3_ACCESS", "test-access")
+	t.Setenv("TEST_S3_SECRET", "test-secret")
+	for _, code := range []int{http.StatusForbidden, http.StatusNotFound} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }))
+		s, err := NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: strings.TrimPrefix(server.URL, "http://"), AllowInsecure: true, Bucket: "private", AccessKeyEnv: "TEST_S3_ACCESS", SecretKeyEnv: "TEST_S3_SECRET"})
+		require.NoError(t, err)
+		grant, err := s.CreateUpload(context.Background(), biz.ObjectRef{Provider: "s3", Bucket: "private", Key: "uploads/test"}, "image/png", 100, time.Now().Add(time.Minute))
+		require.True(t, mediav1.IsStorageUnavailable(err))
+		require.Empty(t, grant.URL)
+		server.Close()
+	}
+	for _, host := range []string{"", "localhost:9002", "127.0.0.1:9002", "[::1]:9002", "0.0.0.0:9002"} {
+		_, err := NewObjectStorage(&conf.Storage{Provider: "s3", Endpoint: "internal.example", UseTls: true, PublicEndpoint: host, PublicUseTls: true, Bucket: "private", AccessKeyEnv: "TEST_S3_ACCESS", SecretKeyEnv: "TEST_S3_SECRET"})
+		require.ErrorContains(t, err, "public_endpoint")
 	}
 }

@@ -183,7 +183,7 @@ func (mr *MockQuerierMockRecorder) ConfirmPaymentRefunded(ctx, id interface{}) *
 }
 
 // CountCategoryProductReferences mocks base method.
-func (m *MockQuerier) CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error) {
+func (m *MockQuerier) CountCategoryProductReferences(ctx context.Context, categoryID pgtype.Int8) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CountCategoryProductReferences", ctx, categoryID)
 	ret0, _ := ret[0].(int64)
@@ -243,7 +243,7 @@ func (mr *MockQuerierMockRecorder) CountProducts(ctx interface{}) *gomock.Call {
 }
 
 // CountProductsByCategory mocks base method.
-func (m *MockQuerier) CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error) {
+func (m *MockQuerier) CountProductsByCategory(ctx context.Context, categoryID pgtype.Int8) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CountProductsByCategory", ctx, categoryID)
 	ret0, _ := ret[0].(int64)
@@ -616,11 +616,12 @@ func (mr *MockQuerierMockRecorder) DeleteComment(ctx, arg interface{}) *gomock.C
 }
 
 // DeleteShippingAddress mocks base method.
-func (m *MockQuerier) DeleteShippingAddress(ctx context.Context, arg db.DeleteShippingAddressParams) error {
+func (m *MockQuerier) DeleteShippingAddress(ctx context.Context, arg db.DeleteShippingAddressParams) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteShippingAddress", ctx, arg)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // DeleteShippingAddress indicates an expected call of DeleteShippingAddress.
@@ -2328,11 +2329,12 @@ func (mr *MockQuerierMockRecorder) SoftDeletePost(ctx, arg interface{}) *gomock.
 }
 
 // SoftDeleteProduct mocks base method.
-func (m *MockQuerier) SoftDeleteProduct(ctx context.Context, id int64) error {
+func (m *MockQuerier) SoftDeleteProduct(ctx context.Context, id int64) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SoftDeleteProduct", ctx, id)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // SoftDeleteProduct indicates an expected call of SoftDeleteProduct.

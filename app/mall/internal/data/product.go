@@ -6,10 +6,12 @@ import (
 	stderrors "errors"
 	"time"
 
+	mallv1 "github.com/Dailiduzhou/simple-ecommerce/api/mall/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 )
@@ -46,7 +48,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 		return nil, err
 	}
 	p, err := querierFromContext(ctx, r.data.q).CreateProduct(ctx, db.CreateProductParams{
-		CategoryID:  categoryID,
+		CategoryID:  productCategoryID(categoryID),
 		Name:        name,
 		PriceMinor:  minor,
 		Discount:    discount,
@@ -57,7 +59,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 		Description: pgtype.Text{String: descrption, Valid: descrption != ""},
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapProductError(err)
 	}
 	bizProduct := toBizProduct(p)
 	r.invalidateProduct(ctx, bizProduct.ID, categoryID)
@@ -77,7 +79,7 @@ func (r *ProductRepo) DecrProductStock(ctx context.Context, ID int64, amount int
 	if err != nil {
 		return 0, err
 	}
-	r.invalidateProduct(ctx, ID, product.CategoryID)
+	r.invalidateProduct(ctx, ID, product.CategoryID.Int64)
 	return stock, nil
 }
 
@@ -113,7 +115,7 @@ func (r *ProductRepo) ListProductsByCategory(ctx context.Context, categoryID int
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", categoryID, "gen"))
 	key := generationCacheKey(generation, redisKey("product", "category", categoryID, generation, limit, offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
-		rows, err := r.data.DB(ctx).ListProductsByCategory(ctx, db.ListProductsByCategoryParams{CategoryID: categoryID, Limit: limit, Offset: offset})
+		rows, err := r.data.DB(ctx).ListProductsByCategory(ctx, db.ListProductsByCategoryParams{CategoryID: productCategoryID(categoryID), Limit: limit, Offset: offset})
 		if err != nil {
 			return nil, err
 		}
@@ -125,13 +127,16 @@ func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
 	q := querierFromContext(ctx, r.data.q)
 	existing, err := q.GetProduct(ctx, id)
 	if err != nil {
-		return err
+		return mapProductError(err)
 	}
-	err = q.SoftDeleteProduct(ctx, id)
+	deleted, err := q.SoftDeleteProduct(ctx, id)
 	if err != nil {
-		return err
+		return mapProductError(err)
 	}
-	r.invalidateProduct(ctx, id, existing.CategoryID)
+	if deleted == 0 {
+		return biz.ErrProductNotFound
+	}
+	r.invalidateProduct(ctx, id, existing.CategoryID.Int64)
 	return nil
 }
 
@@ -154,11 +159,11 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 	q := querierFromContext(ctx, r.data.q)
 	existing, err := q.GetProduct(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, mapProductError(err)
 	}
 	p, err := q.UpdateProduct(ctx, db.UpdateProductParams{
 		ID:          id,
-		CategoryID:  categoryID,
+		CategoryID:  productCategoryID(categoryID),
 		Name:        name,
 		PriceMinor:  minor,
 		Discount:    discount,
@@ -167,10 +172,10 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		Description: pgtype.Text{String: descrption, Valid: descrption != ""},
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapProductError(err)
 	}
 	bizProduct := toBizProduct(p)
-	r.invalidateProduct(ctx, id, existing.CategoryID, categoryID)
+	r.invalidateProduct(ctx, id, existing.CategoryID.Int64, categoryID)
 	return &bizProduct, nil
 }
 
@@ -184,7 +189,7 @@ func (r *ProductRepo) UpdateProductStatus(ctx context.Context, ID int64, status 
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return biz.ErrProductNotFound
 		}
-		return err
+		return mapProductError(err)
 	}
 	_, err = q.UpdateProductStatus(ctx, db.UpdateProductStatusParams{
 		ID:     ID,
@@ -194,9 +199,9 @@ func (r *ProductRepo) UpdateProductStatus(ctx context.Context, ID int64, status 
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return biz.ErrProductNotFound
 		}
-		return err
+		return mapProductError(err)
 	}
-	r.invalidateProduct(ctx, ID, existing.CategoryID)
+	r.invalidateProduct(ctx, ID, existing.CategoryID.Int64)
 	return nil
 }
 
@@ -255,7 +260,7 @@ func (r *ProductRepo) invalidateProduct(ctx context.Context, productID int64, ca
 func toBizProduct(p db.Product) biz.Product {
 	return biz.Product{
 		ID:          p.ID,
-		CategoryID:  p.CategoryID,
+		CategoryID:  p.CategoryID.Int64,
 		Name:        p.Name,
 		Price:       decimal.NewFromInt(p.PriceMinor).Shift(-2),
 		Discount:    p.Discount,
@@ -298,7 +303,25 @@ func parseMediaInfoJSON(data []byte) []biz.MediaInfo {
 
 func (r *ProductRepo) CountProducts(ctx context.Context, categoryID int64) (int64, error) {
 	if categoryID > 0 {
-		return r.data.DB(ctx).CountProductsByCategory(ctx, categoryID)
+		return r.data.DB(ctx).CountProductsByCategory(ctx, productCategoryID(categoryID))
 	}
 	return r.data.DB(ctx).CountProducts(ctx)
 }
+
+func mapProductError(err error) error {
+	if stderrors.Is(err, pgx.ErrNoRows) {
+		return biz.ErrProductNotFound
+	}
+	var pgErr *pgconn.PgError
+	if stderrors.As(err, &pgErr) {
+		switch {
+		case pgErr.Code == "23503" && pgErr.ConstraintName == "fk_product_category":
+			return biz.ErrCategoryNotFound
+		case pgErr.Code == "23514":
+			return mallv1.ErrorProductInvalid("product violates a domain constraint")
+		}
+	}
+	return err
+}
+
+func productCategoryID(id int64) pgtype.Int8 { return pgtype.Int8{Int64: id, Valid: true} }

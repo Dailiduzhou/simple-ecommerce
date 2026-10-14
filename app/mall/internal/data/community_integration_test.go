@@ -342,7 +342,7 @@ func TestCommunityIntegrationPostsLikesAndComments(t *testing.T) {
 	require.Equal(t, c.ID, replies[0].ID)
 	require.True(t, communityv1.IsForbidden(f.comments.Delete(ctx, f.actor, post.ID, b.ID)), "post author does not own others' comments")
 	require.NoError(t, f.comments.Delete(ctx, f.other, post.ID, b.ID))
-	require.NoError(t, f.comments.Delete(ctx, f.other, post.ID, b.ID))
+	require.True(t, communityv1.IsCommentNotFound(f.comments.Delete(ctx, f.other, post.ID, b.ID)))
 	replies, _, e = f.comments.List(ctx, post.ID, root.ID, pageFor(t, "reply", 20))
 	require.NoError(t, e)
 	require.Len(t, replies, 1)

@@ -228,7 +228,7 @@ type PostLike struct {
 
 type Product struct {
 	ID         int64
-	CategoryID int64
+	CategoryID pgtype.Int8
 	Name       string
 	PriceMinor int64
 	Discount   decimal.Decimal

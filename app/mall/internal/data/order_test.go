@@ -52,7 +52,7 @@ func TestOrderRepo_CreateCalculatesDatabasePriceAndSnapshotsAtomically(t *testin
 	q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 	q.EXPECT().LockUserForReference(gomock.Any(), int64(42)).Return(int64(42), nil)
 	q.EXPECT().GetShippingAddressForSnapshot(gomock.Any(), db.GetShippingAddressForSnapshotParams{ID: 9, UserID: 42}).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
-	product := db.Product{ID: 3, Discount: decimal.NewFromInt(1), CategoryID: 7, Name: "server product", PriceMinor: 5000, Stock: 10, Status: 1, CoverImage: []byte(`[{"OssURL":"cover"}]`)}
+	product := db.Product{ID: 3, Discount: decimal.NewFromInt(1), CategoryID: productCategoryID(7), Name: "server product", PriceMinor: 5000, Stock: 10, Status: 1, CoverImage: []byte(`[{"OssURL":"cover"}]`)}
 	q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(product, nil)
 	q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.CreateOrderParams) (db.Order, error) {
 		require.Equal(t, int64(10000), args.TotalAmountMinor)
@@ -259,7 +259,7 @@ func TestOrderRepo_CreateRejectsInvalidAmountAndPropagatesAtomicFailures(t *test
 		q.EXPECT().GetOrderByUserIdempotency(gomock.Any(), gomock.Any()).Return(db.Order{}, pgx.ErrNoRows)
 		q.EXPECT().LockUserForReference(gomock.Any(), int64(42)).Return(int64(42), nil)
 		q.EXPECT().GetShippingAddressForSnapshot(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
-		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, Discount: decimal.NewFromInt(1), CategoryID: 7, PriceMinor: 5000, Stock: 10, Status: 1}, nil)
+		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(db.Product{ID: 3, Discount: decimal.NewFromInt(1), CategoryID: productCategoryID(7), PriceMinor: 5000, Stock: 10, Status: 1}, nil)
 		q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).Return(db.Order{ID: 1, UserID: 42}, nil)
 		q.EXPECT().DecrProductStock(gomock.Any(), gomock.Any()).Return(int32(9), nil)
 		q.EXPECT().CreateOrderItem(gomock.Any(), gomock.Any()).Return(db.OrderItem{}, nil)
@@ -395,7 +395,7 @@ func TestOrderRepo_CreateChargesDiscountedPriceAndSnapshotsEffectiveUnitPrice(t 
 		q.EXPECT().LockUserForReference(gomock.Any(), int64(42)).Return(int64(42), nil)
 		q.EXPECT().GetShippingAddressForSnapshot(gomock.Any(), gomock.Any()).Return(db.ShippingAddress{ID: 9, UserID: 42}, nil)
 		// 12.34 CNY at 85% must charge 10.49 per unit, not the list price.
-		product := db.Product{ID: 3, CategoryID: 7, Name: "sale item", PriceMinor: 1234, Discount: decimal.RequireFromString("0.85"), Stock: 10, Status: 1}
+		product := db.Product{ID: 3, CategoryID: productCategoryID(7), Name: "sale item", PriceMinor: 1234, Discount: decimal.RequireFromString("0.85"), Stock: 10, Status: 1}
 		q.EXPECT().GetProductForOrder(gomock.Any(), int64(3)).Return(product, nil)
 		q.EXPECT().CreateOrder(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, args db.CreateOrderParams) (db.Order, error) {
 			require.Equal(t, int64(2098), args.TotalAmountMinor)

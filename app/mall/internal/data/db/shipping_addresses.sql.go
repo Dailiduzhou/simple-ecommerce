@@ -85,7 +85,7 @@ func (q *Queries) CreateShippingAddress(ctx context.Context, arg CreateShippingA
 	return i, err
 }
 
-const deleteShippingAddress = `-- name: DeleteShippingAddress :exec
+const deleteShippingAddress = `-- name: DeleteShippingAddress :execrows
 DELETE FROM shipping_addresses
 WHERE id = $1
   AND user_id = $2
@@ -96,9 +96,12 @@ type DeleteShippingAddressParams struct {
 	UserID int64
 }
 
-func (q *Queries) DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) error {
-	_, err := q.db.Exec(ctx, deleteShippingAddress, arg.ID, arg.UserID)
-	return err
+func (q *Queries) DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteShippingAddress, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getDefaultShippingAddress = `-- name: GetDefaultShippingAddress :one

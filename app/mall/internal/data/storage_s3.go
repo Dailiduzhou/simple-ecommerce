@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -47,6 +48,18 @@ func NewObjectStorage(c *conf.Storage) (biz.ObjectStorage, error) {
 	}
 	if c.PublicEndpoint != "" && !c.GetPublicUseTls() && !c.GetAllowInsecure() {
 		return nil, fmt.Errorf("storage.public_use_tls is disabled: presigned read URLs would travel in cleartext; enable TLS or set storage.allow_insecure=true for local development only")
+	}
+	// Production grants must use an explicitly configured client-facing host.
+	if !c.GetAllowInsecure() {
+		u, err := url.Parse("https://" + c.PublicEndpoint)
+		if err != nil || c.PublicEndpoint == "" || u.Hostname() == "" {
+			return nil, fmt.Errorf("storage.public_endpoint must be a client-reachable hostname")
+		}
+		host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+		ip := net.ParseIP(host)
+		if host == "localhost" || strings.HasSuffix(host, ".localhost") || (ip != nil && (ip.IsLoopback() || ip.IsUnspecified())) {
+			return nil, fmt.Errorf("storage.public_endpoint must not be a loopback or unspecified address")
+		}
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 15 * time.Second
@@ -120,6 +133,17 @@ func (s *S3Storage) CreateUpload(ctx context.Context, ref biz.ObjectRef, mime st
 	}
 	if !strings.HasPrefix(ref.Key, "uploads/") || size < 1 || size > biz.MaxImageBytes || !expires.After(time.Now()) {
 		return g, mediav1.ErrorInvalidImage("invalid upload grant")
+	}
+	// Signing alone is local and would report success even when the bucket is
+	// unreachable. Bound the probe independently of transport/request timeouts.
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	exists, err := s.client.BucketExists(probeCtx, ref.Bucket)
+	cancel()
+	if err != nil {
+		return g, storageError(err)
+	}
+	if !exists {
+		return g, mediav1.ErrorStorageUnavailable("object storage bucket is unavailable")
 	}
 	p := minio.NewPostPolicy()
 	for _, e := range []error{p.SetBucket(ref.Bucket), p.SetKey(ref.Key), p.SetContentType(mime), p.SetContentLengthRange(size, size), p.SetExpires(expires)} {

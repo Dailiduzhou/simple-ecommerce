@@ -574,3 +574,16 @@ func TestPrepayForOrder_RejectsOverlongDescription(t *testing.T) {
 func (r *paymentTestRepo) GetPaymentForJob(ctx context.Context, id int64) (*PaymentDO, error) {
 	return r.GetPayment(ctx, id)
 }
+
+func TestClosePaymentProviderFailureKeepsDurableCloseIntent(t *testing.T) {
+	for _, failure := range []error{ErrProviderOrderNotExist, context.DeadlineExceeded} {
+		payment := &PaymentDO{ID: 7, UserID: 42, Method: "alipay:wap", OutTradeNo: "payment_7", Status: PaymentStatusPending}
+		repo := &paymentTestRepo{payment: payment}
+		gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsClose: true}, closeErr: failure}
+		uc := NewPaymentUsecase(gateway, repo, nil, nil, &paymentTestJobs{}, nil, nil, log.DefaultLogger)
+		_, err := uc.ClosePayment(context.Background(), payment.OutTradeNo, payment.UserID)
+		require.ErrorIs(t, err, failure)
+		require.True(t, repo.closePending, "durable close operation must remain recoverable")
+		require.False(t, repo.applied, "unconfirmed closure must not release stock")
+	}
+}

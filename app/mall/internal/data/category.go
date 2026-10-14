@@ -72,7 +72,7 @@ func (r *CategoryRepo) categoryDeletionRefusal(ctx context.Context, q db.Querier
 		}
 		return err
 	}
-	if count, err := q.CountCategoryProductReferences(ctx, id); err != nil {
+	if count, err := q.CountCategoryProductReferences(ctx, productCategoryID(id)); err != nil {
 		return err
 	} else if count > 0 {
 		return biz.ErrCategoryHasProducts

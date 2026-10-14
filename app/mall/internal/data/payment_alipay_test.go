@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	kerrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/go-pay/gopay"
 	alipayv3 "github.com/go-pay/gopay/alipay/v3"
@@ -173,4 +174,21 @@ func TestAlipayRefundTimeoutIsBounded(t *testing.T) {
 	})
 	require.True(t, requester.hadDeadline)
 	require.Less(t, time.Since(started), time.Second)
+}
+
+func TestAlipayCloseAbsenceIsNotProofOfClosure(t *testing.T) {
+	requester := &fakeAlipayTradeRequester{closeRsp: &alipayv3.TradeCloseRsp{StatusCode: http.StatusBadRequest, ErrResponse: alipayv3.ErrResponse{Code: alipayCodeTradeNotExist}}}
+	adapter := newAlipayPaymentAdapterForTest(nil, requester, log.DefaultLogger)
+	result, err := adapter.Close(context.Background(), biz.PaymentCloseRequest{OutTradeNo: "payment_1"})
+	require.ErrorIs(t, err, biz.ErrProviderOrderNotExist)
+	require.False(t, result.Success)
+}
+
+func TestAlipayCloseRejectionDoesNotExposeProviderMessage(t *testing.T) {
+	requester := &fakeAlipayTradeRequester{closeRsp: &alipayv3.TradeCloseRsp{StatusCode: http.StatusBadRequest, ErrResponse: alipayv3.ErrResponse{Code: "ACQ.UNKNOWN", Message: "private provider diagnostics"}}}
+	adapter := newAlipayPaymentAdapterForTest(nil, requester, log.DefaultLogger)
+	_, err := adapter.Close(context.Background(), biz.PaymentCloseRequest{OutTradeNo: "payment_1"})
+	require.Equal(t, 409, kerrors.Code(err))
+	require.Equal(t, "PAYMENT_PROVIDER_REJECTED", kerrors.Reason(err))
+	require.NotContains(t, err.Error(), "private provider diagnostics")
 }
