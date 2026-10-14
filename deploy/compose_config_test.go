@@ -60,6 +60,7 @@ func TestProductionDeploymentSecurityDefaults(t *testing.T) {
 		require.NoError(t, err)
 		var compose struct {
 			Services map[string]struct {
+				Image       string            `yaml:"image"`
 				Environment map[string]string `yaml:"environment"`
 				Ports       []string          `yaml:"ports"`
 			}
@@ -70,7 +71,16 @@ func TestProductionDeploymentSecurityDefaults(t *testing.T) {
 				if name == "mall" && port == "8000:8000" {
 					continue
 				}
+				// The S3 endpoint hands out presigned upload URLs, so clients must be
+				// able to reach it directly; its console stays on loopback.
+				if name == "minio" && port == "9002:9000" {
+					continue
+				}
 				require.True(t, strings.HasPrefix(port, "127.0.0.1:"), "private service port: %s %s", name, port)
+			}
+			if name == "minio" {
+				// Upstream only publishes a moving `latest`, so the digest is the pin.
+				require.Contains(t, service.Image, "@sha256:", "object storage must be pinned by digest: %s", service.Image)
 			}
 		}
 		if file == "../docker-compose.yml" {

@@ -1,6 +1,7 @@
-# The community edition is source-only; do not depend on the retired
-# quay.io/minio/minio or Docker Hub minio/minio image repositories.
-# Keep the same fixed MinIO release for CI and local development.
+# Docker Hub publishes only a moving `latest` tag for the community server and
+# no versioned release tags, so this build exists to pin a specific release.
+# The compose files normally run the digest-pinned image instead; this path
+# needs a Go toolchain and is for CI or a reproducible upgrade.
 FROM golang:1.24-bookworm AS build
 # proxy.golang.org is unreachable from some build hosts; mirror the setting used
 # by app/mall/Dockerfile so the MinIO source build resolves modules reliably.
