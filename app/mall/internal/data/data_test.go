@@ -76,6 +76,8 @@ func TestEmbeddedMigrationsAvailable(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		"000001_init_schema.up.sql",
 		"000001_init_schema.down.sql",
+		"000002_products_category_nullable.up.sql",
+		"000002_products_category_nullable.down.sql",
 	}, names)
 
 	initSchema, err := fs.ReadFile(dbmigrations.FS, "migrations/000001_init_schema.up.sql")
@@ -87,6 +89,34 @@ func TestEmbeddedMigrationsAvailable(t *testing.T) {
 	assert.Contains(t, string(initSchema), "payment_id BIGINT")
 	assert.Contains(t, string(initSchema), "last_error TEXT NOT NULL DEFAULT ''")
 	assert.Contains(t, string(initSchema), "CREATE UNIQUE INDEX idx_order_refunds_payment_id")
+}
+
+// 改写 init SQL 只对新库生效：已经记录为 migrated 的部署不会重新执行它。可空分类列
+// 与配套约束/触发器必须同时以前向迁移的形式存在，否则线上库停留在旧形态。
+func TestForwardMigrationCoversRewrittenInitSchema(t *testing.T) {
+	up, err := fs.ReadFile(dbmigrations.FS, "migrations/000002_products_category_nullable.up.sql")
+	require.NoError(t, err)
+	down, err := fs.ReadFile(dbmigrations.FS, "migrations/000002_products_category_nullable.down.sql")
+	require.NoError(t, err)
+
+	assert.Contains(t, string(up), "ALTER TABLE products ALTER COLUMN category_id DROP NOT NULL")
+	assert.Contains(t, string(up), "ADD CONSTRAINT products_category_check")
+	assert.Contains(t, string(up), "CREATE OR REPLACE FUNCTION enqueue_projection_invalidation()")
+
+	assert.Contains(t, string(down), "ALTER TABLE products ALTER COLUMN category_id SET NOT NULL")
+	assert.Contains(t, string(down), "DROP CONSTRAINT IF EXISTS products_category_check")
+
+	// 迁移必须与 init SQL 描述同一套 schema，任何一侧单独改动都会被这里发现。
+	initSchema, err := fs.ReadFile(dbmigrations.FS, "migrations/000001_init_schema.up.sql")
+	require.NoError(t, err)
+	for _, fragment := range []string{
+		"CHECK (deleted_at IS NOT NULL OR category_id IS NOT NULL)",
+		"'product:category:' || COALESCE(current_row.category_id, 0) || ':gen'",
+		"IF TG_OP = 'UPDATE' AND OLD.category_id IS DISTINCT FROM NEW.category_id THEN",
+	} {
+		assert.Contains(t, string(initSchema), fragment)
+		assert.Contains(t, string(up), fragment)
+	}
 }
 
 // A nested InTx must fail loudly instead of quietly opening a second
