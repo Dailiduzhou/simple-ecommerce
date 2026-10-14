@@ -65,7 +65,7 @@ SET is_default = TRUE,
 WHERE id = $1
   AND user_id = $2;
 
--- name: DeleteShippingAddress :exec
+-- name: DeleteShippingAddress :execrows
 DELETE FROM shipping_addresses
 WHERE id = $1
   AND user_id = $2;

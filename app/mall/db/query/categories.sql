@@ -34,11 +34,10 @@ FROM categories
 WHERE parent_id = $1;
 
 -- name: CountCategoryProductReferences :one
--- Any product row still owns a foreign key to the category; soft-deleted rows
--- count too, because the FK is not conditional on deleted_at.
+-- Soft-deleted products detach their category reference.
 SELECT COUNT(*)
 FROM products
-WHERE category_id = $1;
+WHERE category_id = $1 AND deleted_at IS NULL;
 
 -- name: DeleteCategoryIfUnused :execrows
 -- 单条语句完成"没有子类、没有被商品引用"检查与删除：避免应用层
@@ -46,4 +45,4 @@ WHERE category_id = $1;
 DELETE FROM categories
 WHERE categories.id = $1
   AND NOT EXISTS (SELECT 1 FROM categories child WHERE child.parent_id = categories.id)
-  AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = categories.id);
+  AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = categories.id AND p.deleted_at IS NULL);

@@ -63,7 +63,7 @@ CREATE INDEX idx_categories_parent_id ON categories(parent_id);
 
 CREATE TABLE products (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  category_id BIGINT NOT NULL,
+  category_id BIGINT,
   name VARCHAR(255) NOT NULL,
   price_minor BIGINT NOT NULL DEFAULT 0,
   discount NUMERIC NOT NULL DEFAULT 1.00,
@@ -77,6 +77,8 @@ CREATE TABLE products (
   deleted_at TIMESTAMPTZ,
   CONSTRAINT fk_product_category
     FOREIGN KEY (category_id) REFERENCES categories(id),
+  -- Deleted products release their category FK; live products must retain it.
+  CONSTRAINT products_category_check CHECK (deleted_at IS NOT NULL OR category_id IS NOT NULL),
   CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1 AND discount = round(discount, 2)),
   -- 库存与价格不允许为负：扣减/回补逻辑一旦出错，这里直接拒绝而不是让脏数据落库。
   CONSTRAINT products_stock_check CHECK (stock >= 0),
@@ -517,9 +519,9 @@ BEGIN
   CASE TG_TABLE_NAME
     WHEN 'products' THEN
       targets := ARRAY['product:' || current_row.id || ':gen', 'product:list:gen',
-                       'product:category:' || current_row.category_id || ':gen'];
-      IF TG_OP = 'UPDATE' AND OLD.category_id <> NEW.category_id THEN
-        targets := array_append(targets, 'product:category:' || OLD.category_id || ':gen');
+                       'product:category:' || COALESCE(current_row.category_id, 0) || ':gen'];
+      IF TG_OP = 'UPDATE' AND OLD.category_id IS DISTINCT FROM NEW.category_id THEN
+        targets := array_append(targets, 'product:category:' || COALESCE(OLD.category_id, 0) || ':gen');
       END IF;
     WHEN 'orders' THEN
       targets := ARRAY['order:user:' || current_row.user_id || ':gen',
