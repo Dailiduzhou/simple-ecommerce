@@ -39,10 +39,10 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 
 	opts := []grpc.ServerOption{
 		grpc.Middleware(
+			custommid.SanitizeErrors(logger),
 			recovery.Recovery(),
 			tracing.Server(),
 			custommid.SafeLogging(logger),
-			validatorv2.ProtoValidate(),
 			selector.Server(
 				jwtMiddleware,
 				custommid.InjectClaims(),
@@ -50,6 +50,7 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 			).
 				Match(grpcWhiteListMatcher()).
 				Build(),
+			validatorv2.ProtoValidate(),
 			// gRPC has no forwarded headers: the resolver always uses the peer.
 			custommid.CommunityWriteLimit(limiter, nil),
 		),

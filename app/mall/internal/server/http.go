@@ -54,18 +54,22 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 	}
 
 	filters := []http.FilterFunc{custommid.CommunityBodyLimit}
-	if c.IsProduction != nil && !c.GetIsProduction() {
+	if c.Http.GetCorsAllowedOrigins() != "" {
+		filters = append([]http.FilterFunc{custommid.AllowlistCORS(strings.Split(c.Http.GetCorsAllowedOrigins(), ","), c.Http.GetCorsAllowCredentials())}, filters...)
+	}
+	if c.IsProduction != nil && !c.GetIsProduction() && c.Http.GetCorsAllowedOrigins() == "" {
 		// CORS must wrap body limits, routing and authentication so preflights
 		// short-circuit them and error responses also carry CORS headers.
 		filters = append([]http.FilterFunc{custommid.DevelopmentCORS}, filters...)
 	}
 	opts := []http.ServerOption{
 		http.Filter(filters...),
+		http.ErrorEncoder(custommid.ErrorEncoder),
 		http.Middleware(
+			custommid.SanitizeErrors(logger),
 			recovery.Recovery(),
 			tracing.Server(),
 			custommid.SafeLogging(logger),
-			validatorv2.ProtoValidate(),
 			selector.Server(
 				jwtMiddleware,
 				custommid.InjectClaims(),
@@ -73,6 +77,7 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 			).
 				Match(newWhiteListMatcher()).
 				Build(),
+			validatorv2.ProtoValidate(),
 			custommid.CommunityWriteLimit(limiter, clientIP),
 		),
 	}
