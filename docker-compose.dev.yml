@@ -1,10 +1,10 @@
 services:
   minio:
-    # Build the fixed community source release; upstream images are unavailable.
-    image: ecommerce-minio:local
-    build:
-      context: .
-      dockerfile: deploy/minio.Dockerfile
+    # Upstream publishes only the moving `latest` tag, so pin the digest that
+    # matches RELEASE.2025-09-07T16-13-09Z. Building a specific release from
+    # source is what deploy/minio.Dockerfile is for, but it needs a Go
+    # toolchain and is not required for local development.
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     profiles: [storage]
     entrypoint: ["/bin/sh", "-ec"]
     command:
