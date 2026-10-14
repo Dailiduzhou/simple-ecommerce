@@ -1378,7 +1378,10 @@ paths:
             tags:
                 - Payment
             summary: 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
-            description: 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+            description: |-
+                统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+                 Alipay APP/WAP may return 404 PAYMENT_PROVIDER_ORDER_NOT_EXIST until the buyer opens the signed action.
+                 This does not mean the local payment is closed; background polling waits through the payment window.
             operationId: Payment_QueryPayment
             parameters:
                 - name: outTradeNo
@@ -1439,7 +1442,11 @@ paths:
             tags:
                 - Payment
             summary: 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
-            description: 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+            description: |-
+                统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+                 Close intent and a retry job are persisted atomically before contacting the provider.
+                 On failure close_pending remains fenced: issued Alipay actions require confirmed closure
+                 or a fresh absence query after their expiry plus a safety margin before stock is released.
             operationId: Payment_ClosePayment
             requestBody:
                 content:
@@ -3679,6 +3686,9 @@ paths:
             tags:
                 - User
             summary: Get user
+            description: |-
+                Get user
+                 Only the resource owner may call this operation; administrators have no ownership exemption.
             operationId: User_GetUser
             parameters:
                 - name: id
@@ -3740,6 +3750,9 @@ paths:
             tags:
                 - User
             summary: Update user
+            description: |-
+                Update user
+                 Only the resource owner may call this operation; administrators have no ownership exemption.
             operationId: User_UpdateUser
             parameters:
                 - name: id
@@ -3810,6 +3823,7 @@ paths:
             description: |-
                 Physically deletes accounts without retained transaction/audit history.
                  Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
+                 Only the resource owner may call this operation; administrators have no ownership exemption.
             operationId: User_DeleteUser
             parameters:
                 - name: id
@@ -3872,6 +3886,9 @@ paths:
             tags:
                 - User
             summary: List shipping addresses
+            description: |-
+                List shipping addresses
+                 Only the resource owner may call this operation; administrators have no ownership exemption.
             operationId: User_ListShippingAddresses
             parameters:
                 - name: user_id
@@ -3946,7 +3963,9 @@ paths:
             tags:
                 - User
             summary: Shipping Addresses
-            description: Shipping Addresses
+            description: |-
+                Shipping Addresses
+                 Only the resource owner may call this operation; administrators have no ownership exemption.
             operationId: User_CreateShippingAddress
             parameters:
                 - name: user_id
@@ -4015,6 +4034,9 @@ paths:
             tags:
                 - User
             summary: Update shipping address
+            description: |-
+                Update shipping address
+                 Only the resource owner may call this operation; administrators have no ownership exemption.
             operationId: User_UpdateShippingAddress
             parameters:
                 - name: user_id
@@ -4088,6 +4110,9 @@ paths:
             tags:
                 - User
             summary: Delete shipping address
+            description: |-
+                Delete shipping address
+                 Only the resource owner may call this operation; administrators have no ownership exemption.
             operationId: User_DeleteShippingAddress
             parameters:
                 - name: user_id
@@ -4156,6 +4181,9 @@ paths:
             tags:
                 - User
             summary: Set default shipping address
+            description: |-
+                Set default shipping address
+                 Only the resource owner may call this operation; administrators have no ownership exemption.
             operationId: User_SetDefaultShippingAddress
             parameters:
                 - name: user_id
