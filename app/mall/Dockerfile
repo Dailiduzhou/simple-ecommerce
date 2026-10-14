@@ -12,6 +12,7 @@ RUN go mod download
 
 COPY api/ ./api/
 COPY app/mall/ ./app/mall/
+COPY internal/ ./internal/
 COPY pkg/ ./pkg/
 
 # 编译二进制文件
