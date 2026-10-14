@@ -42,6 +42,9 @@ message Server {
     // CIDRs of reverse proxies whose X-Forwarded-For may be trusted. Empty
     // means no proxy is trusted and the transport peer address is used.
     repeated string trusted_proxies = 4;
+    // Comma-separated exact HTTP(S) origins. Empty disables production CORS.
+    string cors_allowed_origins = 5;
+    bool cors_allow_credentials = 6;
   }
   message GRPC {
     string network = 1;
