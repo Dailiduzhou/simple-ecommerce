@@ -55,8 +55,8 @@ type Querier interface {
 	DecrProductStock(ctx context.Context, arg DecrProductStockParams) (int32, error)
 	DeleteBrowsingHistoryItem(ctx context.Context, arg DeleteBrowsingHistoryItemParams) error
 	DeleteCacheInvalidations(ctx context.Context, dollar_1 []int64) error
-	// 单条语句完成"没有子类、没有被商品引用"检查与删除：避免应用层
-	// check-then-delete 的 TOCTOU 竞争。返回 0 行表示未删除。
+	// Return 0 when existing children/products prevent deletion. Restrictive foreign
+	// keys also reject references committed after this statement's snapshot.
 	DeleteCategoryIfUnused(ctx context.Context, id int64) (int64, error)
 	DeleteComment(ctx context.Context, arg DeleteCommentParams) (int64, error)
 	DeleteShippingAddress(ctx context.Context, arg DeleteShippingAddressParams) error

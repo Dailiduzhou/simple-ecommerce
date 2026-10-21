@@ -72,8 +72,8 @@ WHERE categories.id = $1
   AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = categories.id)
 `
 
-// 单条语句完成"没有子类、没有被商品引用"检查与删除：避免应用层
-// check-then-delete 的 TOCTOU 竞争。返回 0 行表示未删除。
+// Return 0 when existing children/products prevent deletion. Restrictive foreign
+// keys also reject references committed after this statement's snapshot.
 func (q *Queries) DeleteCategoryIfUnused(ctx context.Context, id int64) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteCategoryIfUnused, id)
 	if err != nil {
