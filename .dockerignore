@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+.codegraph
+.claude
+.agents
+.codex
+docs
+coverage.out
+*.log
+tmp/
