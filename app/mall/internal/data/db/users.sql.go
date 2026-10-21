@@ -111,7 +111,8 @@ const lockUserForAddress = `-- name: LockUserForAddress :one
 SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE
 `
 
-// Serialize default-address switches even when the user has no default yet.
+// Serialize default-address creation, switching and address deletion, even
+// when the user has no default yet. Acquire this before locking address rows.
 // Allow checkout's user FK KEY SHARE lock while it holds an address FOR SHARE.
 func (q *Queries) LockUserForAddress(ctx context.Context, id int64) (int64, error) {
 	row := q.db.QueryRow(ctx, lockUserForAddress, id)

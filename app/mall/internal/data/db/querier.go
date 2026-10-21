@@ -111,6 +111,8 @@ type Querier interface {
 	GetShippingAddress(ctx context.Context, arg GetShippingAddressParams) (ShippingAddress, error)
 	// Prevent update/delete until the order has copied this exact address row.
 	GetShippingAddressForSnapshot(ctx context.Context, arg GetShippingAddressForSnapshotParams) (ShippingAddress, error)
+	// Always lock the user first, then the address, like default creation/deletion.
+	GetShippingAddressForUpdate(ctx context.Context, arg GetShippingAddressForUpdateParams) (ShippingAddress, error)
 	GetStockAdjustment(ctx context.Context, arg GetStockAdjustmentParams) (StockAdjustment, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (User, error)
@@ -165,7 +167,8 @@ type Querier interface {
 	// Expired unbound resources are handled by full cleanup, not a second job.
 	LockStagingCleanupMedia(ctx context.Context, limit int32) ([]LockStagingCleanupMediaRow, error)
 	LockUserCommunityPosts(ctx context.Context, authorID pgtype.Int8) ([]Post, error)
-	// Serialize default-address switches even when the user has no default yet.
+	// Serialize default-address creation, switching and address deletion, even
+	// when the user has no default yet. Acquire this before locking address rows.
 	// Allow checkout's user FK KEY SHARE lock while it holds an address FOR SHARE.
 	LockUserForAddress(ctx context.Context, id int64) (int64, error)
 	// Take the user FK lock before dependent rows, matching account deletion's
@@ -208,7 +211,7 @@ type Querier interface {
 	RestoreOrderItemStock(ctx context.Context, orderID int64) error
 	RetryOrderRefund(ctx context.Context, id int64) (OrderRefund, error)
 	RetryPaymentReconciliation(ctx context.Context, arg RetryPaymentReconciliationParams) (Payment, error)
-	SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) error
+	SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) (int64, error)
 	SetPaymentNotificationRiverJob(ctx context.Context, arg SetPaymentNotificationRiverJobParams) error
 	SoftDeleteEvent(ctx context.Context, id int64) error
 	SoftDeletePost(ctx context.Context, arg SoftDeletePostParams) (int64, error)

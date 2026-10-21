@@ -20,6 +20,14 @@ FROM shipping_addresses
 WHERE id = $1
   AND user_id = $2;
 
+-- name: GetShippingAddressForUpdate :one
+-- Always lock the user first, then the address, like default creation/deletion.
+SELECT *
+FROM shipping_addresses
+WHERE id = $1
+  AND user_id = $2
+FOR UPDATE;
+
 -- name: ListShippingAddressesByUser :many
 SELECT *
 FROM shipping_addresses
@@ -58,7 +66,7 @@ SET is_default = FALSE,
     updated_at = CURRENT_TIMESTAMP
 WHERE user_id = $1;
 
--- name: SetDefaultShippingAddress :exec
+-- name: SetDefaultShippingAddress :execrows
 UPDATE shipping_addresses
 SET is_default = TRUE,
     updated_at = CURRENT_TIMESTAMP

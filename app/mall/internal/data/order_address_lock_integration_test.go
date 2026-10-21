@@ -69,6 +69,8 @@ func TestDefaultAddressLockAllowsConcurrentCheckoutIntegration(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	require.NoError(t, q.SetDefaultShippingAddress(ctx, db.SetDefaultShippingAddressParams{ID: f.addressID, UserID: f.userID}))
+	rows, err := q.SetDefaultShippingAddress(ctx, db.SetDefaultShippingAddressParams{ID: f.addressID, UserID: f.userID})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
 	require.NoError(t, switchTx.Commit(ctx))
 }
