@@ -1,0 +1,56 @@
+# Overlay for docker-compose.yml. Requires Docker Compose >= 2.24.4.
+services:
+  postgres:
+    restart: unless-stopped
+    ports: !reset []
+
+  redis:
+    restart: unless-stopped
+    ports: !reset []
+
+  mall:
+    restart: unless-stopped
+    image: ${MALL_IMAGE:?set the immutable mall image reference}
+    environment:
+      APP_IS_PRODUCTION: ${APP_IS_PRODUCTION:-true}
+      STORAGE_PROVIDER: s3
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?set the server-reachable MinIO API endpoint}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:?set the browser-reachable MinIO API endpoint}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-ecommerce-test-images}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?set a dedicated MinIO application access key}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?set a dedicated MinIO application secret key}
+      STORAGE_USE_TLS: ${STORAGE_USE_TLS:-true}
+      STORAGE_PUBLIC_USE_TLS: ${STORAGE_PUBLIC_USE_TLS:-true}
+      STORAGE_ALLOW_INSECURE: ${STORAGE_ALLOW_INSECURE:-false}
+    # Do not inherit the public HTTP/gRPC mappings from the base file.
+    ports: !override
+      - "${MALL_BIND_ADDRESS:-127.0.0.1}:${MALL_HTTP_PORT:-8000}:8000"
+    healthcheck:
+      # There is no public health API. A 404 at / proves the HTTP listener has
+      # started after bootstrap/migrations; this is not a deep dependency check.
+      test: ["CMD-SHELL", "wget -S -O /dev/null -T 5 http://127.0.0.1:8000/ 2>&1 | grep -q 'HTTP/1.1 404'"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
+
+  minio:
+    # Use the image ALREADY loaded on the test server. Never build or pull it.
+    image: ${MINIO_IMAGE:-ecommerce-minio:local}
+    pull_policy: never
+    profiles: [storage]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - 'test -n "$${MINIO_ROOT_USER}" && test -n "$${MINIO_ROOT_PASSWORD}" || { echo "Set separate MinIO administrator credentials" >&2; exit 1; }; exec minio server /data --console-address :9001'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9002}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9003}:9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  minio_data:
