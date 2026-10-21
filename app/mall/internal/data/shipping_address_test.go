@@ -54,11 +54,13 @@ func TestSetDefaultShippingAddressIsAtomicAndInvalidatesBothDetails(t *testing.T
 	ctrl := gomock.NewController(t)
 	q := mockdb.NewMockQuerier(ctrl)
 	redisServer := miniredis.RunT(t)
-	q.EXPECT().LockUserForAddress(gomock.Any(), int64(2)).Return(int64(2), nil)
-	q.EXPECT().GetShippingAddress(gomock.Any(), db.GetShippingAddressParams{ID: 9, UserID: 2}).Return(db.ShippingAddress{ID: 9, UserID: 2}, nil)
-	q.EXPECT().GetDefaultShippingAddress(gomock.Any(), int64(2)).Return(db.ShippingAddress{ID: 8, UserID: 2, IsDefault: true}, nil)
-	q.EXPECT().ClearDefaultShippingAddress(gomock.Any(), int64(2)).Return(nil)
-	q.EXPECT().SetDefaultShippingAddress(gomock.Any(), db.SetDefaultShippingAddressParams{ID: 9, UserID: 2}).Return(nil)
+	gomock.InOrder(
+		q.EXPECT().LockUserForAddress(gomock.Any(), int64(2)).Return(int64(2), nil),
+		q.EXPECT().GetShippingAddressForUpdate(gomock.Any(), db.GetShippingAddressForUpdateParams{ID: 9, UserID: 2}).Return(db.ShippingAddress{ID: 9, UserID: 2}, nil),
+		q.EXPECT().GetDefaultShippingAddress(gomock.Any(), int64(2)).Return(db.ShippingAddress{ID: 8, UserID: 2, IsDefault: true}, nil),
+		q.EXPECT().ClearDefaultShippingAddress(gomock.Any(), int64(2)).Return(nil),
+		q.EXPECT().SetDefaultShippingAddress(gomock.Any(), db.SetDefaultShippingAddressParams{ID: 9, UserID: 2}).Return(int64(1), nil),
+	)
 	d := newTestData(t, q, redisServer)
 	repo := NewShippingAddressRepo(d, testTxManager{q: q}, log.DefaultLogger)
 	repo.setCache(context.Background(), redisKey(shippingAddressCacheKey(2, 8), "g", 0), &biz.ShippingAddress{ID: 8, UserID: 2})
@@ -67,6 +69,48 @@ func TestSetDefaultShippingAddressIsAtomicAndInvalidatesBothDetails(t *testing.T
 	// Both details and the list moved to a new generation, so the previously
 	// cached values can no longer be served.
 	require.Equal(t, "1", d.rdb.Get(context.Background(), shippingAddressGenerationKey(2, 8)).Val())
+	require.Equal(t, "1", d.rdb.Get(context.Background(), shippingAddressGenerationKey(2, 9)).Val())
+	require.Equal(t, "1", d.rdb.Get(context.Background(), shippingAddressListGenerationKey(2)).Val())
+}
+
+func TestSetDefaultShippingAddressMissingTargetDoesNotClearDefault(t *testing.T) {
+	q := mockdb.NewMockQuerier(gomock.NewController(t))
+	gomock.InOrder(
+		q.EXPECT().LockUserForAddress(gomock.Any(), int64(2)).Return(int64(2), nil),
+		q.EXPECT().GetShippingAddressForUpdate(gomock.Any(), db.GetShippingAddressForUpdateParams{ID: 9, UserID: 2}).Return(db.ShippingAddress{}, pgx.ErrNoRows),
+	)
+	d := newTestData(t, q, miniredis.RunT(t))
+	repo := NewShippingAddressRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	require.ErrorIs(t, repo.SetDefaultShippingAddress(context.Background(), 9, 2), biz.ErrShippingAddressNotFound)
+	require.Zero(t, d.rdb.Exists(context.Background(), shippingAddressListGenerationKey(2)).Val())
+}
+
+func TestSetDefaultShippingAddressZeroRowsReturnsErrorWithoutInvalidation(t *testing.T) {
+	q := mockdb.NewMockQuerier(gomock.NewController(t))
+	gomock.InOrder(
+		q.EXPECT().LockUserForAddress(gomock.Any(), int64(2)).Return(int64(2), nil),
+		q.EXPECT().GetShippingAddressForUpdate(gomock.Any(), db.GetShippingAddressForUpdateParams{ID: 9, UserID: 2}).Return(db.ShippingAddress{ID: 9, UserID: 2}, nil),
+		q.EXPECT().GetDefaultShippingAddress(gomock.Any(), int64(2)).Return(db.ShippingAddress{ID: 8, UserID: 2, IsDefault: true}, nil),
+		q.EXPECT().ClearDefaultShippingAddress(gomock.Any(), int64(2)).Return(nil),
+		q.EXPECT().SetDefaultShippingAddress(gomock.Any(), db.SetDefaultShippingAddressParams{ID: 9, UserID: 2}).Return(int64(0), nil),
+	)
+	d := newTestData(t, q, miniredis.RunT(t))
+	repo := NewShippingAddressRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	require.ErrorIs(t, repo.SetDefaultShippingAddress(context.Background(), 9, 2), biz.ErrShippingAddressNotFound)
+	for _, key := range []string{shippingAddressGenerationKey(2, 8), shippingAddressGenerationKey(2, 9), shippingAddressListGenerationKey(2)} {
+		require.Zero(t, d.rdb.Exists(context.Background(), key).Val(), "failed writes must not invalidate %s", key)
+	}
+}
+
+func TestDeleteShippingAddressLocksUserBeforeAddress(t *testing.T) {
+	q := mockdb.NewMockQuerier(gomock.NewController(t))
+	gomock.InOrder(
+		q.EXPECT().LockUserForAddress(gomock.Any(), int64(2)).Return(int64(2), nil),
+		q.EXPECT().DeleteShippingAddress(gomock.Any(), db.DeleteShippingAddressParams{ID: 9, UserID: 2}).Return(nil),
+	)
+	d := newTestData(t, q, miniredis.RunT(t))
+	repo := NewShippingAddressRepo(d, testTxManager{q: q}, log.DefaultLogger)
+	require.NoError(t, repo.DeleteShippingAddress(context.Background(), 9, 2))
 	require.Equal(t, "1", d.rdb.Get(context.Background(), shippingAddressGenerationKey(2, 9)).Val())
 	require.Equal(t, "1", d.rdb.Get(context.Background(), shippingAddressListGenerationKey(2)).Val())
 }

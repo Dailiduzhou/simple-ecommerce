@@ -330,7 +330,7 @@ func (r *ShippingAddressRepo) SetDefaultShippingAddress(ctx context.Context, id 
 		if _, err := q.LockUserForAddress(ctx, userID); err != nil {
 			return err
 		}
-		if _, err := q.GetShippingAddress(ctx, db.GetShippingAddressParams{ID: id, UserID: userID}); err != nil {
+		if _, err := q.GetShippingAddressForUpdate(ctx, db.GetShippingAddressForUpdateParams{ID: id, UserID: userID}); err != nil {
 			if stderrors.Is(err, pgx.ErrNoRows) {
 				return biz.ErrShippingAddressNotFound
 			}
@@ -344,7 +344,15 @@ func (r *ShippingAddressRepo) SetDefaultShippingAddress(ctx context.Context, id 
 		if err := q.ClearDefaultShippingAddress(ctx, userID); err != nil {
 			return err
 		}
-		return q.SetDefaultShippingAddress(ctx, db.SetDefaultShippingAddressParams{ID: id, UserID: userID})
+		rows, err := q.SetDefaultShippingAddress(ctx, db.SetDefaultShippingAddressParams{ID: id, UserID: userID})
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			// Roll back the clear as well; never report success without a target.
+			return biz.ErrShippingAddressNotFound
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -358,9 +366,15 @@ func (r *ShippingAddressRepo) SetDefaultShippingAddress(ctx context.Context, id 
 }
 
 func (r *ShippingAddressRepo) DeleteShippingAddress(ctx context.Context, id int64, userID int64) error {
-	err := querierFromContext(ctx, r.data.q).DeleteShippingAddress(ctx, db.DeleteShippingAddressParams{
-		ID:     id,
-		UserID: userID,
+	err := r.tx.InTx(ctx, func(ctx context.Context) error {
+		q := querierFromContext(ctx, nil)
+		if _, err := q.LockUserForAddress(ctx, userID); err != nil {
+			return err
+		}
+		return q.DeleteShippingAddress(ctx, db.DeleteShippingAddressParams{
+			ID:     id,
+			UserID: userID,
+		})
 	})
 	if err != nil {
 		return err

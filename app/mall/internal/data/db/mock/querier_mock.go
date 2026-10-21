@@ -1197,6 +1197,21 @@ func (mr *MockQuerierMockRecorder) GetShippingAddressForSnapshot(ctx, arg interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetShippingAddressForSnapshot", reflect.TypeOf((*MockQuerier)(nil).GetShippingAddressForSnapshot), ctx, arg)
 }
 
+// GetShippingAddressForUpdate mocks base method.
+func (m *MockQuerier) GetShippingAddressForUpdate(ctx context.Context, arg db.GetShippingAddressForUpdateParams) (db.ShippingAddress, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetShippingAddressForUpdate", ctx, arg)
+	ret0, _ := ret[0].(db.ShippingAddress)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetShippingAddressForUpdate indicates an expected call of GetShippingAddressForUpdate.
+func (mr *MockQuerierMockRecorder) GetShippingAddressForUpdate(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetShippingAddressForUpdate", reflect.TypeOf((*MockQuerier)(nil).GetShippingAddressForUpdate), ctx, arg)
+}
+
 // GetStockAdjustment mocks base method.
 func (m *MockQuerier) GetStockAdjustment(ctx context.Context, arg db.GetStockAdjustmentParams) (db.StockAdjustment, error) {
 	m.ctrl.T.Helper()
@@ -2271,11 +2286,12 @@ func (mr *MockQuerierMockRecorder) RetryPaymentReconciliation(ctx, arg interface
 }
 
 // SetDefaultShippingAddress mocks base method.
-func (m *MockQuerier) SetDefaultShippingAddress(ctx context.Context, arg db.SetDefaultShippingAddressParams) error {
+func (m *MockQuerier) SetDefaultShippingAddress(ctx context.Context, arg db.SetDefaultShippingAddressParams) (int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetDefaultShippingAddress", ctx, arg)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // SetDefaultShippingAddress indicates an expected call of SetDefaultShippingAddress.
