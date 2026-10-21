@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -100,7 +100,7 @@ services:
       - ./deploy/grafana/dashboard-definitions:/var/lib/grafana/dashboards:ro
 
   mall:
-    image: dailiduzhou/mall:1.0
+    image: ${MALL_IMAGE:-dailiduzhou/mall:1.0}
     depends_on:
       postgres:
         condition: service_healthy
