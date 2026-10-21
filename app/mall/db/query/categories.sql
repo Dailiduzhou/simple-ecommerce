@@ -41,8 +41,8 @@ FROM products
 WHERE category_id = $1;
 
 -- name: DeleteCategoryIfUnused :execrows
--- 单条语句完成"没有子类、没有被商品引用"检查与删除：避免应用层
--- check-then-delete 的 TOCTOU 竞争。返回 0 行表示未删除。
+-- Return 0 when existing children/products prevent deletion. Restrictive foreign
+-- keys also reject references committed after this statement's snapshot.
 DELETE FROM categories
 WHERE categories.id = $1
   AND NOT EXISTS (SELECT 1 FROM categories child WHERE child.parent_id = categories.id)

@@ -39,19 +39,21 @@ func (r *CategoryRepo) CreateCategory(ctx context.Context, parentID int64, name 
 	return &bizCategory, nil
 }
 
-// DeleteCategory removes a category only when nothing depends on it. The delete
-// and both usage checks run in a single statement, so a concurrent child,
-// product or delete cannot slip between them; the follow-up reads only pick the
-// error to report.
+// DeleteCategory removes a category only when nothing depends on it. Usage
+// checks provide normal business errors; restrictive foreign keys also protect
+// against children or products committed after the delete statement's snapshot.
 func (r *CategoryRepo) DeleteCategory(ctx context.Context, id int64) error {
 	q := r.data.DB(ctx)
 	deleted, err := q.DeleteCategoryIfUnused(ctx, id)
 	if err != nil {
-		// A product inserted after the statement's snapshot still trips the
-		// foreign key at delete time; report it as the business conflict.
 		var pgErr *pgconn.PgError
-		if stderrors.As(err, &pgErr) && pgErr.Code == "23503" && pgErr.ConstraintName == "fk_product_category" {
-			return biz.ErrCategoryHasProducts
+		if stderrors.As(err, &pgErr) && pgErr.Code == "23503" {
+			switch pgErr.ConstraintName {
+			case "fk_product_category":
+				return biz.ErrCategoryHasProducts
+			case "fk_category_parent":
+				return biz.ErrCategoryHasChildren
+			}
 		}
 		return err
 	}
