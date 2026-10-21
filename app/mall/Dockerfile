@@ -1,4 +1,4 @@
-FROM golang:1.26.3-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.3-alpine AS builder
 
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
     apk add --no-cache git make
@@ -13,10 +13,14 @@ RUN go mod download
 COPY api/ ./api/
 COPY app/mall/ ./app/mall/
 COPY pkg/ ./pkg/
+COPY internal/ ./internal/
+
+ARG TARGETOS
+ARG TARGETARCH
 
 # 编译二进制文件
 RUN cd app/mall/cmd/mall && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/mall .
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /bin/mall .
 
 FROM alpine:3.21 AS runner
 
