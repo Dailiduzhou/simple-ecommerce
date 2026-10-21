@@ -1,4 +1,9 @@
+# 构建上下文只保留 app/mall/Dockerfile 实际 COPY 的内容：
+# go.mod、go.sum、api/、app/mall/、pkg/、internal/。
+# .env 保存真实密钥，绝不进入构建上下文，避免随 layer 或构建缓存泄漏。
 .git
+.gitignore
+.github
 .env
 .env.*
 .codegraph
@@ -6,6 +11,11 @@
 .agents
 .codex
 docs
+*.md
 coverage.out
 *.log
 tmp/
+**/testdata
+**/*_test.go
+# 支付宝沙箱证书在运行时由 /data/certs 挂载，无需打进镜像。
+app/mall/configs/certs
