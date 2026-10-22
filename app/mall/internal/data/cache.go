@@ -84,6 +84,8 @@ func deleteJSONCache(ctx context.Context, d *Data, logger *log.Helper, keys ...s
 // cacheAside caches successful loads, including typed nil (not-found) values.
 // Database errors are never cached. The full Redis key is also the singleflight
 // key, so owners, query parameters and generations all remain isolated.
+// Returned pointers and slices may be shared by singleflight callers. Treat
+// results as read-only and copy them before any request-specific mutation.
 func cacheAside[T any](ctx context.Context, d *Data, logger *log.Helper, key string, read func(context.Context, string) (T, error), write func(context.Context, string, T), load func() (T, error)) (T, error) {
 	if key == "" || inTransaction(ctx) || d.rdb == nil {
 		return load()

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -47,6 +48,8 @@ type ShippingAddress struct {
 	UpdatedAt            time.Time
 }
 
+// ShippingAddressRepo read results are read-only: caches and singleflight may
+// share them across requests. Copy before modifying a returned address or list.
 type ShippingAddressRepo interface {
 	CreateShippingAddress(ctx context.Context, userID int64, receiverName string, receiverPhoneHash string, receiverPhoneEncrypt string, province string, city string, district string, detailAddress string, addressTag string, isDefault bool) (*ShippingAddress, error)
 	GetShippingAddress(ctx context.Context, id int64, userID int64) (*ShippingAddress, error)
@@ -315,10 +318,12 @@ func (uc *shippingAddressUsecase) GetShippingAddress(ctx context.Context, id int
 	if err != nil {
 		return nil, err
 	}
-	if sa != nil {
-		uc.decryptPhone(sa)
+	if sa == nil {
+		return nil, nil
 	}
-	return sa, nil
+	address := *sa
+	uc.decryptPhone(&address)
+	return &address, nil
 }
 
 func (uc *shippingAddressUsecase) ListShippingAddressesByUser(ctx context.Context, userID int64, page, pageSize int32) ([]ShippingAddress, error) {
@@ -330,6 +335,7 @@ func (uc *shippingAddressUsecase) ListShippingAddressesByUser(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
+	sas = slices.Clone(sas)
 	for i := range sas {
 		uc.decryptPhone(&sas[i])
 	}

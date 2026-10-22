@@ -194,6 +194,41 @@ func (q *Queries) GetShippingAddressForSnapshot(ctx context.Context, arg GetShip
 	return i, err
 }
 
+const getShippingAddressForUpdate = `-- name: GetShippingAddressForUpdate :one
+SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at
+FROM shipping_addresses
+WHERE id = $1
+  AND user_id = $2
+FOR UPDATE
+`
+
+type GetShippingAddressForUpdateParams struct {
+	ID     int64
+	UserID int64
+}
+
+// Always lock the user first, then the address, like default creation/deletion.
+func (q *Queries) GetShippingAddressForUpdate(ctx context.Context, arg GetShippingAddressForUpdateParams) (ShippingAddress, error) {
+	row := q.db.QueryRow(ctx, getShippingAddressForUpdate, arg.ID, arg.UserID)
+	var i ShippingAddress
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiverName,
+		&i.ReceiverPhoneHash,
+		&i.ReceiverPhoneEncrypt,
+		&i.Province,
+		&i.City,
+		&i.District,
+		&i.DetailAddress,
+		&i.AddressTag,
+		&i.IsDefault,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listShippingAddressesByUser = `-- name: ListShippingAddressesByUser :many
 SELECT id, user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt, province, city, district, detail_address, address_tag, is_default, created_at, updated_at
 FROM shipping_addresses
@@ -241,7 +276,7 @@ func (q *Queries) ListShippingAddressesByUser(ctx context.Context, arg ListShipp
 	return items, nil
 }
 
-const setDefaultShippingAddress = `-- name: SetDefaultShippingAddress :exec
+const setDefaultShippingAddress = `-- name: SetDefaultShippingAddress :execrows
 UPDATE shipping_addresses
 SET is_default = TRUE,
     updated_at = CURRENT_TIMESTAMP
@@ -254,9 +289,12 @@ type SetDefaultShippingAddressParams struct {
 	UserID int64
 }
 
-func (q *Queries) SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) error {
-	_, err := q.db.Exec(ctx, setDefaultShippingAddress, arg.ID, arg.UserID)
-	return err
+func (q *Queries) SetDefaultShippingAddress(ctx context.Context, arg SetDefaultShippingAddressParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setDefaultShippingAddress, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateShippingAddress = `-- name: UpdateShippingAddress :one
