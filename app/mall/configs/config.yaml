@@ -33,6 +33,8 @@ data:
     dial_timeout: 5s
     read_timeout: 0.2s
     write_timeout: 0.2s
+  cache:
+    shared_work_timeout: 3s
 
 auth:
   access_token_secret: "${AUTH_ACCESS_TOKEN_SECRET}"

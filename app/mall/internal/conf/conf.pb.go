@@ -328,6 +328,7 @@ type Data struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Database      *Data_Database         `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
 	Redis         *Data_Redis            `protobuf:"bytes,2,opt,name=redis,proto3" json:"redis,omitempty"`
+	Cache         *Data_Cache            `protobuf:"bytes,3,opt,name=cache,proto3" json:"cache,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -372,6 +373,13 @@ func (x *Data) GetDatabase() *Data_Database {
 func (x *Data) GetRedis() *Data_Redis {
 	if x != nil {
 		return x.Redis
+	}
+	return nil
+}
+
+func (x *Data) GetCache() *Data_Cache {
+	if x != nil {
+		return x.Cache
 	}
 	return nil
 }
@@ -1235,6 +1243,51 @@ func (x *Data_Redis) GetDb() int32 {
 	return 0
 }
 
+type Data_Cache struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Shared cache-miss work timeout. Unset/non-positive uses the default.
+	SharedWorkTimeout *durationpb.Duration `protobuf:"bytes,1,opt,name=shared_work_timeout,json=sharedWorkTimeout,proto3" json:"shared_work_timeout,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *Data_Cache) Reset() {
+	*x = Data_Cache{}
+	mi := &file_conf_conf_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Data_Cache) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Data_Cache) ProtoMessage() {}
+
+func (x *Data_Cache) ProtoReflect() protoreflect.Message {
+	mi := &file_conf_conf_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Data_Cache.ProtoReflect.Descriptor instead.
+func (*Data_Cache) Descriptor() ([]byte, []int) {
+	return file_conf_conf_proto_rawDescGZIP(), []int{4, 2}
+}
+
+func (x *Data_Cache) GetSharedWorkTimeout() *durationpb.Duration {
+	if x != nil {
+		return x.SharedWorkTimeout
+	}
+	return nil
+}
+
 var File_conf_conf_proto protoreflect.FileDescriptor
 
 const file_conf_conf_proto_rawDesc = "" +
@@ -1273,10 +1326,11 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x123\n" +
 	"\atimeout\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\atimeoutB\x10\n" +
-	"\x0e_is_production\"\xa2\x04\n" +
+	"\x0e_is_production\"\xa4\x05\n" +
 	"\x04Data\x125\n" +
 	"\bdatabase\x18\x01 \x01(\v2\x19.kratos.api.Data.DatabaseR\bdatabase\x12,\n" +
-	"\x05redis\x18\x02 \x01(\v2\x16.kratos.api.Data.RedisR\x05redis\x1a\x94\x01\n" +
+	"\x05redis\x18\x02 \x01(\v2\x16.kratos.api.Data.RedisR\x05redis\x12,\n" +
+	"\x05cache\x18\x03 \x01(\v2\x16.kratos.api.Data.CacheR\x05cache\x1a\x94\x01\n" +
 	"\bDatabase\x12\x16\n" +
 	"\x06driver\x18\x01 \x01(\tR\x06driver\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\tR\x06source\x12)\n" +
@@ -1289,7 +1343,9 @@ const file_conf_conf_proto_rawDesc = "" +
 	"\rwrite_timeout\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\fwriteTimeout\x12<\n" +
 	"\fdial_timeout\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\vdialTimeout\x12\x1a\n" +
 	"\bpassword\x18\x06 \x01(\tR\bpassword\x12\x0e\n" +
-	"\x02db\x18\a \x01(\x05R\x02db\"\xbc\x02\n" +
+	"\x02db\x18\a \x01(\x05R\x02db\x1aR\n" +
+	"\x05Cache\x12I\n" +
+	"\x13shared_work_timeout\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\x11sharedWorkTimeout\"\xbc\x02\n" +
 	"\aPayment\x12*\n" +
 	"\x06alipay\x18\x01 \x01(\v2\x12.kratos.api.AlipayR\x06alipay\x12*\n" +
 	"\x06wechat\x18\x02 \x01(\v2\x12.kratos.api.WechatR\x06wechat\x12;\n" +
@@ -1353,7 +1409,7 @@ func file_conf_conf_proto_rawDescGZIP() []byte {
 	return file_conf_conf_proto_rawDescData
 }
 
-var file_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_conf_conf_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_conf_conf_proto_goTypes = []any{
 	(*Bootstrap)(nil),           // 0: kratos.api.Bootstrap
 	(*Snowflake)(nil),           // 1: kratos.api.Snowflake
@@ -1370,7 +1426,8 @@ var file_conf_conf_proto_goTypes = []any{
 	(*Server_GRPC)(nil),         // 12: kratos.api.Server.GRPC
 	(*Data_Database)(nil),       // 13: kratos.api.Data.Database
 	(*Data_Redis)(nil),          // 14: kratos.api.Data.Redis
-	(*durationpb.Duration)(nil), // 15: google.protobuf.Duration
+	(*Data_Cache)(nil),          // 15: kratos.api.Data.Cache
+	(*durationpb.Duration)(nil), // 16: google.protobuf.Duration
 }
 var file_conf_conf_proto_depIdxs = []int32{
 	3,  // 0: kratos.api.Bootstrap.server:type_name -> kratos.api.Server
@@ -1380,30 +1437,32 @@ var file_conf_conf_proto_depIdxs = []int32{
 	5,  // 4: kratos.api.Bootstrap.payment:type_name -> kratos.api.Payment
 	9,  // 5: kratos.api.Bootstrap.community:type_name -> kratos.api.Community
 	10, // 6: kratos.api.Bootstrap.storage:type_name -> kratos.api.Storage
-	15, // 7: kratos.api.Auth.access_token_timeout:type_name -> google.protobuf.Duration
-	15, // 8: kratos.api.Auth.refresh_token_timeout:type_name -> google.protobuf.Duration
-	15, // 9: kratos.api.Auth.login_account_interval:type_name -> google.protobuf.Duration
+	16, // 7: kratos.api.Auth.access_token_timeout:type_name -> google.protobuf.Duration
+	16, // 8: kratos.api.Auth.refresh_token_timeout:type_name -> google.protobuf.Duration
+	16, // 9: kratos.api.Auth.login_account_interval:type_name -> google.protobuf.Duration
 	11, // 10: kratos.api.Server.http:type_name -> kratos.api.Server.HTTP
 	12, // 11: kratos.api.Server.grpc:type_name -> kratos.api.Server.GRPC
 	13, // 12: kratos.api.Data.database:type_name -> kratos.api.Data.Database
 	14, // 13: kratos.api.Data.redis:type_name -> kratos.api.Data.Redis
-	6,  // 14: kratos.api.Payment.alipay:type_name -> kratos.api.Alipay
-	7,  // 15: kratos.api.Payment.wechat:type_name -> kratos.api.Wechat
-	8,  // 16: kratos.api.Payment.check_pay_job:type_name -> kratos.api.CheckPayJob
-	15, // 17: kratos.api.Payment.order_payment_timeout:type_name -> google.protobuf.Duration
-	15, // 18: kratos.api.Payment.prepay_lease_duration:type_name -> google.protobuf.Duration
-	15, // 19: kratos.api.CheckPayJob.initial_delay:type_name -> google.protobuf.Duration
-	15, // 20: kratos.api.CheckPayJob.poll_interval:type_name -> google.protobuf.Duration
-	15, // 21: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
-	15, // 22: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
-	15, // 23: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
-	15, // 24: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
-	15, // 25: kratos.api.Data.Redis.dial_timeout:type_name -> google.protobuf.Duration
-	26, // [26:26] is the sub-list for method output_type
-	26, // [26:26] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	15, // 14: kratos.api.Data.cache:type_name -> kratos.api.Data.Cache
+	6,  // 15: kratos.api.Payment.alipay:type_name -> kratos.api.Alipay
+	7,  // 16: kratos.api.Payment.wechat:type_name -> kratos.api.Wechat
+	8,  // 17: kratos.api.Payment.check_pay_job:type_name -> kratos.api.CheckPayJob
+	16, // 18: kratos.api.Payment.order_payment_timeout:type_name -> google.protobuf.Duration
+	16, // 19: kratos.api.Payment.prepay_lease_duration:type_name -> google.protobuf.Duration
+	16, // 20: kratos.api.CheckPayJob.initial_delay:type_name -> google.protobuf.Duration
+	16, // 21: kratos.api.CheckPayJob.poll_interval:type_name -> google.protobuf.Duration
+	16, // 22: kratos.api.Server.HTTP.timeout:type_name -> google.protobuf.Duration
+	16, // 23: kratos.api.Server.GRPC.timeout:type_name -> google.protobuf.Duration
+	16, // 24: kratos.api.Data.Redis.read_timeout:type_name -> google.protobuf.Duration
+	16, // 25: kratos.api.Data.Redis.write_timeout:type_name -> google.protobuf.Duration
+	16, // 26: kratos.api.Data.Redis.dial_timeout:type_name -> google.protobuf.Duration
+	16, // 27: kratos.api.Data.Cache.shared_work_timeout:type_name -> google.protobuf.Duration
+	28, // [28:28] is the sub-list for method output_type
+	28, // [28:28] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_conf_conf_proto_init() }
@@ -1418,7 +1477,7 @@ func file_conf_conf_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_conf_conf_proto_rawDesc), len(file_conf_conf_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

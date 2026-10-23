@@ -81,8 +81,13 @@ message Data {
     // Logical database index; the JWT blacklist and limiter keys depend on it.
     int32 db = 7;
   }
+  message Cache {
+    // Shared cache-miss work timeout. Unset/non-positive uses the default.
+    google.protobuf.Duration shared_work_timeout = 1;
+  }
   Database database = 1;
   Redis redis = 2;
+  Cache cache = 3;
 }
 
 message Payment {

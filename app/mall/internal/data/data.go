@@ -102,14 +102,25 @@ type (
 
 // Data .
 type Data struct {
-	pool *pgxpool.Pool
-	rdb  *redis.Client
-	q    db.Querier
-	sg   *singleflight.Group
+	pool                   *pgxpool.Pool
+	rdb                    *redis.Client
+	q                      db.Querier
+	sg                     *singleflight.Group
+	sharedCacheWorkTimeout time.Duration
 }
+
+const (
+	// defaultSharedCacheWorkTimeout bounds cache-miss work shared through
+	// singleflight. It applies to the work itself, never to a caller's wait.
+	defaultSharedCacheWorkTimeout = 3 * time.Second
+)
 
 // NewData .
 func NewData(c *conf.Data, pool *pgxpool.Pool, rdb *redis.Client) (*Data, func(), error) {
+	workTimeout := defaultSharedCacheWorkTimeout
+	if c != nil && c.Cache != nil {
+		workTimeout = durationOrDefault(c.Cache.SharedWorkTimeout, defaultSharedCacheWorkTimeout)
+	}
 	cleanup := func() {
 		rdb.Close()
 		pool.Close()
@@ -117,11 +128,20 @@ func NewData(c *conf.Data, pool *pgxpool.Pool, rdb *redis.Client) (*Data, func()
 		log.Info("closing the data resources")
 	}
 	return &Data{
-		pool: pool,
-		rdb:  rdb,
-		q:    db.New(pool),
-		sg:   &singleflight.Group{},
+		pool:                   pool,
+		rdb:                    rdb,
+		q:                      db.New(pool),
+		sg:                     &singleflight.Group{},
+		sharedCacheWorkTimeout: workTimeout,
 	}, cleanup, nil
+}
+
+// Also support tests and internal callers that construct Data directly.
+func (d *Data) sharedCacheTimeout() time.Duration {
+	if d.sharedCacheWorkTimeout <= 0 {
+		return defaultSharedCacheWorkTimeout
+	}
+	return d.sharedCacheWorkTimeout
 }
 
 func NewRedisClient(c *conf.Data) (*redis.Client, error) {
