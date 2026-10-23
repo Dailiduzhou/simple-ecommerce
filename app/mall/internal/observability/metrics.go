@@ -23,6 +23,8 @@ var (
 	riverJobDiscarded             = counter("river_job_discarded_total")
 	cacheRecovery                 = counter("cache_invalidation_recovery_total")
 	cacheOperationFailure         = counter("cache_operation_failure_total")
+	cacheSharedWork               = counter("cache_shared_work_total")
+	cacheSharedWorkInflight       = upDownCounter("cache_shared_work_inflight")
 	authorizationDenied           = counter("authorization_denied_total")
 	idGeneratorClockRollback      = counter("id_generator_clock_rollback_total")
 )
@@ -30,6 +32,10 @@ var (
 func counter(name string) metric.Int64Counter { value, _ := meter.Int64Counter(name); return value }
 func add(ctx context.Context, counter metric.Int64Counter, attrs ...attribute.KeyValue) {
 	counter.Add(ctx, 1, metric.WithAttributes(attrs...))
+}
+func upDownCounter(name string) metric.Int64UpDownCounter {
+	value, _ := meter.Int64UpDownCounter(name)
+	return value
 }
 
 func PaymentTransition(ctx context.Context, from, to, event, provider string) {
@@ -65,6 +71,19 @@ func RiverJobDiscarded(ctx context.Context, kind string) {
 }
 func CacheFailure(ctx context.Context, operation, entity string) {
 	add(ctx, cacheOperationFailure, attribute.String("operation", operation), attribute.String("entity", entity))
+}
+
+// CacheSharedWorkStarted and CacheSharedWorkFinished bound the lifetime of
+// cache-miss work shared by singleflight. A request that gives up no longer
+// stops that work, so the in-flight gauge is the signal for pool/DB saturation
+// caused by abandoned work; results are cache_hit, loaded, error and timeout.
+func CacheSharedWorkStarted(ctx context.Context, entity string) {
+	cacheSharedWorkInflight.Add(ctx, 1, metric.WithAttributes(attribute.String("entity", entity)))
+}
+
+func CacheSharedWorkFinished(ctx context.Context, entity, result string) {
+	cacheSharedWorkInflight.Add(ctx, -1, metric.WithAttributes(attribute.String("entity", entity)))
+	add(ctx, cacheSharedWork, attribute.String("entity", entity), attribute.String("result", result))
 }
 func AuthorizationDenied(ctx context.Context, operation, reason string) {
 	add(ctx, authorizationDenied, attribute.String("operation", operation), attribute.String("reason", reason))

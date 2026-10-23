@@ -13,14 +13,20 @@ import (
 // All emissions share one provider here: the package-level instruments are
 // delegating and bind permanently once a provider is installed, so a second
 // test installing another provider would silently collect nothing.
-func TestCommunityEventAndDiscardMetrics(t *testing.T) {
+func TestBoundedLabelMetrics(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	otel.SetMeterProvider(provider)
 	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
-	CommunityEvent(context.Background(), "media_delete", "error")
-	RiverJobDiscarded(context.Background(), "delete_media")
-	PaymentRefundReconcile(context.Background(), "deferred")
+	ctx := context.Background()
+	CommunityEvent(ctx, "media_delete", "error")
+	RiverJobDiscarded(ctx, "delete_media")
+	PaymentRefundReconcile(ctx, "deferred")
+	// Two shared loads started, one finished: the in-flight gauge reports one
+	// running flight and the result counter counts the completion.
+	CacheSharedWorkStarted(ctx, "product")
+	CacheSharedWorkStarted(ctx, "product")
+	CacheSharedWorkFinished(ctx, "product", "loaded")
 	var data metricdata.ResourceMetrics
 	require.NoError(t, reader.Collect(context.Background(), &data))
 	observed := map[string]map[string]string{}
@@ -41,4 +47,6 @@ func TestCommunityEventAndDiscardMetrics(t *testing.T) {
 	require.Equal(t, map[string]string{"operation": "media_delete", "result": "error"}, observed["community_operation_total"])
 	require.Equal(t, map[string]string{"kind": "delete_media"}, observed["river_job_discarded_total"])
 	require.Equal(t, map[string]string{"result": "deferred"}, observed["payment_refund_reconcile_total"])
+	require.Equal(t, map[string]string{"entity": "product"}, observed["cache_shared_work_inflight"])
+	require.Equal(t, map[string]string{"entity": "product", "result": "loaded"}, observed["cache_shared_work_total"])
 }
