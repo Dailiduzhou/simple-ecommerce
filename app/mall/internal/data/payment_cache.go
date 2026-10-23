@@ -19,7 +19,7 @@ func (r *PaymentRepo) getCache(ctx context.Context, key string) (*biz.PaymentDO,
 }
 
 func (r *PaymentRepo) setCache(ctx context.Context, key string, payment *biz.PaymentDO) {
-	writeJSONCache(ctx, r.data, r.log, key, payment, 15*time.Minute)
+	fillJSONCache(ctx, r.data, r.log, key, payment, 15*time.Minute)
 }
 
 func paymentCacheKeysFor(payment db.Payment, gen int64) []string {

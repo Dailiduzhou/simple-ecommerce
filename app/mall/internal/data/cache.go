@@ -1,7 +1,6 @@
 package data
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,11 +9,18 @@ import (
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
+	kerrors "github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/redis/go-redis/v9"
 )
 
-const negativeCacheTTL = 30 * time.Second
+const (
+	negativeCacheTTL = 30 * time.Second
+
+	// cacheWriteTimeout bounds a single cache SET. Reads use the smaller of this
+	// and their own parent deadline.
+	cacheWriteTimeout = 2 * time.Second
+)
 
 func cacheTTL() time.Duration {
 	return 10*time.Minute + time.Duration(rand.Intn(10))*time.Minute
@@ -42,39 +48,52 @@ func readJSONCache[T any](ctx context.Context, d *Data, key string) (T, error) {
 
 func cacheFailure(ctx context.Context, logger *log.Helper, operation, key string, err error) {
 	// Never attach IDs, phone hashes or pagination values to metric labels.
-	entity, _, _ := strings.Cut(key, ":")
-	switch entity {
-	case "user", "shipping_addr", "product", "category", "event", "order", "payment":
-	default:
-		entity = "unknown"
-	}
-	observability.CacheFailure(ctx, operation, entity)
+	observability.CacheFailure(ctx, operation, cacheEntity(key))
 	logger.WithContext(ctx).Errorw("msg", "cache operation failed", "operation", operation, "key", key, "error", err)
 }
 
-// Serialize before registering the callback: callers may mutate the returned
-// object before the surrounding transaction commits.
-func writeJSONCache(ctx context.Context, d *Data, logger *log.Helper, key string, value any, ttl time.Duration) {
-	if key == "" || d.rdb == nil {
+// cacheEntity maps a full Redis key to a bounded metric/span label.
+func cacheEntity(key string) string {
+	entity, _, _ := strings.Cut(key, ":")
+	switch entity {
+	case "user", "shipping_addr", "product", "category", "event", "order", "payment":
+		return entity
+	default:
+		return "unknown"
+	}
+}
+
+// encodeCacheValue serializes a cache value and switches typed nil (not-found)
+// values to the negative-cache TTL. Encoding happens before any shared result is
+// published, so callers may still mutate the object afterwards.
+func encodeCacheValue(value any, ttl time.Duration) ([]byte, time.Duration, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, ttl, err
+	}
+	if string(encoded) == "null" {
+		ttl = negativeCacheTTL
+	}
+	return encoded, ttl, nil
+}
+
+// fillJSONCache publishes read-through results synchronously within the shared
+// work budget. Transaction snapshots must never be published, even after commit.
+func fillJSONCache(ctx context.Context, d *Data, logger *log.Helper, key string, value any, ttl time.Duration) {
+	if key == "" || d.rdb == nil || inTransaction(ctx) || ctx.Err() != nil {
 		return
 	}
-	encoded, err := json.Marshal(value)
+	encoded, ttl, err := encodeCacheValue(value, ttl)
 	if err != nil {
 		cacheFailure(ctx, logger, "marshal", key, err)
 		return
 	}
-	if bytes.Equal(encoded, []byte("null")) {
-		ttl = negativeCacheTTL
+	// Respect parent cancellation/deadline; never detach read-through fills.
+	cacheCtx, cancel := context.WithTimeout(ctx, cacheWriteTimeout)
+	defer cancel()
+	if err := d.rdb.Set(cacheCtx, key, encoded, ttl).Err(); err != nil {
+		cacheFailure(cacheCtx, logger, "set", key, err)
 	}
-	afterCommit(ctx, func() {
-		// A committed mutation still needs invalidation/publication if the
-		// HTTP client has disconnected. Keep that best-effort work bounded.
-		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-		defer cancel()
-		if err := d.rdb.Set(cacheCtx, key, encoded, ttl).Err(); err != nil {
-			cacheFailure(cacheCtx, logger, "set", key, err)
-		}
-	})
 }
 
 func deleteJSONCache(ctx context.Context, d *Data, logger *log.Helper, keys ...string) {
@@ -86,41 +105,109 @@ func deleteJSONCache(ctx context.Context, d *Data, logger *log.Helper, keys ...s
 // key, so owners, query parameters and generations all remain isolated.
 // Returned pointers and slices may be shared by singleflight callers. Treat
 // results as read-only and copy them before any request-specific mutation.
-func cacheAside[T any](ctx context.Context, d *Data, logger *log.Helper, key string, read func(context.Context, string) (T, error), write func(context.Context, string, T), load func() (T, error)) (T, error) {
-	if key == "" || inTransaction(ctx) || d.rdb == nil {
-		return load()
+//
+// Shared work reuses the leader's context values after its request has ended,
+// so load must derive the result from the arguments it captures alone: never
+// from request-scoped values (tenant, read-your-writes, feature flags) that
+// could differ between callers sharing one flight. Values reached through the
+// context must also stay valid and must not be caller-owned mutable objects.
+func cacheAside[T any](ctx context.Context, d *Data, logger *log.Helper, key string, read func(context.Context, string) (T, error), write func(context.Context, string, T), load func(context.Context) (T, error)) (T, error) {
+	var zero T
+	if err := ctx.Err(); err != nil {
+		return zero, err
 	}
-	get := func() (T, error) {
-		value, err := read(ctx, key)
+	if key == "" || inTransaction(ctx) || d.rdb == nil {
+		return load(ctx)
+	}
+	get := func(readCtx context.Context) (T, error) {
+		value, err := read(readCtx, key)
 		if err != nil && !errors.Is(err, redis.Nil) {
-			cacheFailure(ctx, logger, "get", key, err)
+			cacheFailure(readCtx, logger, "get", key, err)
 		}
 		return value, err
 	}
-	if value, err := get(); err == nil {
+	// The initial lookup and waiting belong to this request.
+	if value, err := get(ctx); err == nil {
+		if err := ctx.Err(); err != nil {
+			return zero, err
+		}
 		return value, nil
 	}
-	result := d.sg.DoChan("sf:"+key, func() (any, error) {
-		if value, err := get(); err == nil {
+	if err := ctx.Err(); err != nil {
+		return zero, err
+	}
+	entity := cacheEntity(key)
+	budget := d.sharedCacheTimeout()
+	resultCh := d.sg.DoChan("sf:"+key, func() (any, error) {
+		// Only the executing callback owns cancellation of shared work. Keep
+		// stable context values, but not the leader's deadline/cancellation.
+		// All waiters may leave; work can still fill the cache within its budget.
+		workCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), budget)
+		defer cancel()
+		// The request span may already have ended by the time this work finishes.
+		workCtx, endSpan := observability.StartSharedCacheWork(workCtx, entity, budget)
+		defer endSpan()
+		observability.CacheSharedWorkStarted(workCtx, entity)
+		result := "loaded"
+		defer func() { observability.CacheSharedWorkFinished(workCtx, entity, result) }()
+		// Report an exhausted budget once per flight, not once per waiter.
+		timedOut := func(err error) error {
+			result = "timeout"
+			cacheFailure(workCtx, logger, "work_timeout", key, err)
+			return err
+		}
+
+		if value, err := get(workCtx); err == nil {
+			result = "cache_hit"
 			return value, nil
 		}
-		value, err := load()
-		if err == nil {
-			write(ctx, key, value)
+		if err := workCtx.Err(); err != nil {
+			return zero, timedOut(err)
 		}
-		return value, err
+		value, err := load(workCtx)
+		if err != nil {
+			// A database error caused by the budget expiring is a timeout, not a
+			// database failure; keep the two separate for operators.
+			if workErr := workCtx.Err(); workErr != nil {
+				return zero, timedOut(workErr)
+			}
+			result = "error"
+			return zero, err
+		}
+		if err := workCtx.Err(); err != nil {
+			return zero, timedOut(err)
+		}
+		// A failed/timed-out fill must not hide a successful database result.
+		write(workCtx, key, value)
+		return value, nil
 	})
 	select {
 	case <-ctx.Done():
-		var zero T
 		return zero, ctx.Err()
-	case result := <-result:
+	case result := <-resultCh:
+		// Both branches may be ready: prefer observed request cancellation.
+		if err := ctx.Err(); err != nil {
+			return zero, err
+		}
 		if result.Err != nil {
-			var zero T
-			return zero, result.Err
+			return zero, sharedWorkError(ctx, result.Err)
 		}
 		return result.Val.(T), nil
 	}
+}
+
+// sharedWorkError labels a shared-budget timeout. It is not this caller's own
+// deadline: the request is still healthy and could reasonably retry, so mixing
+// the two into the same opaque error hides retryable slow reads behind what
+// looks like an internal failure.
+func sharedWorkError(ctx context.Context, err error) error {
+	if ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	// HTTP status stays 500: the public OpenAPI contract does not define a
+	// gateway-timeout response for these endpoints. The reason code makes the
+	// case distinguishable in logs, metrics and response bodies.
+	return kerrors.InternalServer("CACHE_WORK_TIMEOUT", "cache read timed out, please retry")
 }
 
 func generationCacheKey(generation int64, key string) string {

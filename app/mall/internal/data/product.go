@@ -84,8 +84,8 @@ func (r *ProductRepo) DecrProductStock(ctx context.Context, ID int64, amount int
 func (r *ProductRepo) GetProduct(ctx context.Context, id int64) (*biz.Product, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
 	key := generationCacheKey(generation, redisKey("product", id, "g", generation))
-	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.Product, error) {
-		row, err := r.data.DB(ctx).GetProduct(ctx, id)
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func(loadCtx context.Context) (*biz.Product, error) {
+		row, err := r.data.DB(loadCtx).GetProduct(loadCtx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -100,8 +100,8 @@ func (r *ProductRepo) GetProduct(ctx context.Context, id int64) (*biz.Product, e
 func (r *ProductRepo) ListProducts(ctx context.Context, limit int32, offset int32) ([]biz.Product, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
 	key := generationCacheKey(generation, redisKey("product", "list", generation, limit, offset))
-	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
-		rows, err := r.data.DB(ctx).ListProducts(ctx, db.ListProductsParams{Limit: limit, Offset: offset})
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func(loadCtx context.Context) ([]biz.Product, error) {
+		rows, err := r.data.DB(loadCtx).ListProducts(loadCtx, db.ListProductsParams{Limit: limit, Offset: offset})
 		if err != nil {
 			return nil, err
 		}
@@ -112,8 +112,8 @@ func (r *ProductRepo) ListProducts(ctx context.Context, limit int32, offset int3
 func (r *ProductRepo) ListProductsByCategory(ctx context.Context, categoryID int64, limit int32, offset int32) ([]biz.Product, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", categoryID, "gen"))
 	key := generationCacheKey(generation, redisKey("product", "category", categoryID, generation, limit, offset))
-	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
-		rows, err := r.data.DB(ctx).ListProductsByCategory(ctx, db.ListProductsByCategoryParams{CategoryID: categoryID, Limit: limit, Offset: offset})
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func(loadCtx context.Context) ([]biz.Product, error) {
+		rows, err := r.data.DB(loadCtx).ListProductsByCategory(loadCtx, db.ListProductsByCategoryParams{CategoryID: categoryID, Limit: limit, Offset: offset})
 		if err != nil {
 			return nil, err
 		}
@@ -209,11 +209,11 @@ func (r *ProductRepo) getListCache(ctx context.Context, key string) ([]biz.Produ
 }
 
 func (r *ProductRepo) setCache(ctx context.Context, key string, value *biz.Product) {
-	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *ProductRepo) setListCache(ctx context.Context, key string, value []biz.Product) {
-	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *ProductRepo) deleteCache(ctx context.Context, key string) {

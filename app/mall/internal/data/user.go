@@ -73,8 +73,8 @@ func (r *UserRepo) GetAuthUser(ctx context.Context, id int64) (*biz.User, error)
 
 func (r *UserRepo) GetUserByID(ctx context.Context, id int64) (*biz.UserProfile, error) {
 	key := generatedEntityCacheKey(ctx, r.data, r.log, userGenerationKey(id), redisKey("user", id))
-	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.UserProfile, error) {
-		row, err := r.data.DB(ctx).GetUserByID(ctx, id)
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func(loadCtx context.Context) (*biz.UserProfile, error) {
+		row, err := r.data.DB(loadCtx).GetUserByID(loadCtx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -147,10 +147,10 @@ func (r *UserRepo) getCache(ctx context.Context, key string) (*biz.UserProfile, 
 
 func (r *UserRepo) setCache(ctx context.Context, key string, user *biz.UserProfile) {
 	if user == nil {
-		writeJSONCache(ctx, r.data, r.log, key, user, negativeCacheTTL)
+		fillJSONCache(ctx, r.data, r.log, key, user, negativeCacheTTL)
 		return
 	}
-	writeJSONCache(ctx, r.data, r.log, key, user, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, user, cacheTTL())
 }
 
 func userGenerationKey(id int64) string {
@@ -199,11 +199,11 @@ func (r *ShippingAddressRepo) getListCache(ctx context.Context, key string) ([]b
 }
 
 func (r *ShippingAddressRepo) setCache(ctx context.Context, key string, value *biz.ShippingAddress) {
-	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *ShippingAddressRepo) setListCache(ctx context.Context, key string, value []biz.ShippingAddress) {
-	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *ShippingAddressRepo) deleteCache(ctx context.Context, key string) {
@@ -260,8 +260,8 @@ func (r *ShippingAddressRepo) ListShippingAddressesByUser(ctx context.Context, u
 		return nil, err
 	}
 	key := generatedEntityCacheKey(ctx, r.data, r.log, shippingAddressListGenerationKey(userID), redisKey("shipping_addr", "user", userID, "limit", p.Limit, "offset", p.Offset))
-	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.ShippingAddress, error) {
-		rows, err := r.data.DB(ctx).ListShippingAddressesByUser(ctx, db.ListShippingAddressesByUserParams{UserID: userID, Limit: p.Limit, Offset: p.Offset})
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func(loadCtx context.Context) ([]biz.ShippingAddress, error) {
+		rows, err := r.data.DB(loadCtx).ListShippingAddressesByUser(loadCtx, db.ListShippingAddressesByUserParams{UserID: userID, Limit: p.Limit, Offset: p.Offset})
 		if err != nil {
 			return nil, err
 		}
@@ -275,8 +275,8 @@ func (r *ShippingAddressRepo) ListShippingAddressesByUser(ctx context.Context, u
 
 func (r *ShippingAddressRepo) GetShippingAddress(ctx context.Context, id int64, userID int64) (*biz.ShippingAddress, error) {
 	key := generatedEntityCacheKey(ctx, r.data, r.log, shippingAddressGenerationKey(userID, id), shippingAddressCacheKey(userID, id))
-	address, err := cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.ShippingAddress, error) {
-		row, err := r.data.DB(ctx).GetShippingAddress(ctx, db.GetShippingAddressParams{ID: id, UserID: userID})
+	address, err := cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func(loadCtx context.Context) (*biz.ShippingAddress, error) {
+		row, err := r.data.DB(loadCtx).GetShippingAddress(loadCtx, db.GetShippingAddressParams{ID: id, UserID: userID})
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}

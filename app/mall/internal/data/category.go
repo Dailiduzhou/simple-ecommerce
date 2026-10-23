@@ -90,8 +90,8 @@ func (r *CategoryRepo) categoryDeletionRefusal(ctx context.Context, q db.Querier
 
 func (r *CategoryRepo) GetCategory(ctx context.Context, id int64) (*biz.Category, error) {
 	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryGenerationKey(id), redisKey("category", id))
-	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.Category, error) {
-		row, err := r.data.DB(ctx).GetCategory(ctx, id)
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func(loadCtx context.Context) (*biz.Category, error) {
+		row, err := r.data.DB(loadCtx).GetCategory(loadCtx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -109,8 +109,8 @@ func (r *CategoryRepo) ListSubCategories(ctx context.Context, parentID int64, li
 		return nil, err
 	}
 	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryListGenerationKey, categoryListCacheKey(parentID, p.Limit, p.Offset))
-	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Category, error) {
-		rows, err := r.data.DB(ctx).ListSubCategories(ctx, db.ListSubCategoriesParams{ParentID: toPgParentID(parentID), Limit: p.Limit, Offset: p.Offset})
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func(loadCtx context.Context) ([]biz.Category, error) {
+		rows, err := r.data.DB(loadCtx).ListSubCategories(loadCtx, db.ListSubCategoriesParams{ParentID: toPgParentID(parentID), Limit: p.Limit, Offset: p.Offset})
 		if err != nil {
 			return nil, err
 		}
@@ -124,8 +124,8 @@ func (r *CategoryRepo) ListTopCategories(ctx context.Context, limit, offset int3
 		return nil, err
 	}
 	key := generatedEntityCacheKey(ctx, r.data, r.log, categoryListGenerationKey, categoryListCacheKey(0, p.Limit, p.Offset))
-	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Category, error) {
-		rows, err := r.data.DB(ctx).ListTopCategories(ctx, db.ListTopCategoriesParams{Limit: p.Limit, Offset: p.Offset})
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func(loadCtx context.Context) ([]biz.Category, error) {
+		rows, err := r.data.DB(loadCtx).ListTopCategories(loadCtx, db.ListTopCategoriesParams{Limit: p.Limit, Offset: p.Offset})
 		if err != nil {
 			return nil, err
 		}
@@ -161,11 +161,11 @@ func (r *CategoryRepo) getListCache(ctx context.Context, key string) ([]biz.Cate
 }
 
 func (r *CategoryRepo) setCache(ctx context.Context, key string, value *biz.Category) {
-	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *CategoryRepo) setListCache(ctx context.Context, key string, value []biz.Category) {
-	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 const categoryListGenerationKey = "category:list:gen"

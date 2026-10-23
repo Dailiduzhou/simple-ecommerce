@@ -166,7 +166,9 @@ func (r *PaymentRepo) RecordPaymentPrepayError(ctx context.Context, id int64, to
 }
 
 func (r *PaymentRepo) GetPayment(ctx context.Context, id int64) (*biz.PaymentDO, error) {
-	return r.getPayment(ctx, redisKey("payment", id, "gen"), func(gen int64) string { return redisKey("payment", id, "g", gen) }, func() (db.Payment, error) { return querierFromContext(ctx, r.data.q).GetPayment(ctx, id) })
+	return r.getPayment(ctx, redisKey("payment", id, "gen"), func(gen int64) string { return redisKey("payment", id, "g", gen) }, func(loadCtx context.Context) (db.Payment, error) {
+		return querierFromContext(loadCtx, r.data.q).GetPayment(loadCtx, id)
+	})
 }
 
 func (r *PaymentRepo) GetPaymentForJob(ctx context.Context, id int64) (*biz.PaymentDO, error) {
@@ -192,14 +194,14 @@ func (r *PaymentRepo) GetPaymentByUser(ctx context.Context, id, userID int64) (*
 }
 
 func (r *PaymentRepo) GetLatestPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
-	return r.getPayment(ctx, redisKey("payment", "order", orderID, "gen"), func(gen int64) string { return redisKey("payment", "order", orderID, "g", gen) }, func() (db.Payment, error) {
-		return querierFromContext(ctx, r.data.q).GetLatestPaymentByOrder(ctx, orderID)
+	return r.getPayment(ctx, redisKey("payment", "order", orderID, "gen"), func(gen int64) string { return redisKey("payment", "order", orderID, "g", gen) }, func(loadCtx context.Context) (db.Payment, error) {
+		return querierFromContext(loadCtx, r.data.q).GetLatestPaymentByOrder(loadCtx, orderID)
 	})
 }
 
 func (r *PaymentRepo) GetActivePaymentByOrderMethod(ctx context.Context, orderID int64, method string) (*biz.PaymentDO, error) {
-	return r.getPayment(ctx, redisKey("payment", "order", orderID, "gen"), func(gen int64) string { return redisKey("payment", "order", orderID, "active", method, "g", gen) }, func() (db.Payment, error) {
-		return querierFromContext(ctx, r.data.q).GetActivePaymentByOrderChannel(ctx, db.GetActivePaymentByOrderChannelParams{OrderID: orderID, PayChannel: method})
+	return r.getPayment(ctx, redisKey("payment", "order", orderID, "gen"), func(gen int64) string { return redisKey("payment", "order", orderID, "active", method, "g", gen) }, func(loadCtx context.Context) (db.Payment, error) {
+		return querierFromContext(loadCtx, r.data.q).GetActivePaymentByOrderChannel(loadCtx, db.GetActivePaymentByOrderChannelParams{OrderID: orderID, PayChannel: method})
 	})
 }
 
@@ -215,8 +217,8 @@ func (r *PaymentRepo) getActivePaymentByOrder(ctx context.Context, orderID int64
 }
 
 func (r *PaymentRepo) GetPaymentByOutTradeNo(ctx context.Context, outTradeNo string) (*biz.PaymentDO, error) {
-	return r.getPayment(ctx, redisKey("payment", "out_trade_no", outTradeNo, "gen"), func(gen int64) string { return redisKey("payment", "out_trade_no", outTradeNo, "g", gen) }, func() (db.Payment, error) {
-		return querierFromContext(ctx, r.data.q).GetPaymentByOutTradeNo(ctx, outTradeNo)
+	return r.getPayment(ctx, redisKey("payment", "out_trade_no", outTradeNo, "gen"), func(gen int64) string { return redisKey("payment", "out_trade_no", outTradeNo, "g", gen) }, func(loadCtx context.Context) (db.Payment, error) {
+		return querierFromContext(loadCtx, r.data.q).GetPaymentByOutTradeNo(loadCtx, outTradeNo)
 	})
 }
 
@@ -239,11 +241,11 @@ func (r *PaymentRepo) GetOrderExpiry(ctx context.Context, paymentID int64) (time
 // counter. Writers bump the generation after commit, so a reader that loaded a
 // row just before a state change can only repopulate keys under the old
 // generation, which no future read will ever consult.
-func (r *PaymentRepo) getPayment(ctx context.Context, generationKey string, keyForGen func(int64) string, load func() (db.Payment, error)) (*biz.PaymentDO, error) {
+func (r *PaymentRepo) getPayment(ctx context.Context, generationKey string, keyForGen func(int64) string, load func(context.Context) (db.Payment, error)) (*biz.PaymentDO, error) {
 	gen := readCacheGeneration(ctx, r.data.rdb, r.log, generationKey)
 	key := generationCacheKey(gen, keyForGen(gen))
-	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.PaymentDO, error) {
-		row, err := load()
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func(loadCtx context.Context) (*biz.PaymentDO, error) {
+		row, err := load(loadCtx)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, biz.ErrPaymentNotFound
 		}

@@ -264,8 +264,8 @@ func (r *OrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64, l
 	genKey := redisKey("order", "user", "ongoing", userID, "gen")
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, genKey)
 	cacheKey := generationCacheKey(generation, redisKey("order", "user", "ongoing", userID, generation, limit, offset))
-	return r.listOrders(ctx, cacheKey, func() ([]db.Order, error) {
-		return querierFromContext(ctx, r.data.q).ListOngoingOrdersByUser(ctx, db.ListOngoingOrdersByUserParams{UserID: userID, Limit: limit, Offset: offset})
+	return r.listOrders(ctx, cacheKey, func(loadCtx context.Context) ([]db.Order, error) {
+		return querierFromContext(loadCtx, r.data.q).ListOngoingOrdersByUser(loadCtx, db.ListOngoingOrdersByUserParams{UserID: userID, Limit: limit, Offset: offset})
 	})
 }
 
@@ -278,14 +278,14 @@ func (r *OrderRepo) ListOrdersByUser(ctx context.Context, userID int64, limit, o
 	genKey := redisKey("order", "user", userID, "gen")
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, genKey)
 	cacheKey := generationCacheKey(generation, redisKey("order", "user", userID, generation, limit, offset))
-	return r.listOrders(ctx, cacheKey, func() ([]db.Order, error) {
-		return querierFromContext(ctx, r.data.q).ListOrdersByUser(ctx, db.ListOrdersByUserParams{UserID: userID, Limit: limit, Offset: offset})
+	return r.listOrders(ctx, cacheKey, func(loadCtx context.Context) ([]db.Order, error) {
+		return querierFromContext(loadCtx, r.data.q).ListOrdersByUser(loadCtx, db.ListOrdersByUserParams{UserID: userID, Limit: limit, Offset: offset})
 	})
 }
 
-func (r *OrderRepo) listOrders(ctx context.Context, cacheKey string, load func() ([]db.Order, error)) ([]biz.Order, error) {
-	return cacheAside(ctx, r.data, r.log, cacheKey, r.getListCache, r.setListCache, func() ([]biz.Order, error) {
-		rows, err := load()
+func (r *OrderRepo) listOrders(ctx context.Context, cacheKey string, load func(context.Context) ([]db.Order, error)) ([]biz.Order, error) {
+	return cacheAside(ctx, r.data, r.log, cacheKey, r.getListCache, r.setListCache, func(loadCtx context.Context) ([]biz.Order, error) {
+		rows, err := load(loadCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -299,7 +299,7 @@ func (r *OrderRepo) listOrders(ctx context.Context, cacheKey string, load func()
 		if len(ids) == 0 {
 			return orders, nil
 		}
-		items, err := querierFromContext(ctx, r.data.q).ListOrderItemsByOrderIDs(ctx, ids)
+		items, err := querierFromContext(loadCtx, r.data.q).ListOrderItemsByOrderIDs(loadCtx, ids)
 		if err != nil {
 			return nil, err
 		}
@@ -429,7 +429,7 @@ func (r *OrderRepo) getListCache(ctx context.Context, key string) ([]biz.Order, 
 }
 
 func (r *OrderRepo) setListCache(ctx context.Context, key string, orders []biz.Order) {
-	writeJSONCache(ctx, r.data, r.log, key, orders, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, orders, cacheTTL())
 }
 
 func (r *OrderRepo) deleteKey(ctx context.Context, key string) {

@@ -68,8 +68,8 @@ func (r *EventRepo) DeleteEvent(ctx context.Context, id int64) error {
 
 func (r *EventRepo) GetEvent(ctx context.Context, id int64) (*biz.Event, error) {
 	key := generatedEntityCacheKey(ctx, r.data, r.log, eventGenerationKey(id), eventCacheKey(id))
-	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.Event, error) {
-		row, err := r.data.DB(ctx).GetEvent(ctx, id)
+	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func(loadCtx context.Context) (*biz.Event, error) {
+		row, err := r.data.DB(loadCtx).GetEvent(loadCtx, id)
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -82,21 +82,25 @@ func (r *EventRepo) GetEvent(ctx context.Context, id int64) (*biz.Event, error) 
 }
 
 func (r *EventRepo) ListEvents(ctx context.Context, status *int32, limit int32, offset int32) ([]biz.Event, error) {
+	// Shared work may outlive the request; never retain a caller-owned pointer.
+	var statusSnapshot *int32
 	if status != nil {
-		if err := biz.ValidateEventStatus(*status); err != nil {
+		statusValue := *status
+		statusSnapshot = &statusValue
+		if err := biz.ValidateEventStatus(statusValue); err != nil {
 			return nil, err
 		}
 	}
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, "event:list:gen")
-	key := generationCacheKey(generation, eventListPresenceCacheKey(generation, status, limit, offset))
-	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Event, error) {
+	key := generationCacheKey(generation, eventListPresenceCacheKey(generation, statusSnapshot, limit, offset))
+	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func(loadCtx context.Context) ([]biz.Event, error) {
 		var rows []db.Event
 		var err error
-		q := r.data.DB(ctx)
-		if status != nil {
-			rows, err = q.ListEventsByStatus(ctx, db.ListEventsByStatusParams{Status: int16(*status), Limit: limit, Offset: offset})
+		q := r.data.DB(loadCtx)
+		if statusSnapshot != nil {
+			rows, err = q.ListEventsByStatus(loadCtx, db.ListEventsByStatusParams{Status: int16(*statusSnapshot), Limit: limit, Offset: offset})
 		} else {
-			rows, err = q.ListEvents(ctx, db.ListEventsParams{Limit: limit, Offset: offset})
+			rows, err = q.ListEvents(loadCtx, db.ListEventsParams{Limit: limit, Offset: offset})
 		}
 		if err != nil {
 			return nil, err
@@ -164,11 +168,11 @@ func (r *EventRepo) getListCache(ctx context.Context, key string) ([]biz.Event, 
 }
 
 func (r *EventRepo) setCache(ctx context.Context, key string, value *biz.Event) {
-	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *EventRepo) setListCache(ctx context.Context, key string, value []biz.Event) {
-	writeJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
+	fillJSONCache(ctx, r.data, r.log, key, value, cacheTTL())
 }
 
 func (r *EventRepo) deleteListCaches(ctx context.Context) {
