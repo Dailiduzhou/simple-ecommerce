@@ -1,8 +1,9 @@
 services:
-  # CI (ubuntu-latest runners) offers 7 GB of RAM and 14 GB of disk per job;
-  # the test server should keep >= 4 GB free for this stack. Caps are deliberately
-  # conservative headroom over idle usage, not tight sizing: postgres can spike
-  # far above its baseline during migrations, and the Go service under load.
+  # Sized for the 2-core/4 GB test server: declared caps total ~2.5 GB
+  # (~3 GB with the optional MinIO overlay), deliberately leaving >= 1 GB
+  # for the kernel, dockerd, page cache and bursts. Caps are headroom over
+  # idle usage, not tight sizing: postgres can spike far above baseline during
+  # migrations, and the Go service under load.
   # mem_limit is the Compose v2 spelling of the cgroup memory cap (docker run
   # --memory); it needs no deploy: section or swarm-mode interpretation.
   postgres:
@@ -11,14 +12,14 @@ services:
       POSTGRES_DB: ecommerce
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-    # Shared buffers stay a fixed fraction of the 512 MB cap; no tuning needed.
-    mem_limit: 512m
-    # Oversubscribed workloads (migrations on small CI-like hosts, batch jobs,
-    # e.g. the community history cleanup) can transiently exceed the RAM cap.
-    # memswap_limit > mem_limit gives postgres 256 MB of swap headroom instead
-    # of an immediate OOM kill; the kernel still caps RAM+swap combined at 768m.
+    # Shared buffers stay a fixed fraction of the 384 MB cap; no tuning needed.
+    mem_limit: 384m
+    # Oversubscribed workloads (migrations on small hosts, batch jobs, e.g. the
+    # community history cleanup) can transiently exceed the RAM cap.
+    # memswap_limit > mem_limit gives postgres 128 MB of swap headroom instead
+    # of an immediate OOM kill; the kernel still caps RAM+swap combined at 512m.
     # Set it equal to mem_limit to disable swap entirely.
-    memswap_limit: 768m
+    memswap_limit: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
@@ -41,7 +42,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    mem_limit: 192m
+    mem_limit: 128m
     ports:
       - "6379:6379"
 
@@ -52,11 +53,12 @@ services:
       # all-in-one keeps spans in memory; sampling controls the inflow but the
       # store still grows with traffic. Cap it so a burst cannot exhaust the
       # container/host: oldest traces are evicted once the limit is reached.
-      MEMORY_MAX_TRACES: "50000"
+      # 20000 traces keeps the store comfortably inside the 256 MB cap.
+      MEMORY_MAX_TRACES: "20000"
     # Monitoring UIs have no built-in authentication: publish them on the
     # loopback interface only. Remote access should go through an
     # authenticating reverse proxy, never the published port.
-    mem_limit: 512m
+    mem_limit: 256m
     ports:
       - "127.0.0.1:16686:16686"
       - "127.0.0.1:4317:4317"
@@ -68,7 +70,7 @@ services:
       - jaeger
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
-    mem_limit: 256m
+    mem_limit: 128m
     ports:
       - "127.0.0.1:14317:4317"
       - "127.0.0.1:9464:9464"
@@ -86,7 +88,7 @@ services:
       # Match the alerting window already used by the rule files and drop
       # stale timeseries after 15 days so the volume cannot grow unbounded.
       - --storage.tsdb.retention.time=15d
-    mem_limit: 512m
+    mem_limit: 256m
     ports:
       - "127.0.0.1:9090:9090"
 
@@ -95,7 +97,7 @@ services:
     # The stock local-config keeps every log forever. Ship our own config so
     # the compactor enforces a retention window (see limits_config below).
     command: -config.file=/etc/loki/config.yaml
-    mem_limit: 512m
+    mem_limit: 256m
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
@@ -107,7 +109,7 @@ services:
     command: -config.file=/etc/promtail/config.yaml
     depends_on:
       - loki
-    mem_limit: 256m
+    mem_limit: 128m
     volumes:
       - ./deploy/promtail.yaml:/etc/promtail/config.yaml:ro
       - mall_logs:/logs/mall:ro
@@ -123,7 +125,7 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
-    mem_limit: 512m
+    mem_limit: 256m
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -186,7 +188,7 @@ services:
       WECHAT_API_KEY: ${WECHAT_API_KEY:-}
       WECHAT_IS_PRODUCTION: ${WECHAT_IS_PRODUCTION:-false}
       WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
-    mem_limit: 1g
+    mem_limit: 768m
     volumes:
       - ./app/mall/configs:/data/conf:ro
       - ./app/mall/configs/certs:/data/certs:ro

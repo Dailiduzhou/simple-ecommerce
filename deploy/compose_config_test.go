@@ -60,12 +60,13 @@ func TestMonitoringStackIsNotExposedUnauthenticated(t *testing.T) {
 }
 
 // Resource caps are part of the deployment contract: the test server is a
-// small host, so every service must declare a memory limit (the base file is
-// exactly what GitHub Actions deploys, per .github/workflows/go-test.yml),
-// postgres must carry swap headroom beyond its cap, and the mall service must
-// bound trace volume through the standard OTel sampling variables.
-// CI runners provide 7 GB RAM / 14 GB disk per job; totals here stay well
-// below that so the stack also fits the GitHub-hosted test server class.
+// small 2-core/4 GB host, so every service must declare a memory limit (the
+// base file is exactly what GitHub Actions deploys, per
+// .github/workflows/go-test.yml), postgres must carry swap headroom beyond
+// its cap, and the mall service must bound trace volume through the standard
+// OTel sampling variables. Declared caps total ~2.5 GB (~3 GB with the
+// optional MinIO overlay), leaving >= 1 GB for the kernel, dockerd, page
+// cache and bursts.
 func TestResourceLimitsAndSampling(t *testing.T) {
 	type service struct {
 		MemLimit     string            `yaml:"mem_limit"`
@@ -91,9 +92,9 @@ func TestResourceLimitsAndSampling(t *testing.T) {
 				require.NoError(t, err, "%s mem_limit %q", name, svc.MemLimit)
 				total += mb
 			}
-			// 7 GB CI-class host: keep >= 2 GB for the OS, page cache and bursts.
-			require.LessOrEqual(t, total, 5120.0,
-				"declared mem_limit total %.0f MB must fit a 7 GB CI-class host", total)
+			// 4 GB host: keep >= 1 GB (25%) for the OS, dockerd, page cache, bursts.
+			require.LessOrEqual(t, total, 3072.0,
+				"declared mem_limit total %.0f MB must fit a 2c/4 GB host with >= 1 GB headroom", total)
 
 			pg := compose.Services["postgres"]
 			pgLimit, err := sizeToMB(pg.MemLimit)
@@ -113,8 +114,17 @@ func TestResourceLimitsAndSampling(t *testing.T) {
 			require.InDelta(t, 0.1, ratio, 1e-9)
 
 			jaeger := compose.Services["jaeger"]
-			require.NotEmpty(t, jaeger.Environment["MEMORY_MAX_TRACES"],
+			maxTraces, err := strconv.ParseFloat(jaeger.Environment["MEMORY_MAX_TRACES"], 64)
+			require.NoError(t, err,
 				"in-memory Jaeger storage must be capped by trace count")
+			jaegerMem, err := sizeToMB(jaeger.MemLimit)
+			require.NoError(t, err)
+			// Jaeger's own README presumes ~0.16 KB (16 Kb) per span and a few
+			// spans per trace; budget ~2 KB/trace so the store, with overhead,
+			// stays under half the container cap and cannot OOM the host.
+			require.LessOrEqual(t, maxTraces*2.0/1024, jaegerMem*0.5,
+				"MEMORY_MAX_TRACES (%.0f) must fit inside the %.0f MB Jaeger cap (~2 KB/trace)",
+				maxTraces, jaegerMem)
 		})
 	}
 }

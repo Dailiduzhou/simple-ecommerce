@@ -12,7 +12,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
-    mem_limit: 1g
+    mem_limit: 512m
     ports:
       - "127.0.0.1:9002:9000"
       - "127.0.0.1:9003:9001"
@@ -30,9 +30,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    mem_limit: 512m
+    mem_limit: 384m
     # Same swap headroom as the base file: local migrations can also spike.
-    memswap_limit: 768m
+    memswap_limit: 512m
     ports:
       - "5432:5432"
     volumes:
@@ -49,7 +49,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    mem_limit: 192m
+    mem_limit: 128m
     ports:
       - "6379:6379"
 
@@ -58,11 +58,11 @@ services:
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
       # Cap the in-memory trace store (see base compose file).
-      MEMORY_MAX_TRACES: "50000"
+      MEMORY_MAX_TRACES: "20000"
     # Monitoring UIs stay on the loopback interface even in development: the
     # machine's other network interfaces must not expose unauthenticated
     # dashboards to the local network.
-    mem_limit: 512m
+    mem_limit: 256m
     ports:
       - "127.0.0.1:16686:16686"
       - "127.0.0.1:4317:4317"
@@ -74,7 +74,7 @@ services:
       - jaeger
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
-    mem_limit: 256m
+    mem_limit: 128m
     ports:
       - "127.0.0.1:9464:9464"
 
@@ -89,7 +89,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
-    mem_limit: 512m
+    mem_limit: 256m
     ports:
       - "127.0.0.1:9090:9090"
 
@@ -97,7 +97,7 @@ services:
     image: grafana/loki:2.9.0
     # Same bounded-retention config as the base file (see deploy/loki-config.yaml).
     command: -config.file=/etc/loki/config.yaml
-    mem_limit: 512m
+    mem_limit: 256m
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
@@ -109,7 +109,7 @@ services:
     command: -config.file=/etc/promtail/config.yaml
     depends_on:
       - loki
-    mem_limit: 256m
+    mem_limit: 128m
     volumes:
       - ./deploy/promtail.yaml:/etc/promtail/config.yaml:ro
       - mall_logs:/logs/mall:ro
@@ -123,7 +123,7 @@ services:
       # datasource and organization control to anyone who can reach the port.
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
-    mem_limit: 512m
+    mem_limit: 256m
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -186,7 +186,7 @@ services:
       WECHAT_API_KEY: ${WECHAT_API_KEY:-}
       WECHAT_IS_PRODUCTION: ${WECHAT_IS_PRODUCTION:-false}
       WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
-    mem_limit: 1g
+    mem_limit: 768m
     volumes:
       - ./app/mall/configs:/data/conf:ro
       - ./app/mall/configs/certs:/data/certs:ro
