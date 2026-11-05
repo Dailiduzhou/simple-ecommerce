@@ -2,9 +2,11 @@ package deploy_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -55,6 +57,140 @@ func TestMonitoringStackIsNotExposedUnauthenticated(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Resource caps are part of the deployment contract: the test server is a
+// small host, so every service must declare a memory limit (the base file is
+// exactly what GitHub Actions deploys, per .github/workflows/go-test.yml),
+// postgres must carry swap headroom beyond its cap, and the mall service must
+// bound trace volume through the standard OTel sampling variables.
+// CI runners provide 7 GB RAM / 14 GB disk per job; totals here stay well
+// below that so the stack also fits the GitHub-hosted test server class.
+func TestResourceLimitsAndSampling(t *testing.T) {
+	type service struct {
+		MemLimit     string            `yaml:"mem_limit"`
+		MemswapLimit string            `yaml:"memswap_limit"`
+		Environment  map[string]string `yaml:"environment"`
+	}
+
+	for _, file := range []string{"../docker-compose.yml"} {
+		t.Run(file, func(t *testing.T) {
+			raw, err := os.ReadFile(file)
+			require.NoError(t, err)
+
+			var compose struct {
+				Services map[string]service `yaml:"services"`
+			}
+			require.NoError(t, yaml.Unmarshal(raw, &compose))
+			require.NotEmpty(t, compose.Services)
+
+			total := 0.0
+			for name, svc := range compose.Services {
+				require.NotEmpty(t, svc.MemLimit, "%s must declare mem_limit", name)
+				mb, err := sizeToMB(svc.MemLimit)
+				require.NoError(t, err, "%s mem_limit %q", name, svc.MemLimit)
+				total += mb
+			}
+			// 7 GB CI-class host: keep >= 2 GB for the OS, page cache and bursts.
+			require.LessOrEqual(t, total, 5120.0,
+				"declared mem_limit total %.0f MB must fit a 7 GB CI-class host", total)
+
+			pg := compose.Services["postgres"]
+			pgLimit, err := sizeToMB(pg.MemLimit)
+			require.NoError(t, err)
+			pgSwap, err := sizeToMB(pg.MemswapLimit)
+			require.NoError(t, err)
+			require.Greater(t, pgSwap, pgLimit,
+				"postgres must allow swap beyond its memory cap (memswap_limit > mem_limit)")
+
+			mall := compose.Services["mall"]
+			require.Equal(t, "parentbased_traceidratio", mall.Environment["OTEL_TRACES_SAMPLER"],
+				"mall must head-sample traces; all-in-one Jaeger keeps them in memory")
+			arg := mall.Environment["OTEL_TRACES_SAMPLER_ARG"]
+			require.NotEmpty(t, arg)
+			ratio, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimPrefix(arg, "${OTEL_TRACES_SAMPLER_ARG:-"), "}"), 64)
+			require.NoError(t, err, "sampler arg must default to a parseable ratio: %q", arg)
+			require.InDelta(t, 0.1, ratio, 1e-9)
+
+			jaeger := compose.Services["jaeger"]
+			require.NotEmpty(t, jaeger.Environment["MEMORY_MAX_TRACES"],
+				"in-memory Jaeger storage must be capped by trace count")
+		})
+	}
+}
+
+// sizeToMB converts Compose byte-size values (e.g. 512m, 1g, 268435456) to MB.
+func sizeToMB(v string) (float64, error) {
+	v = strings.TrimSpace(strings.ToLower(v))
+	if v == "" {
+		return 0, fmt.Errorf("empty size")
+	}
+	unit := v[len(v)-1]
+	var mult float64 = 1
+	numstr := v
+	switch unit {
+	case 'g':
+		mult, numstr = 1024, v[:len(v)-1]
+	case 'm':
+		mult, numstr = 1, v[:len(v)-1]
+	case 'b':
+		mult, numstr = 1.0/(1024*1024), v[:len(v)-1]
+	default:
+		if unit < '0' || unit > '9' {
+			return 0, fmt.Errorf("unsupported unit in %q", v)
+		}
+		mult = 1.0 / (1024 * 1024) // plain bytes
+	}
+	n, err := strconv.ParseFloat(numstr, 64)
+	if err != nil {
+		return 0, err
+	}
+	return n * mult, nil
+}
+
+// Log retention must stay bounded: the stock Loki local-config keeps every
+// log forever, so the compose files must mount our own config with the
+// compactor enabled, and Prometheus must set an explicit TSDB retention.
+func TestLogRetentionIsBounded(t *testing.T) {
+	raw, err := os.ReadFile("../docker-compose.yml")
+	require.NoError(t, err)
+	var compose struct {
+		Services map[string]struct {
+			Command interface{} `yaml:"command"`
+			Volumes []string    `yaml:"volumes"`
+		}
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &compose))
+
+	loki := compose.Services["loki"]
+	mounted := false
+	for _, v := range loki.Volumes {
+		if strings.HasPrefix(v, "./deploy/loki-config.yaml") {
+			mounted = true
+		}
+	}
+	require.True(t, mounted, "loki must mount deploy/loki-config.yaml, not the stock local-config")
+
+	cfg, err := os.ReadFile("loki-config.yaml")
+	require.NoError(t, err)
+	var lokiCfg struct {
+		LimitsConfig struct {
+			RetentionPeriod string `yaml:"retention_period"`
+		} `yaml:"limits_config"`
+		Compactor struct {
+			RetentionEnabled   bool   `yaml:"retention_enabled"`
+			DeleteRequestStore string `yaml:"delete_request_store"`
+		} `yaml:"compactor"`
+	}
+	require.NoError(t, yaml.Unmarshal(cfg, &lokiCfg))
+	require.True(t, lokiCfg.Compactor.RetentionEnabled, "loki compactor retention must be enabled")
+	require.Equal(t, "filesystem", lokiCfg.Compactor.DeleteRequestStore,
+		"Loki 2.9 requires delete_request_store with the filesystem object store")
+	require.NotEmpty(t, lokiCfg.LimitsConfig.RetentionPeriod, "loki retention_period must be set")
+
+	prom := compose.Services["prometheus"]
+	cmdStr := fmt.Sprintf("%v", prom.Command)
+	require.Contains(t, cmdStr, "--storage.tsdb.retention.time=", "prometheus must set an explicit TSDB retention")
 }
 
 // Run the real Compose merger: plain YAML parsing cannot detect accidentally

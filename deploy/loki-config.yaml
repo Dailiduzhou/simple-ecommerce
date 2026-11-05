@@ -1,0 +1,64 @@
+# Loki configuration derived from grafana/loki v2.9.0 local-config.yaml
+# (https://github.com/grafana/loki/blob/v2.9.0/cmd/loki/loki-local-config.yaml)
+# with production paths (/loki volume instead of /tmp) and, crucially,
+# retention enabled: the stock local-config keeps every log forever, which
+# eventually exhausts the host disk.
+#
+# Retention is enforced by the compactor: retention_enabled removes chunks
+# older than retention_period during its table-by-table pass (default every
+# 5 minutes once the bucket/table is past the retention window). On the
+# filesystem store the compactor additionally requires delete_request_store,
+# otherwise Loki 2.9 refuses to start with retention enabled.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h
+
+# 14 days: matches the Prometheus retention in docker-compose.yml and is long
+# enough to correlate Loki logs with Jaeger traces (Jaeger caps its in-memory
+# store by trace count, not by age) and with the two-week GitHub Actions log
+# retention for deployed revisions.
+limits_config:
+  retention_period: 336h
+
+compactor:
+  working_directory: /loki/compactor
+  # Required for retention on the filesystem store in Loki 2.9.x.
+  delete_request_store: filesystem
+  retention_enabled: true
+
+ruler:
+  alertmanager_url: http://localhost:9093
+
+analytics:
+  reporting_enabled: false

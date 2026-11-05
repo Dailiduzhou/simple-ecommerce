@@ -44,6 +44,38 @@ func emitOneSpan(t *testing.T, shutdown func()) {
 	shutdown()
 }
 
+// Sampling must be governed by the standard OTEL_TRACES_SAMPLER(_ARG)
+// variables: trace.go must not pass WithSampler, which would override the
+// environment. With a 0.0 ratio nothing should be exported; with always_on
+// everything is (the SDK default when the variables are unset).
+func TestSamplingFollowsOtelEnvVars(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		sampler, arg string
+		exported     bool
+	}{
+		{name: "ratio-zero", sampler: "traceidratio", arg: "0", exported: false},
+		{name: "always-on", sampler: "always_on", exported: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, _, exports := serveOTLPTraces(t, false)
+
+			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://"+addr)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+			t.Setenv("OTEL_TRACES_SAMPLER", tc.sampler)
+			t.Setenv("OTEL_TRACES_SAMPLER_ARG", tc.arg)
+			emitOneSpan(t, apptrace.InitTracer("sampler-test"))
+
+			select {
+			case <-exports:
+				require.True(t, tc.exported, "a span was exported despite a 0.0 sampling ratio")
+			case <-time.After(2 * time.Second):
+				require.False(t, tc.exported, "no export reached the collector with always_on sampling")
+			}
+		})
+	}
+}
+
 // An https endpoint must export over TLS with the configured trust CA; the
 // previous forced WithInsecure dial would fail the handshake here and no
 // export would ever be recorded.

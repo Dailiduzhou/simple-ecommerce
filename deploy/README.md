@@ -143,6 +143,10 @@ HTTP 默认只发布在服务器 `127.0.0.1:8000`，通过 HTTPS 反向代理或
 
 应用启动时执行迁移；启动检查失败会让 Actions 失败，但**不会自动回滚已经修改的数据库或容器**。`current` 只记录最近成功版本，不保证失败后运行中的服务仍是该版本。修复配置后可重跑。
 
+### 资源与保留策略
+
+Compose 为每个服务声明了 `mem_limit`（合计约 4 GB，适配 GitHub 托管 runner 同级的 7 GB 内存小主机）；PostgreSQL 额外用 `memswap_limit`（512m 内存 + 256m swap）避免迁移/批量任务瞬时超限被 OOM kill，需要禁用 swap 时把它改成与 `mem_limit` 相同。采样与日志保留：`mall` 通过标准 `OTEL_TRACES_SAMPLER=parentbased_traceidratio`（`.env` 中 `OTEL_TRACES_SAMPLER_ARG`，默认 0.1）限制链路追踪量，Jaeger 内存存储再用 `MEMORY_MAX_TRACES=50000` 兑底；Loki（`deploy/loki-config.yaml`，compactor 14 天）与 Prometheus（TSDB 15 天）的日志/指标保留期均已封顶。`deploy/compose_config_test.go` 中的测试会拒绝回退这些约束。
+
 确认数据库 schema 兼容后，手动回退到某个已成功部署的 release：
 
 ```bash

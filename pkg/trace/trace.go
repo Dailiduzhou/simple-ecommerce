@@ -21,6 +21,12 @@ import (
 // OTEL_EXPORTER_OTLP_CERTIFICATE / OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE
 // select a trusted CA. Only when no endpoint is configured at all do we fall
 // back to the unauthenticated plaintext collector of the local compose stack.
+//
+// Sampling follows the standard OTEL_TRACES_SAMPLER(_ARG) environment
+// variables (e.g. parentbased_traceidratio with a 0..1 probability). With no
+// configuration the SDK default (parentbased_always_on) applies; deployments
+// that must bound collector volume set the variables in compose/env files
+// instead of this code hard-coding a policy.
 func InitTracer(serviceName string) func() {
 	var opts []otlptracegrpc.Option
 	endpoint, err := otlpconfig.EndpointOverride("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
@@ -44,7 +50,10 @@ func InitTracer(serviceName string) func() {
 			semconv.SchemaURL,
 			semconv.ServiceName(serviceName),
 		)),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		// No WithSampler here: it would override OTEL_TRACES_SAMPLER(_ARG),
+		// which NewTracerProvider reads from the environment first. Unset or
+		// invalid variables fall back to the SDK default of
+		// parentbased_always_on — i.e. today's full-sampling behaviour.
 	)
 
 	otel.SetTracerProvider(tp)

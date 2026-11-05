@@ -1,10 +1,24 @@
 services:
+  # CI (ubuntu-latest runners) offers 7 GB of RAM and 14 GB of disk per job;
+  # the test server should keep >= 4 GB free for this stack. Caps are deliberately
+  # conservative headroom over idle usage, not tight sizing: postgres can spike
+  # far above its baseline during migrations, and the Go service under load.
+  # mem_limit is the Compose v2 spelling of the cgroup memory cap (docker run
+  # --memory); it needs no deploy: section or swarm-mode interpretation.
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ecommerce
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    # Shared buffers stay a fixed fraction of the 512 MB cap; no tuning needed.
+    mem_limit: 512m
+    # Oversubscribed workloads (migrations on small CI-like hosts, batch jobs,
+    # e.g. the community history cleanup) can transiently exceed the RAM cap.
+    # memswap_limit > mem_limit gives postgres 256 MB of swap headroom instead
+    # of an immediate OOM kill; the kernel still caps RAM+swap combined at 768m.
+    # Set it equal to mem_limit to disable swap entirely.
+    memswap_limit: 768m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
@@ -27,6 +41,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    mem_limit: 192m
     ports:
       - "6379:6379"
 
@@ -34,9 +49,14 @@ services:
     image: jaegertracing/all-in-one:1.60
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
+      # all-in-one keeps spans in memory; sampling controls the inflow but the
+      # store still grows with traffic. Cap it so a burst cannot exhaust the
+      # container/host: oldest traces are evicted once the limit is reached.
+      MEMORY_MAX_TRACES: "50000"
     # Monitoring UIs have no built-in authentication: publish them on the
     # loopback interface only. Remote access should go through an
     # authenticating reverse proxy, never the published port.
+    mem_limit: 512m
     ports:
       - "127.0.0.1:16686:16686"
       - "127.0.0.1:4317:4317"
@@ -48,6 +68,7 @@ services:
       - jaeger
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    mem_limit: 256m
     ports:
       - "127.0.0.1:14317:4317"
       - "127.0.0.1:9464:9464"
@@ -60,22 +81,33 @@ services:
       - ./deploy/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/payment-alerts.yaml:/etc/prometheus/payment-alerts.yaml:ro
       - ./deploy/community-alerts.yaml:/etc/prometheus/community-alerts.yaml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      # Match the alerting window already used by the rule files and drop
+      # stale timeseries after 15 days so the volume cannot grow unbounded.
+      - --storage.tsdb.retention.time=15d
+    mem_limit: 512m
     ports:
       - "127.0.0.1:9090:9090"
 
   loki:
     image: grafana/loki:2.9.0
-    command: -config.file=/etc/loki/local-config.yaml
+    # The stock local-config keeps every log forever. Ship our own config so
+    # the compactor enforces a retention window (see limits_config below).
+    command: -config.file=/etc/loki/config.yaml
+    mem_limit: 512m
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
       - loki_data:/loki
+      - ./deploy/loki-config.yaml:/etc/loki/config.yaml:ro
 
   promtail:
     image: grafana/promtail:2.9.0
     command: -config.file=/etc/promtail/config.yaml
     depends_on:
       - loki
+    mem_limit: 256m
     volumes:
       - ./deploy/promtail.yaml:/etc/promtail/config.yaml:ro
       - mall_logs:/logs/mall:ro
@@ -91,6 +123,7 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+    mem_limit: 512m
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -115,6 +148,12 @@ services:
     environment:
       APP_IS_PRODUCTION: ${APP_IS_PRODUCTION:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      # Standard OTel sampling knobs ( honoured by pkg/trace). Head sampling at
+      # 10% keeps Jaeger/collector volume bounded on the small test host while
+      # parentbased preserves full traces for any request that was sampled.
+      # Raise for local debugging; arg=0..1 is the sampling probability.
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-0.1}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
       DATABASE_SOURCE: ${DATABASE_SOURCE:?set DATABASE_SOURCE (use sslmode=require outside a trusted network)}
       DATABASE_MIGRATION_SOURCE: ${DATABASE_MIGRATION_SOURCE:-}
@@ -147,6 +186,7 @@ services:
       WECHAT_API_KEY: ${WECHAT_API_KEY:-}
       WECHAT_IS_PRODUCTION: ${WECHAT_IS_PRODUCTION:-false}
       WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
+    mem_limit: 1g
     volumes:
       - ./app/mall/configs:/data/conf:ro
       - ./app/mall/configs/certs:/data/certs:ro
