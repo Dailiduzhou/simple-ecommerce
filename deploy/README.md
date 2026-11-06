@@ -143,6 +143,16 @@ HTTP 默认只发布在服务器 `127.0.0.1:8000`，通过 HTTPS 反向代理或
 
 应用启动时执行迁移；启动检查失败会让 Actions 失败，但**不会自动回滚已经修改的数据库或容器**。`current` 只记录最近成功版本，不保证失败后运行中的服务仍是该版本。修复配置后可重跑。
 
+### 资源与保留策略
+
+Compose 为每个服务声明了 `mem_limit`（合计 2560 MiB，含可选 MinIO 为 3072 MiB），面向 2 核/4 GiB 测试服务器预留 ≥1 GiB 给系统与突发。PostgreSQL 的 `memswap_limit: 512m` 允许在 384 MiB 内存之外使用最多 128 MiB **宿主机已有的 swap**，不会创建 swap，也不保证峰值不会 OOM；无需 swap 时可将其设为与 `mem_limit` 相等，配置测试允许这种方式。
+
+Redis 通过两份 Compose 共用的 `deploy/redis.conf` 将 `maxmemory` 设为 64 MiB，为 128 MiB 容器上限内的分配器、客户端缓冲区和持久化操作预留空间。由于普通缓存与会话、刷新令牌重放标记、限流状态混存，使用 `noeviction`，内存不足时拒绝增长内存的写入，而非自动淘汰安全状态。缓存写入本身是 best-effort；持续满载仍会影响登录等依赖 Redis 写入的操作，需要监控容量并考虑拆分缓存和安全状态。`maxmemory` 不是进程 RSS 上限，调整容量或负载后仍需验证。
+
+`mall` 通过标准 `OTEL_TRACES_SAMPLER=parentbased_traceidratio`（`.env` 中 `OTEL_TRACES_SAMPLER_ARG`，默认 0.1）控制追踪量。Jaeger 在 256 MiB 容器内使用较保守的 `MEMORY_MAX_TRACES=2000` 和 `GOMEMLIMIT=192MiB`，并配置 `restart: unless-stopped`。trace 大小随 span、属性和事件数量变化，条数上限和 Go 软内存限制均不能保证任意负载下不 OOM；内存存储重启会丢失追踪数据，需要长期或大容量追踪时应更换持久化方案，而不是仅调低采样率。
+
+Loki（`deploy/loki-config.yaml`，compactor 14 天）与 Prometheus（TSDB 15 天）设置了保留期。Prometheus 显式保留镜像原有的 `--storage.tsdb.path=/prometheus`，避免添加启动参数后改读新目录；若此前已用错误路径 `/prometheus/data` 运行，需在停止服务并备份后按需迁移该目录的数据，不能直接合并两个 TSDB。`deploy/compose_config_test.go` 覆盖基础/开发配置，并检查合并测试环境及可选 MinIO 后的总内存预算。
+
 确认数据库 schema 兼容后，手动回退到某个已成功部署的 release：
 
 ```bash

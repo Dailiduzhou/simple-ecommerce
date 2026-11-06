@@ -51,6 +51,7 @@ services:
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - minio_data:/data
+    mem_limit: 512m
 
 volumes:
   minio_data:
