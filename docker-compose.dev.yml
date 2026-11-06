@@ -31,7 +31,7 @@ services:
       timeout: 3s
       retries: 20
     mem_limit: 384m
-    # Same swap headroom as the base file: local migrations can also spike.
+    # Uses the host's existing swap only; set equal to mem_limit to disable it.
     memswap_limit: 512m
     ports:
       - "5432:5432"
@@ -41,7 +41,7 @@ services:
   redis:
     image: redis:7-alpine
     # Optional local password: set REDIS_PASSWORD to exercise the authenticated path.
-    command: ["sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then exec redis-server --requirepass \"$$REDIS_PASSWORD\"; else exec redis-server; fi"]
+    command: ["sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then exec redis-server /usr/local/etc/redis/redis.conf --requirepass \"$$REDIS_PASSWORD\"; else exec redis-server /usr/local/etc/redis/redis.conf; fi"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     healthcheck:
@@ -50,6 +50,8 @@ services:
       timeout: 3s
       retries: 20
     mem_limit: 128m
+    volumes:
+      - ./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro
     ports:
       - "6379:6379"
 
@@ -57,12 +59,14 @@ services:
     image: jaegertracing/all-in-one:1.60
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
-      # Cap the in-memory trace store (see base compose file).
-      MEMORY_MAX_TRACES: "20000"
+      # Same conservative store/GC budget as the base file; trace size varies.
+      MEMORY_MAX_TRACES: "2000"
+      GOMEMLIMIT: 192MiB
     # Monitoring UIs stay on the loopback interface even in development: the
     # machine's other network interfaces must not expose unauthenticated
     # dashboards to the local network.
     mem_limit: 256m
+    restart: unless-stopped
     ports:
       - "127.0.0.1:16686:16686"
       - "127.0.0.1:4317:4317"
@@ -88,6 +92,7 @@ services:
       - ./deploy/community-alerts.yaml:/etc/prometheus/community-alerts.yaml:ro
     command:
       - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=15d
     mem_limit: 256m
     ports:

@@ -12,13 +12,10 @@ services:
       POSTGRES_DB: ecommerce
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-    # Shared buffers stay a fixed fraction of the 384 MB cap; no tuning needed.
     mem_limit: 384m
-    # Oversubscribed workloads (migrations on small hosts, batch jobs, e.g. the
-    # community history cleanup) can transiently exceed the RAM cap.
-    # memswap_limit > mem_limit gives postgres 128 MB of swap headroom instead
-    # of an immediate OOM kill; the kernel still caps RAM+swap combined at 512m.
-    # Set it equal to mem_limit to disable swap entirely.
+    # Permit up to 128 MB of the host's existing swap during migrations/batch
+    # jobs; this does not create swap or guarantee that peaks cannot OOM.
+    # Set memswap_limit equal to mem_limit to disable swap entirely.
     memswap_limit: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
@@ -34,7 +31,7 @@ services:
     image: redis:7-alpine
     # Authenticate the cache that holds the jwt blacklist and limiter budgets:
     # an unauthenticated Redis lets anyone with network access clear them.
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
     healthcheck:
@@ -43,6 +40,8 @@ services:
       timeout: 3s
       retries: 20
     mem_limit: 128m
+    volumes:
+      - ./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro
     ports:
       - "6379:6379"
 
@@ -50,15 +49,17 @@ services:
     image: jaegertracing/all-in-one:1.60
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
-      # all-in-one keeps spans in memory; sampling controls the inflow but the
-      # store still grows with traffic. Cap it so a burst cannot exhaust the
-      # container/host: oldest traces are evicted once the limit is reached.
-      # 20000 traces keeps the store comfortably inside the 256 MB cap.
-      MEMORY_MAX_TRACES: "20000"
+      # Trace size varies with span count/attributes. Use a conservative store
+      # size, plus a Go soft limit below the cgroup cap to leave GC headroom.
+      # Count-based eviction is not a byte limit; unusually large traces can
+      # still exhaust memory. All-in-one storage is ephemeral on restart.
+      MEMORY_MAX_TRACES: "2000"
+      GOMEMLIMIT: 192MiB
     # Monitoring UIs have no built-in authentication: publish them on the
     # loopback interface only. Remote access should go through an
     # authenticating reverse proxy, never the published port.
     mem_limit: 256m
+    restart: unless-stopped
     ports:
       - "127.0.0.1:16686:16686"
       - "127.0.0.1:4317:4317"
@@ -85,6 +86,8 @@ services:
       - ./deploy/community-alerts.yaml:/etc/prometheus/community-alerts.yaml:ro
     command:
       - --config.file=/etc/prometheus/prometheus.yml
+      # Preserve the image default path when overriding its command.
+      - --storage.tsdb.path=/prometheus
       # Match the alerting window already used by the rule files and drop
       # stale timeseries after 15 days so the volume cannot grow unbounded.
       - --storage.tsdb.retention.time=15d

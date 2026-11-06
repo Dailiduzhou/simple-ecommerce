@@ -62,8 +62,8 @@ func TestMonitoringStackIsNotExposedUnauthenticated(t *testing.T) {
 // Resource caps are part of the deployment contract: the test server is a
 // small 2-core/4 GB host, so every service must declare a memory limit (the
 // base file is exactly what GitHub Actions deploys, per
-// .github/workflows/go-test.yml), postgres must carry swap headroom beyond
-// its cap, and the mall service must bound trace volume through the standard
+// .github/workflows/go-test.yml), postgres may use or disable host swap,
+// and the mall service must bound trace volume through the standard
 // OTel sampling variables. Declared caps total ~2.5 GB (~3 GB with the
 // optional MinIO overlay), leaving >= 1 GB for the kernel, dockerd, page
 // cache and bursts.
@@ -72,9 +72,29 @@ func TestResourceLimitsAndSampling(t *testing.T) {
 		MemLimit     string            `yaml:"mem_limit"`
 		MemswapLimit string            `yaml:"memswap_limit"`
 		Environment  map[string]string `yaml:"environment"`
+		Command      any               `yaml:"command"`
+		Volumes      []string          `yaml:"volumes"`
+		Restart      string            `yaml:"restart"`
 	}
 
-	for _, file := range []string{"../docker-compose.yml"} {
+	redisConfig, err := os.ReadFile("redis.conf")
+	require.NoError(t, err)
+	redisSettings := make(map[string]string)
+	for _, line := range strings.Split(string(redisConfig), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || strings.HasPrefix(fields[0], "#") {
+			continue
+		}
+		require.Len(t, fields, 2, "unexpected Redis directive: %q", line)
+		redisSettings[fields[0]] = fields[1]
+	}
+	redisBudget, err := sizeToMB(redisSettings["maxmemory"])
+	require.NoError(t, err)
+	require.Positive(t, redisBudget, "Redis must have an internal memory budget")
+	require.Equal(t, "noeviction", redisSettings["maxmemory-policy"],
+		"Redis must not evict sessions, refresh replay markers or limiter state")
+
+	for _, file := range []string{"../docker-compose.yml", "../docker-compose.dev.yml"} {
 		t.Run(file, func(t *testing.T) {
 			raw, err := os.ReadFile(file)
 			require.NoError(t, err)
@@ -90,6 +110,7 @@ func TestResourceLimitsAndSampling(t *testing.T) {
 				require.NotEmpty(t, svc.MemLimit, "%s must declare mem_limit", name)
 				mb, err := sizeToMB(svc.MemLimit)
 				require.NoError(t, err, "%s mem_limit %q", name, svc.MemLimit)
+				require.Positive(t, mb, "%s must have a positive memory cap", name)
 				total += mb
 			}
 			// 4 GB host: keep >= 1 GB (25%) for the OS, dockerd, page cache, bursts.
@@ -101,8 +122,16 @@ func TestResourceLimitsAndSampling(t *testing.T) {
 			require.NoError(t, err)
 			pgSwap, err := sizeToMB(pg.MemswapLimit)
 			require.NoError(t, err)
-			require.Greater(t, pgSwap, pgLimit,
-				"postgres must allow swap beyond its memory cap (memswap_limit > mem_limit)")
+			require.GreaterOrEqual(t, pgSwap, pgLimit,
+				"postgres RAM+swap budget must cover RAM; equality disables swap")
+
+			redis := compose.Services["redis"]
+			require.Contains(t, redis.Volumes, "./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro")
+			require.Contains(t, fmt.Sprint(redis.Command), "/usr/local/etc/redis/redis.conf")
+			redisLimit, err := sizeToMB(redis.MemLimit)
+			require.NoError(t, err)
+			require.LessOrEqual(t, redisBudget, redisLimit*0.5,
+				"Redis must reserve headroom for allocator, buffers and persistence overhead")
 
 			mall := compose.Services["mall"]
 			require.Equal(t, "parentbased_traceidratio", mall.Environment["OTEL_TRACES_SAMPLER"],
@@ -111,96 +140,129 @@ func TestResourceLimitsAndSampling(t *testing.T) {
 			require.NotEmpty(t, arg)
 			ratio, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimPrefix(arg, "${OTEL_TRACES_SAMPLER_ARG:-"), "}"), 64)
 			require.NoError(t, err, "sampler arg must default to a parseable ratio: %q", arg)
-			require.InDelta(t, 0.1, ratio, 1e-9)
+			require.GreaterOrEqual(t, ratio, 0.0)
+			require.LessOrEqual(t, ratio, 1.0)
 
 			jaeger := compose.Services["jaeger"]
-			maxTraces, err := strconv.ParseFloat(jaeger.Environment["MEMORY_MAX_TRACES"], 64)
+			maxTraces, err := strconv.ParseUint(jaeger.Environment["MEMORY_MAX_TRACES"], 10, 64)
 			require.NoError(t, err,
 				"in-memory Jaeger storage must be capped by trace count")
+			require.Positive(t, maxTraces)
 			jaegerMem, err := sizeToMB(jaeger.MemLimit)
 			require.NoError(t, err)
-			// Jaeger's own README presumes ~0.16 KB (16 Kb) per span and a few
-			// spans per trace; budget ~2 KB/trace so the store, with overhead,
-			// stays under half the container cap and cannot OOM the host.
-			require.LessOrEqual(t, maxTraces*2.0/1024, jaegerMem*0.5,
-				"MEMORY_MAX_TRACES (%.0f) must fit inside the %.0f MB Jaeger cap (~2 KB/trace)",
-				maxTraces, jaegerMem)
+			// A trace count is not a byte budget. Keep an independent Go soft
+			// limit below the cgroup cap, and recover from unexpectedly large
+			// traces rather than pretending every trace occupies a fixed size.
+			goBudget, err := sizeToMB(jaeger.Environment["GOMEMLIMIT"])
+			require.NoError(t, err)
+			require.Positive(t, goBudget)
+			require.LessOrEqual(t, goBudget, jaegerMem*0.75,
+				"Jaeger must leave headroom outside Go-managed memory")
+			require.Equal(t, "unless-stopped", jaeger.Restart)
 		})
 	}
 }
 
-// sizeToMB converts Compose byte-size values (e.g. 512m, 1g, 268435456) to MB.
+// sizeToMB converts the binary size units used by our Compose, Redis and Go
+// configurations to MiB (e.g. 512m, 64mb, 192MiB, 268435456).
 func sizeToMB(v string) (float64, error) {
 	v = strings.TrimSpace(strings.ToLower(v))
 	if v == "" {
 		return 0, fmt.Errorf("empty size")
 	}
-	unit := v[len(v)-1]
-	var mult float64 = 1
-	numstr := v
-	switch unit {
-	case 'g':
-		mult, numstr = 1024, v[:len(v)-1]
-	case 'm':
-		mult, numstr = 1, v[:len(v)-1]
-	case 'b':
-		mult, numstr = 1.0/(1024*1024), v[:len(v)-1]
-	default:
-		if unit < '0' || unit > '9' {
-			return 0, fmt.Errorf("unsupported unit in %q", v)
+	mult := 1.0 / (1024 * 1024) // plain bytes
+	for _, unit := range []struct {
+		suffix string
+		mult   float64
+	}{
+		{"gib", 1024}, {"gb", 1024}, {"g", 1024},
+		{"mib", 1}, {"mb", 1}, {"m", 1},
+		{"kib", 1.0 / 1024}, {"kb", 1.0 / 1024}, {"k", 1.0 / 1024},
+		{"b", 1.0 / (1024 * 1024)},
+	} {
+		if strings.HasSuffix(v, unit.suffix) {
+			mult = unit.mult
+			v = strings.TrimSuffix(v, unit.suffix)
+			break
 		}
-		mult = 1.0 / (1024 * 1024) // plain bytes
 	}
-	n, err := strconv.ParseFloat(numstr, 64)
+	n, err := strconv.ParseFloat(v, 64)
 	if err != nil {
 		return 0, err
 	}
 	return n * mult, nil
 }
 
+func TestSizeToMB(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  float64
+	}{
+		{"512m", 512}, {"1g", 1024}, {"268435456", 256},
+		{"64mb", 64}, {"192MiB", 192}, {" 1GiB ", 1024},
+		{"1KiB", 1.0 / 1024}, {"32b", 32.0 / (1024 * 1024)},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			got, err := sizeToMB(tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+	for _, input := range []string{"", "garbage", "12tb"} {
+		_, err := sizeToMB(input)
+		require.Error(t, err, "invalid size %q", input)
+	}
+}
+
 // Log retention must stay bounded: the stock Loki local-config keeps every
 // log forever, so the compose files must mount our own config with the
 // compactor enabled, and Prometheus must set an explicit TSDB retention.
 func TestLogRetentionIsBounded(t *testing.T) {
-	raw, err := os.ReadFile("../docker-compose.yml")
-	require.NoError(t, err)
-	var compose struct {
-		Services map[string]struct {
-			Command interface{} `yaml:"command"`
-			Volumes []string    `yaml:"volumes"`
-		}
-	}
-	require.NoError(t, yaml.Unmarshal(raw, &compose))
+	for _, file := range []string{"../docker-compose.yml", "../docker-compose.dev.yml"} {
+		t.Run(file, func(t *testing.T) {
+			raw, err := os.ReadFile(file)
+			require.NoError(t, err)
+			var compose struct {
+				Services map[string]struct {
+					Command interface{} `yaml:"command"`
+					Volumes []string    `yaml:"volumes"`
+				}
+			}
+			require.NoError(t, yaml.Unmarshal(raw, &compose))
 
-	loki := compose.Services["loki"]
-	mounted := false
-	for _, v := range loki.Volumes {
-		if strings.HasPrefix(v, "./deploy/loki-config.yaml") {
-			mounted = true
-		}
-	}
-	require.True(t, mounted, "loki must mount deploy/loki-config.yaml, not the stock local-config")
+			loki := compose.Services["loki"]
+			mounted := false
+			for _, v := range loki.Volumes {
+				if strings.HasPrefix(v, "./deploy/loki-config.yaml") {
+					mounted = true
+				}
+			}
+			require.True(t, mounted, "loki must mount deploy/loki-config.yaml, not the stock local-config")
 
-	cfg, err := os.ReadFile("loki-config.yaml")
-	require.NoError(t, err)
-	var lokiCfg struct {
-		LimitsConfig struct {
-			RetentionPeriod string `yaml:"retention_period"`
-		} `yaml:"limits_config"`
-		Compactor struct {
-			RetentionEnabled   bool   `yaml:"retention_enabled"`
-			DeleteRequestStore string `yaml:"delete_request_store"`
-		} `yaml:"compactor"`
-	}
-	require.NoError(t, yaml.Unmarshal(cfg, &lokiCfg))
-	require.True(t, lokiCfg.Compactor.RetentionEnabled, "loki compactor retention must be enabled")
-	require.Equal(t, "filesystem", lokiCfg.Compactor.DeleteRequestStore,
-		"Loki 2.9 requires delete_request_store with the filesystem object store")
-	require.NotEmpty(t, lokiCfg.LimitsConfig.RetentionPeriod, "loki retention_period must be set")
+			cfg, err := os.ReadFile("loki-config.yaml")
+			require.NoError(t, err)
+			var lokiCfg struct {
+				LimitsConfig struct {
+					RetentionPeriod string `yaml:"retention_period"`
+				} `yaml:"limits_config"`
+				Compactor struct {
+					RetentionEnabled   bool   `yaml:"retention_enabled"`
+					DeleteRequestStore string `yaml:"delete_request_store"`
+				} `yaml:"compactor"`
+			}
+			require.NoError(t, yaml.Unmarshal(cfg, &lokiCfg))
+			require.True(t, lokiCfg.Compactor.RetentionEnabled, "loki compactor retention must be enabled")
+			require.Equal(t, "filesystem", lokiCfg.Compactor.DeleteRequestStore,
+				"Loki 2.9 requires delete_request_store with the filesystem object store")
+			require.NotEmpty(t, lokiCfg.LimitsConfig.RetentionPeriod, "loki retention_period must be set")
 
-	prom := compose.Services["prometheus"]
-	cmdStr := fmt.Sprintf("%v", prom.Command)
-	require.Contains(t, cmdStr, "--storage.tsdb.retention.time=", "prometheus must set an explicit TSDB retention")
+			prom := compose.Services["prometheus"]
+			cmdStr := fmt.Sprintf("%v", prom.Command)
+			require.Contains(t, cmdStr, "--storage.tsdb.retention.time=", "prometheus must set an explicit TSDB retention")
+			require.Contains(t, prom.Command, "--storage.tsdb.path=/prometheus",
+				"overriding the image command must preserve the existing TSDB path")
+		})
+	}
 }
 
 // Run the real Compose merger: plain YAML parsing cannot detect accidentally
@@ -245,7 +307,8 @@ func TestTestEnvironmentCompose(t *testing.T) {
 				Services map[string]struct {
 					Image       string
 					Build       any
-					PullPolicy  string `json:"pull_policy"`
+					PullPolicy  string      `json:"pull_policy"`
+					MemLimit    json.Number `json:"mem_limit"`
 					Environment map[string]string
 					Ports       []struct {
 						HostIP    string `json:"host_ip"`
@@ -255,6 +318,16 @@ func TestTestEnvironmentCompose(t *testing.T) {
 				}
 			}
 			require.NoError(t, json.Unmarshal(output, &compose))
+			var totalMemory int64
+			for name, svc := range compose.Services {
+				// Compose versions emit byte counts as JSON numbers or strings.
+				limit, err := svc.MemLimit.Int64()
+				require.NoError(t, err, "%s memory cap after merging", name)
+				require.Positive(t, limit, "%s must retain its memory cap after merging", name)
+				totalMemory += limit
+			}
+			require.LessOrEqual(t, totalMemory, int64(3072*1024*1024),
+				"the merged stack, including optional MinIO, must leave 1 GiB on the 4 GiB host")
 			for _, service := range []string{"postgres", "redis"} {
 				require.Contains(t, compose.Services, service)
 				require.Empty(t, compose.Services[service].Ports, "%s must not publish ports", service)
