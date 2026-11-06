@@ -40,23 +40,23 @@ func TestReviewProductLateFill(t *testing.T) {
 	r := NewProductRepo(d, nil, log.DefaultLogger)
 	ctx := context.Background()
 	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	q.EXPECT().GetProduct(gomock.Any(), int64(1)).DoAndReturn(func(context.Context, int64) (db.Product, error) {
+	q.EXPECT().GetProduct(gomock.Any(), db.GetProductParams{ID: 1}).DoAndReturn(func(context.Context, db.GetProductParams) (db.Product, error) {
 		close(entered)
 		<-release
 		return db.Product{ID: 1, PriceMinor: 100}, nil
 	})
-	go func() { defer close(done); _, e := r.GetProduct(ctx, 1); require.NoError(t, e) }()
+	go func() { defer close(done); _, e := r.GetProduct(ctx, 1, false); require.NoError(t, e) }()
 	<-entered
-	q.EXPECT().GetProduct(gomock.Any(), int64(1)).Return(db.Product{ID: 1}, nil)
+	q.EXPECT().GetProduct(gomock.Any(), db.GetProductParams{ID: 1, IncludeUnpublished: true}).Return(db.Product{ID: 1}, nil)
 	q.EXPECT().UpdateProductStatus(gomock.Any(), gomock.Any()).Return(db.Product{}, nil)
 	require.NoError(t, r.UpdateProductStatus(ctx, 1, 1))
-	q.EXPECT().GetProduct(gomock.Any(), int64(1)).Return(db.Product{ID: 1, PriceMinor: 200}, nil)
-	fresh, e := r.GetProduct(ctx, 1)
+	q.EXPECT().GetProduct(gomock.Any(), db.GetProductParams{ID: 1}).Return(db.Product{ID: 1, PriceMinor: 200}, nil)
+	fresh, e := r.GetProduct(ctx, 1, false)
 	require.NoError(t, e)
 	require.Equal(t, "2", fresh.Price.String())
 	close(release)
 	<-done
-	fresh, e = r.GetProduct(ctx, 1)
+	fresh, e = r.GetProduct(ctx, 1, false)
 	require.NoError(t, e)
 	require.Equal(t, "2", fresh.Price.String())
 }
@@ -74,4 +74,43 @@ func TestReviewEventZeroIsFilter(t *testing.T) {
 	require.NoError(t, e)
 	require.Equal(t, int64(2), filtered[0].ID)
 	require.NotEqual(t, eventListPresenceCacheKey(0, nil, 10, 0), eventListPresenceCacheKey(0, &zero, 10, 0))
+}
+
+// Catalog reads must forward the visibility flag into the generated query
+// params and keep public and admin cache keys apart, so an unlisted (status=0)
+// product can never leak to a non-admin reader through either the query or the
+// cache.
+func TestProductCatalogVisibilityFlagAndCacheScope(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	q := mockdb.NewMockQuerier(ctrl)
+	mr := miniredis.RunT(t)
+	d := newTestData(t, q, mr)
+	r := NewProductRepo(d, nil, log.DefaultLogger)
+	ctx := context.Background()
+
+	// Public read: include_unpublished=false reaches the query.
+	q.EXPECT().ListProducts(gomock.Any(), db.ListProductsParams{IncludeUnpublished: false, PageLimit: 10}).
+		Return([]db.Product{{ID: 1, Status: 1}}, nil)
+	_, err := r.ListProducts(ctx, false, 10, 0)
+	require.NoError(t, err)
+
+	// Admin read of the same page: include_unpublished=true reaches the query
+	// and does not hit the public cache entry (otherwise this EXPECT would be
+	// unmet because the loader would be skipped).
+	q.EXPECT().ListProducts(gomock.Any(), db.ListProductsParams{IncludeUnpublished: true, PageLimit: 10}).
+		Return([]db.Product{{ID: 1, Status: 1}, {ID: 2, Status: 0}}, nil)
+	admin, err := r.ListProducts(ctx, true, 10, 0)
+	require.NoError(t, err)
+	require.Len(t, admin, 2)
+
+	// Count mirrors the same flag split.
+	q.EXPECT().CountProducts(gomock.Any(), false).Return(int64(1), nil)
+	pub, err := r.CountProducts(ctx, 0, false)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), pub)
+
+	q.EXPECT().CountProducts(gomock.Any(), true).Return(int64(2), nil)
+	all, err := r.CountProducts(ctx, 0, true)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), all)
 }

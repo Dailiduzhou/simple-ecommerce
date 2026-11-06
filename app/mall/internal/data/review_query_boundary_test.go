@@ -48,7 +48,7 @@ func TestCatalogDataRejectsInvalidStateBeforeQuery(t *testing.T) {
 		_, err := events.ListEvents(context.Background(), &status, 20, 0)
 		require.Error(t, err)
 	}
-	q.EXPECT().GetProduct(gomock.Any(), int64(42)).Return(db.Product{}, pgx.ErrNoRows)
+	q.EXPECT().GetProduct(gomock.Any(), db.GetProductParams{ID: 42, IncludeUnpublished: true}).Return(db.Product{}, pgx.ErrNoRows)
 	require.ErrorIs(t, products.UpdateProductStatus(context.Background(), 42, 1), biz.ErrProductNotFound)
 	q.EXPECT().UpdateEventStatus(gomock.Any(), gomock.Any()).Return(db.Event{}, pgx.ErrNoRows)
 	require.Error(t, events.UpdateEventStatus(context.Background(), 42, 1))

@@ -49,10 +49,11 @@ const countProducts = `-- name: CountProducts :one
 SELECT count(*)
 FROM products
 WHERE deleted_at IS NULL
+  AND ($1::boolean OR status = 1)
 `
 
-func (q *Queries) CountProducts(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countProducts)
+func (q *Queries) CountProducts(ctx context.Context, includeUnpublished bool) (int64, error) {
+	row := q.db.QueryRow(ctx, countProducts, includeUnpublished)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -62,12 +63,17 @@ const countProductsByCategory = `-- name: CountProductsByCategory :one
 SELECT count(*)
 FROM products
 WHERE category_id = $1
-  AND status = 1
   AND deleted_at IS NULL
+  AND ($2::boolean OR status = 1)
 `
 
-func (q *Queries) CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, countProductsByCategory, categoryID)
+type CountProductsByCategoryParams struct {
+	CategoryID         int64
+	IncludeUnpublished bool
+}
+
+func (q *Queries) CountProductsByCategory(ctx context.Context, arg CountProductsByCategoryParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countProductsByCategory, arg.CategoryID, arg.IncludeUnpublished)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -159,10 +165,17 @@ SELECT id, category_id, name, price_minor, discount, stock, status, cover_image,
 FROM products
 WHERE id = $1
   AND deleted_at IS NULL
+  AND ($2::boolean OR status = 1)
 `
 
-func (q *Queries) GetProduct(ctx context.Context, id int64) (Product, error) {
-	row := q.db.QueryRow(ctx, getProduct, id)
+type GetProductParams struct {
+	ID                 int64
+	IncludeUnpublished bool
+}
+
+// 公开读取仅返回上架商品；管理端传入 include_unpublished=true 查看全部状态。
+func (q *Queries) GetProduct(ctx context.Context, arg GetProductParams) (Product, error) {
+	row := q.db.QueryRow(ctx, getProduct, arg.ID, arg.IncludeUnpublished)
 	var i Product
 	err := row.Scan(
 		&i.ID,
@@ -233,17 +246,19 @@ const listProducts = `-- name: ListProducts :many
 SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
 FROM products
 WHERE deleted_at IS NULL
+  AND ($1::boolean OR status = 1)
 ORDER BY id DESC
-LIMIT $1 OFFSET $2
+LIMIT $3 OFFSET $2
 `
 
 type ListProductsParams struct {
-	Limit  int32
-	Offset int32
+	IncludeUnpublished bool
+	PageOffset         int32
+	PageLimit          int32
 }
 
 func (q *Queries) ListProducts(ctx context.Context, arg ListProductsParams) ([]Product, error) {
-	rows, err := q.db.Query(ctx, listProducts, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listProducts, arg.IncludeUnpublished, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -280,21 +295,28 @@ const listProductsByCategory = `-- name: ListProductsByCategory :many
 SELECT id, category_id, name, price_minor, discount, stock, status, cover_image, media_assets, description, created_at, updated_at, deleted_at
 FROM products
 WHERE category_id = $1
-  AND status = 1
   AND deleted_at IS NULL
+  AND ($2::boolean OR status = 1)
 ORDER BY id DESC
-LIMIT $2 OFFSET $3
+LIMIT $4 OFFSET $3
 `
 
 type ListProductsByCategoryParams struct {
-	CategoryID int64
-	Limit      int32
-	Offset     int32
+	CategoryID         int64
+	IncludeUnpublished bool
+	PageOffset         int32
+	PageLimit          int32
 }
 
-// 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
+// 商品状态：0=下架，1=上架；公开列表仅展示上架商品，管理端可传
+// include_unpublished=true 查看全部状态。
 func (q *Queries) ListProductsByCategory(ctx context.Context, arg ListProductsByCategoryParams) ([]Product, error) {
-	rows, err := q.db.Query(ctx, listProductsByCategory, arg.CategoryID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listProductsByCategory,
+		arg.CategoryID,
+		arg.IncludeUnpublished,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

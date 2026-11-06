@@ -37,7 +37,7 @@ func (s *MallService) CreateProduct(ctx context.Context, req *pb.CreateProductRe
 }
 
 func (s *MallService) GetProduct(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
-	p, err := s.productUc.GetProduct(ctx, req.Id)
+	p, err := s.productUc.GetProduct(ctx, req.Id, isAdmin(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *MallService) ListProducts(ctx context.Context, req *pb.ListProductsRequ
 		page = 1
 	}
 
-	ps, total, err := s.productUc.ListProducts(ctx, req.CategoryId, pageSize, page)
+	ps, total, err := s.productUc.ListProducts(ctx, req.CategoryId, isAdmin(ctx), pageSize, page)
 	if err != nil {
 		return nil, err
 	}

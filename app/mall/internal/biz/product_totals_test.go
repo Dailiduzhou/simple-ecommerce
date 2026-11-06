@@ -14,14 +14,14 @@ type reviewProducts struct {
 	total    int64
 }
 
-func (r *reviewProducts) CountProducts(_ context.Context, id int64) (int64, error) {
+func (r *reviewProducts) CountProducts(_ context.Context, id int64, _ bool) (int64, error) {
 	r.category = id
 	return r.total, nil
 }
-func (r *reviewProducts) ListProducts(context.Context, int32, int32) ([]Product, error) {
+func (r *reviewProducts) ListProducts(context.Context, bool, int32, int32) ([]Product, error) {
 	return []Product{{ID: 1}}, nil
 }
-func (r *reviewProducts) ListProductsByCategory(context.Context, int64, int32, int32) ([]Product, error) {
+func (r *reviewProducts) ListProductsByCategory(context.Context, int64, bool, int32, int32) ([]Product, error) {
 	return []Product{{ID: 2}}, nil
 }
 func TestReviewProductTotals(t *testing.T) {
@@ -29,7 +29,7 @@ func TestReviewProductTotals(t *testing.T) {
 		for _, total := range []int64{0, 25} {
 			r := &reviewProducts{total: total}
 			uc := NewProductUsecase(r, log.DefaultLogger)
-			_, got, e := uc.ListProducts(context.Background(), category, 10, 2)
+			_, got, e := uc.ListProducts(context.Background(), category, false, 10, 2)
 			require.NoError(t, e)
 			require.Equal(t, int32(total), got)
 			require.Equal(t, category, r.category)

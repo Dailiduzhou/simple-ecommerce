@@ -31,8 +31,8 @@ type Querier interface {
 	CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error)
 	CountOngoingOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
-	CountProducts(ctx context.Context) (int64, error)
-	CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error)
+	CountProducts(ctx context.Context, includeUnpublished bool) (int64, error)
+	CountProductsByCategory(ctx context.Context, arg CountProductsByCategoryParams) (int64, error)
 	CountSubCategories(ctx context.Context, parentID pgtype.Int8) (int64, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateComment(ctx context.Context, arg CreateCommentParams) (PostComment, error)
@@ -99,7 +99,8 @@ type Querier interface {
 	GetPaymentNotificationByPayload(ctx context.Context, arg GetPaymentNotificationByPayloadParams) (PaymentNotification, error)
 	GetPostImages(ctx context.Context, postIds []int64) ([]GetPostImagesRow, error)
 	GetPostStats(ctx context.Context, arg GetPostStatsParams) ([]GetPostStatsRow, error)
-	GetProduct(ctx context.Context, id int64) (Product, error)
+	// 公开读取仅返回上架商品；管理端传入 include_unpublished=true 查看全部状态。
+	GetProduct(ctx context.Context, arg GetProductParams) (Product, error)
 	GetProductForOrder(ctx context.Context, id int64) (Product, error)
 	GetReconciliationAction(ctx context.Context, arg GetReconciliationActionParams) (PaymentReconciliationAction, error)
 	// Call AFTER locking the product, in a separate READ COMMITTED statement.
@@ -139,7 +140,8 @@ type Querier interface {
 	ListPaymentsByOrderForUpdate(ctx context.Context, orderID int64) ([]Payment, error)
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
 	ListProducts(ctx context.Context, arg ListProductsParams) ([]Product, error)
-	// 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
+	// 商品状态：0=下架，1=上架；公开列表仅展示上架商品，管理端可传
+	// include_unpublished=true 查看全部状态。
 	ListProductsByCategory(ctx context.Context, arg ListProductsByCategoryParams) ([]Product, error)
 	ListReconciliationActions(ctx context.Context, arg ListReconciliationActionsParams) ([]PaymentReconciliationAction, error)
 	ListReconciliationCases(ctx context.Context, arg ListReconciliationCasesParams) ([]Payment, error)

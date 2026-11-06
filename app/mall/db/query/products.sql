@@ -13,11 +13,13 @@ INSERT INTO products (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
+-- 公开读取仅返回上架商品；管理端传入 include_unpublished=true 查看全部状态。
 -- name: GetProduct :one
 SELECT *
 FROM products
-WHERE id = $1
-  AND deleted_at IS NULL;
+WHERE id = sqlc.arg(id)
+  AND deleted_at IS NULL
+  AND (sqlc.arg(include_unpublished)::boolean OR status = 1);
 
 -- name: GetProductForOrder :one
 SELECT *
@@ -26,22 +28,24 @@ WHERE id = $1
   AND deleted_at IS NULL
 FOR UPDATE;
 
--- 商品状态：0=下架，1=上架；分类商品列表仅展示上架商品。
+-- 商品状态：0=下架，1=上架；公开列表仅展示上架商品，管理端可传
+-- include_unpublished=true 查看全部状态。
 -- name: ListProductsByCategory :many
 SELECT *
 FROM products
-WHERE category_id = $1
-  AND status = 1
+WHERE category_id = sqlc.arg(category_id)
   AND deleted_at IS NULL
+  AND (sqlc.arg(include_unpublished)::boolean OR status = 1)
 ORDER BY id DESC
-LIMIT $2 OFFSET $3;
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: ListProducts :many
 SELECT *
 FROM products
 WHERE deleted_at IS NULL
+  AND (sqlc.arg(include_unpublished)::boolean OR status = 1)
 ORDER BY id DESC
-LIMIT $1 OFFSET $2;
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: UpdateProduct :one
 UPDATE products
@@ -95,11 +99,12 @@ WHERE id = $1;
 -- name: CountProducts :one
 SELECT count(*)
 FROM products
-WHERE deleted_at IS NULL;
+WHERE deleted_at IS NULL
+  AND (sqlc.arg(include_unpublished)::boolean OR status = 1);
 
 -- name: CountProductsByCategory :one
 SELECT count(*)
 FROM products
-WHERE category_id = $1
-  AND status = 1
-  AND deleted_at IS NULL;
+WHERE category_id = sqlc.arg(category_id)
+  AND deleted_at IS NULL
+  AND (sqlc.arg(include_unpublished)::boolean OR status = 1);

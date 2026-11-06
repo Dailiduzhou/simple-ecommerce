@@ -52,7 +52,7 @@ func TestProductDetailGenerationOnlyChangesAfterCommit(t *testing.T) {
 			d := newTestData(t, q, mr)
 			state := &txState{}
 			ctx := context.WithValue(WithQuerier(context.Background(), q, nil), txStateKey{}, state)
-			q.EXPECT().GetProduct(gomock.Any(), int64(42)).Return(db.Product{ID: 42, CategoryID: 7}, nil)
+			q.EXPECT().GetProduct(gomock.Any(), db.GetProductParams{ID: 42, IncludeUnpublished: true}).Return(db.Product{ID: 42, CategoryID: 7}, nil)
 			q.EXPECT().UpdateProductStatus(gomock.Any(), db.UpdateProductStatusParams{ID: 42, Status: 1}).Return(db.Product{}, nil)
 			require.NoError(t, NewProductRepo(d, nil, log.DefaultLogger).UpdateProductStatus(ctx, 42, 1))
 			require.False(t, mr.Exists("product:42:gen"))

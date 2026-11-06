@@ -40,11 +40,11 @@ func TestReviewRefundPurposesAndCacheIntegration(t *testing.T) {
 				orders := NewOrderRepo(f.data, f.tx, log.DefaultLogger)
 				payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 				// Warm entity, category, all-products and both order-list projections.
-				_, err = products.GetProduct(f.ctx, f.productID)
+				_, err = products.GetProduct(f.ctx, f.productID, false)
 				require.NoError(t, err)
-				_, err = products.ListProducts(f.ctx, 20, 0)
+				_, err = products.ListProducts(f.ctx, false, 20, 0)
 				require.NoError(t, err)
-				_, err = products.ListProductsByCategory(f.ctx, f.categoryID, 20, 0)
+				_, err = products.ListProductsByCategory(f.ctx, f.categoryID, false, 20, 0)
 				require.NoError(t, err)
 				_, err = orders.ListOrdersByUser(f.ctx, f.userID, 20, 0)
 				require.NoError(t, err)
@@ -71,15 +71,15 @@ func TestReviewRefundPurposesAndCacheIntegration(t *testing.T) {
 				var stock int
 				require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id=$1`, f.productID).Scan(&stock))
 				require.Equal(t, wantStock, stock)
-				product, err := products.GetProduct(f.ctx, f.productID)
+				product, err := products.GetProduct(f.ctx, f.productID, false)
 				require.NoError(t, err)
 				require.EqualValues(t, wantStock, product.Stock)
 				for _, byCategory := range []bool{false, true} {
 					var page []biz.Product
 					if byCategory {
-						page, err = products.ListProductsByCategory(f.ctx, f.categoryID, 20, 0)
+						page, err = products.ListProductsByCategory(f.ctx, f.categoryID, false, 20, 0)
 					} else {
-						page, err = products.ListProducts(f.ctx, 20, 0)
+						page, err = products.ListProducts(f.ctx, false, 20, 0)
 					}
 					require.NoError(t, err)
 					require.Len(t, page, 1)

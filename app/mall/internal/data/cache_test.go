@@ -36,11 +36,11 @@ func TestDetailNegativeCachesExpire(t *testing.T) {
 					require.Nil(t, value)
 				}
 			case "product":
-				key = redisKey("product", 42, "g", 0)
-				q.EXPECT().GetProduct(gomock.Any(), int64(42)).Return(db.Product{}, pgx.ErrNoRows).Times(2)
+				key = redisKey("product", 42, "g", 0, "pub")
+				q.EXPECT().GetProduct(gomock.Any(), db.GetProductParams{ID: 42}).Return(db.Product{}, pgx.ErrNoRows).Times(2)
 				r := NewProductRepo(d, nil, log.DefaultLogger)
 				read = func() {
-					value, err := r.GetProduct(ctx, 42)
+					value, err := r.GetProduct(ctx, 42, false)
 					require.NoError(t, err)
 					require.Nil(t, value)
 				}
@@ -92,28 +92,28 @@ func TestCacheFallbackAndDatabaseErrors(t *testing.T) {
 			ctx := context.Background()
 			switch failure {
 			case "invalid_json":
-				require.NoError(t, mr.Set("product:42:g:0", "{broken"))
+				require.NoError(t, mr.Set("product:42:g:0:pub", "{broken"))
 			case "wrong_type":
-				_, err := mr.Lpush("product:42:g:0", "wrong")
+				_, err := mr.Lpush("product:42:g:0:pub", "wrong")
 				require.NoError(t, err)
 			case "unavailable":
 				require.NoError(t, d.rdb.Close())
 			}
 			if failure == "database_error" {
-				q.EXPECT().GetProduct(gomock.Any(), int64(42)).Return(db.Product{}, pgx.ErrTxClosed).Times(2)
+				q.EXPECT().GetProduct(gomock.Any(), db.GetProductParams{ID: 42}).Return(db.Product{}, pgx.ErrTxClosed).Times(2)
 			} else {
 				calls := 1
 				if failure == "unavailable" {
 					calls = 2
 				}
-				q.EXPECT().GetProduct(gomock.Any(), int64(42)).Return(db.Product{ID: 42, Name: "database"}, nil).Times(calls)
+				q.EXPECT().GetProduct(gomock.Any(), db.GetProductParams{ID: 42}).Return(db.Product{ID: 42, Name: "database"}, nil).Times(calls)
 			}
 			for range 2 {
-				value, err := r.GetProduct(ctx, 42)
+				value, err := r.GetProduct(ctx, 42, false)
 				if failure == "database_error" {
 					require.ErrorIs(t, err, pgx.ErrTxClosed)
 					require.Nil(t, value)
-					require.False(t, mr.Exists("product:42:g:0"))
+					require.False(t, mr.Exists("product:42:g:0:pub"))
 				} else {
 					require.NoError(t, err)
 					require.Equal(t, "database", value.Name)
@@ -136,18 +136,18 @@ func TestGenerationFailureNeverReadsOrWritesGenerationZero(t *testing.T) {
 			case "product", "product_category":
 				r := NewProductRepo(d, nil, log.DefaultLogger)
 				if entity == "product" {
-					genKey, oldKey = "product:list:gen", "product:list:0:10:0"
-					q.EXPECT().ListProducts(gomock.Any(), db.ListProductsParams{Limit: 10}).Return([]db.Product{}, nil).Times(2)
+					genKey, oldKey = "product:list:gen", "product:list:0:pub:10:0"
+					q.EXPECT().ListProducts(gomock.Any(), db.ListProductsParams{PageLimit: 10}).Return([]db.Product{}, nil).Times(2)
 					read = func() {
-						rows, err := r.ListProducts(ctx, 10, 0)
+						rows, err := r.ListProducts(ctx, false, 10, 0)
 						require.NoError(t, err)
 						require.Empty(t, rows)
 					}
 				} else {
-					genKey, oldKey = "product:category:7:gen", "product:category:7:0:10:0"
-					q.EXPECT().ListProductsByCategory(gomock.Any(), db.ListProductsByCategoryParams{CategoryID: 7, Limit: 10}).Return([]db.Product{}, nil).Times(2)
+					genKey, oldKey = "product:category:7:gen", "product:category:7:0:pub:10:0"
+					q.EXPECT().ListProductsByCategory(gomock.Any(), db.ListProductsByCategoryParams{CategoryID: 7, PageLimit: 10}).Return([]db.Product{}, nil).Times(2)
 					read = func() {
-						rows, err := r.ListProductsByCategory(ctx, 7, 10, 0)
+						rows, err := r.ListProductsByCategory(ctx, 7, false, 10, 0)
 						require.NoError(t, err)
 						require.Empty(t, rows)
 					}
@@ -357,16 +357,16 @@ func TestProductSingleflightSeparatesGenerations(t *testing.T) {
 			var read func() ([]biz.Product, error)
 			genKey := "product:list:gen"
 			if byCategory {
-				params := db.ListProductsByCategoryParams{CategoryID: 7, Limit: 10}
+				params := db.ListProductsByCategoryParams{CategoryID: 7, PageLimit: 10}
 				old := q.EXPECT().ListProductsByCategory(gomock.Any(), params).DoAndReturn(func(context.Context, db.ListProductsByCategoryParams) ([]db.Product, error) { return loadOld() })
 				q.EXPECT().ListProductsByCategory(gomock.Any(), params).Return([]db.Product{{ID: 1, Name: "new"}}, nil).After(old)
 				genKey = "product:category:7:gen"
-				read = func() ([]biz.Product, error) { return r.ListProductsByCategory(context.Background(), 7, 10, 0) }
+				read = func() ([]biz.Product, error) { return r.ListProductsByCategory(context.Background(), 7, false, 10, 0) }
 			} else {
-				params := db.ListProductsParams{Limit: 10}
+				params := db.ListProductsParams{PageLimit: 10}
 				old := q.EXPECT().ListProducts(gomock.Any(), params).DoAndReturn(func(context.Context, db.ListProductsParams) ([]db.Product, error) { return loadOld() })
 				q.EXPECT().ListProducts(gomock.Any(), params).Return([]db.Product{{ID: 1, Name: "new"}}, nil).After(old)
-				read = func() ([]biz.Product, error) { return r.ListProducts(context.Background(), 10, 0) }
+				read = func() ([]biz.Product, error) { return r.ListProducts(context.Background(), false, 10, 0) }
 			}
 			go func() {
 				defer close(oldDone)

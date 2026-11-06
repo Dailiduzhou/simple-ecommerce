@@ -30,7 +30,7 @@ func TestReviewContentEditsAndStockConservationIntegration(t *testing.T) {
 		return err
 	}
 	// Reproduce the stale form sequence: preload stock=100, reserve one, edit.
-	view, err := products.GetProduct(f.ctx, f.productID)
+	view, err := products.GetProduct(f.ctx, f.productID, false)
 	require.NoError(t, err)
 	require.EqualValues(t, 100, view.Stock)
 	order, err := create(0)

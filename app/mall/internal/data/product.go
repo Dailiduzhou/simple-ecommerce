@@ -66,7 +66,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 
 func (r *ProductRepo) DecrProductStock(ctx context.Context, ID int64, amount int32) (int32, error) {
 	q := querierFromContext(ctx, r.data.q)
-	product, err := q.GetProduct(ctx, ID)
+	product, err := q.GetProduct(ctx, db.GetProductParams{ID: ID, IncludeUnpublished: true})
 	if err != nil {
 		return 0, err
 	}
@@ -81,11 +81,14 @@ func (r *ProductRepo) DecrProductStock(ctx context.Context, ID int64, amount int
 	return stock, nil
 }
 
-func (r *ProductRepo) GetProduct(ctx context.Context, id int64) (*biz.Product, error) {
+// GetProduct reads a single product. Public callers pass includeUnpublished=false
+// so unlisted (status=0) products stay hidden; admin callers pass true. The cache
+// key is scoped by visibility so an admin read can never populate the public key.
+func (r *ProductRepo) GetProduct(ctx context.Context, id int64, includeUnpublished bool) (*biz.Product, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", id, "gen"))
-	key := generationCacheKey(generation, redisKey("product", id, "g", generation))
+	key := generationCacheKey(generation, redisKey("product", id, "g", generation, productScope(includeUnpublished)))
 	return cacheAside(ctx, r.data, r.log, key, r.getCache, r.setCache, func() (*biz.Product, error) {
-		row, err := r.data.DB(ctx).GetProduct(ctx, id)
+		row, err := r.data.DB(ctx).GetProduct(ctx, db.GetProductParams{ID: id, IncludeUnpublished: includeUnpublished})
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -97,11 +100,11 @@ func (r *ProductRepo) GetProduct(ctx context.Context, id int64) (*biz.Product, e
 	})
 }
 
-func (r *ProductRepo) ListProducts(ctx context.Context, limit int32, offset int32) ([]biz.Product, error) {
+func (r *ProductRepo) ListProducts(ctx context.Context, includeUnpublished bool, limit int32, offset int32) ([]biz.Product, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
-	key := generationCacheKey(generation, redisKey("product", "list", generation, limit, offset))
+	key := generationCacheKey(generation, redisKey("product", "list", generation, productScope(includeUnpublished), limit, offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
-		rows, err := r.data.DB(ctx).ListProducts(ctx, db.ListProductsParams{Limit: limit, Offset: offset})
+		rows, err := r.data.DB(ctx).ListProducts(ctx, db.ListProductsParams{IncludeUnpublished: includeUnpublished, PageLimit: limit, PageOffset: offset})
 		if err != nil {
 			return nil, err
 		}
@@ -109,21 +112,30 @@ func (r *ProductRepo) ListProducts(ctx context.Context, limit int32, offset int3
 	})
 }
 
-func (r *ProductRepo) ListProductsByCategory(ctx context.Context, categoryID int64, limit int32, offset int32) ([]biz.Product, error) {
+func (r *ProductRepo) ListProductsByCategory(ctx context.Context, categoryID int64, includeUnpublished bool, limit int32, offset int32) ([]biz.Product, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", categoryID, "gen"))
-	key := generationCacheKey(generation, redisKey("product", "category", categoryID, generation, limit, offset))
+	key := generationCacheKey(generation, redisKey("product", "category", categoryID, generation, productScope(includeUnpublished), limit, offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
-		rows, err := r.data.DB(ctx).ListProductsByCategory(ctx, db.ListProductsByCategoryParams{CategoryID: categoryID, Limit: limit, Offset: offset})
+		rows, err := r.data.DB(ctx).ListProductsByCategory(ctx, db.ListProductsByCategoryParams{CategoryID: categoryID, IncludeUnpublished: includeUnpublished, PageLimit: limit, PageOffset: offset})
 		if err != nil {
 			return nil, err
 		}
 		return toBizProducts(rows), nil
 	})
+}
+
+// productScope labels cache keys so the published-only and include-all views
+// never collide.
+func productScope(includeUnpublished bool) string {
+	if includeUnpublished {
+		return "all"
+	}
+	return "pub"
 }
 
 func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
 	q := querierFromContext(ctx, r.data.q)
-	existing, err := q.GetProduct(ctx, id)
+	existing, err := q.GetProduct(ctx, db.GetProductParams{ID: id, IncludeUnpublished: true})
 	if err != nil {
 		return err
 	}
@@ -152,7 +164,7 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		return nil, err
 	}
 	q := querierFromContext(ctx, r.data.q)
-	existing, err := q.GetProduct(ctx, id)
+	existing, err := q.GetProduct(ctx, db.GetProductParams{ID: id, IncludeUnpublished: true})
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +191,7 @@ func (r *ProductRepo) UpdateProductStatus(ctx context.Context, ID int64, status 
 		return err
 	}
 	q := querierFromContext(ctx, r.data.q)
-	existing, err := q.GetProduct(ctx, ID)
+	existing, err := q.GetProduct(ctx, db.GetProductParams{ID: ID, IncludeUnpublished: true})
 	if err != nil {
 		if stderrors.Is(err, pgx.ErrNoRows) {
 			return biz.ErrProductNotFound
@@ -296,9 +308,9 @@ func parseMediaInfoJSON(data []byte) []biz.MediaInfo {
 	return result
 }
 
-func (r *ProductRepo) CountProducts(ctx context.Context, categoryID int64) (int64, error) {
+func (r *ProductRepo) CountProducts(ctx context.Context, categoryID int64, includeUnpublished bool) (int64, error) {
 	if categoryID > 0 {
-		return r.data.DB(ctx).CountProductsByCategory(ctx, categoryID)
+		return r.data.DB(ctx).CountProductsByCategory(ctx, db.CountProductsByCategoryParams{CategoryID: categoryID, IncludeUnpublished: includeUnpublished})
 	}
-	return r.data.DB(ctx).CountProducts(ctx)
+	return r.data.DB(ctx).CountProducts(ctx, includeUnpublished)
 }

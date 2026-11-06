@@ -36,3 +36,12 @@ func requireAdmin(ctx context.Context) (*biz.EcommerceClaims, error) {
 	}
 	return claims, nil
 }
+
+// isAdmin reports whether the caller is an authenticated administrator without
+// rejecting non-admins. Catalog reads use it to decide whether unlisted
+// (status=0) products are visible, while still serving published items to
+// regular users.
+func isAdmin(ctx context.Context) bool {
+	claims, ok := biz.ClaimsFromContext(ctx)
+	return ok && claims != nil && claims.Role == "admin"
+}

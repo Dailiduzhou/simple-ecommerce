@@ -72,12 +72,12 @@ type MediaInfo struct {
 }
 
 type ProductRepo interface {
-	CountProducts(ctx context.Context, categoryID int64) (int64, error)
+	CountProducts(ctx context.Context, categoryID int64, includeUnpublished bool) (int64, error)
 	CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	DecrProductStock(ctx context.Context, ID int64, amount int32) (int32, error)
-	GetProduct(ctx context.Context, id int64) (*Product, error)
-	ListProducts(ctx context.Context, limit int32, offset int32) ([]Product, error)
-	ListProductsByCategory(ctx context.Context, categoryID int64, limit int32, offset int32) ([]Product, error)
+	GetProduct(ctx context.Context, id int64, includeUnpublished bool) (*Product, error)
+	ListProducts(ctx context.Context, includeUnpublished bool, limit int32, offset int32) ([]Product, error)
+	ListProductsByCategory(ctx context.Context, categoryID int64, includeUnpublished bool, limit int32, offset int32) ([]Product, error)
 	SoftDeleteProduct(ctx context.Context, id int64) error
 	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	AdjustStock(context.Context, StockAdjustmentInput) (*StockAdjustment, error)
@@ -86,8 +86,8 @@ type ProductRepo interface {
 
 type ProductUsecase interface {
 	CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
-	GetProduct(ctx context.Context, id int64) (*Product, error)
-	ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error)
+	GetProduct(ctx context.Context, id int64, includeUnpublished bool) (*Product, error)
+	ListProducts(ctx context.Context, categoryID int64, includeUnpublished bool, pageSize int32, page int32) ([]Product, int32, error)
 	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	AdjustStock(context.Context, StockAdjustmentInput) (*StockAdjustment, error)
 	UpdateProductStatus(ctx context.Context, id int64, status int32) error
@@ -127,24 +127,24 @@ func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, n
 	return uc.repo.CreateProduct(ctx, categoryID, name, price, discount, stock, status, cover, mediaAssets, descrption)
 }
 
-func (uc *productUsecase) GetProduct(ctx context.Context, id int64) (*Product, error) {
-	return uc.repo.GetProduct(ctx, id)
+func (uc *productUsecase) GetProduct(ctx context.Context, id int64, includeUnpublished bool) (*Product, error) {
+	return uc.repo.GetProduct(ctx, id, includeUnpublished)
 }
 
-func (uc *productUsecase) ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error) {
+func (uc *productUsecase) ListProducts(ctx context.Context, categoryID int64, includeUnpublished bool, pageSize int32, page int32) ([]Product, int32, error) {
 	pagination, err := NewPage(page, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := uc.repo.CountProducts(ctx, categoryID)
+	total, err := uc.repo.CountProducts(ctx, categoryID, includeUnpublished)
 	if err != nil {
 		return nil, 0, err
 	}
 	if categoryID > 0 {
-		ps, err := uc.repo.ListProductsByCategory(ctx, categoryID, pagination.Limit, pagination.Offset)
+		ps, err := uc.repo.ListProductsByCategory(ctx, categoryID, includeUnpublished, pagination.Limit, pagination.Offset)
 		return ps, int32(total), err
 	}
-	ps, err := uc.repo.ListProducts(ctx, pagination.Limit, pagination.Offset)
+	ps, err := uc.repo.ListProducts(ctx, includeUnpublished, pagination.Limit, pagination.Offset)
 	return ps, int32(total), err
 }
 
