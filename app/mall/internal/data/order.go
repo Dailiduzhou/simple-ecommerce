@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
+	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/conf"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
+	"github.com/Dailiduzhou/simple-ecommerce/pkg/phonecrypto"
+	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -19,18 +22,19 @@ import (
 var _ biz.OrderRepo = (*OrderRepo)(nil)
 
 type OrderRepo struct {
-	data *Data
-	tx   biz.TxManager
-	jobs biz.OrderMQRepo
-	log  *log.Helper
+	data        *Data
+	tx          biz.TxManager
+	jobs        biz.OrderMQRepo
+	phoneSecret string
+	log         *log.Helper
 }
 
 func NewOrderRepo(data *Data, tx biz.TxManager, logger log.Logger) *OrderRepo {
-	return NewOrderRepoWithJobs(data, tx, nil, logger)
+	return NewOrderRepoWithJobs(data, tx, nil, nil, logger)
 }
 
-func NewOrderRepoWithJobs(data *Data, tx biz.TxManager, jobs biz.OrderMQRepo, logger log.Logger) *OrderRepo {
-	return &OrderRepo{data: data, tx: tx, jobs: jobs, log: log.NewHelper(logger)}
+func NewOrderRepoWithJobs(data *Data, tx biz.TxManager, jobs biz.OrderMQRepo, auth *conf.Auth, logger log.Logger) *OrderRepo {
+	return &OrderRepo{data: data, tx: tx, jobs: jobs, phoneSecret: auth.GetPhoneSecret(), log: log.NewHelper(logger)}
 }
 
 func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (biz.Order, error) {
@@ -84,6 +88,16 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			if stderrors.Is(err, pgx.ErrNoRows) {
 				return biz.ErrAddressNotFound
 			}
+			return err
+		}
+
+		// Validate the exact row protected by FOR SHARE, before reserving stock or
+		// creating an order. Validating a prior address read leaves an update race.
+		phone, err := phonecrypto.DecryptPhone(address.ReceiverPhoneEncrypt, []byte(r.phoneSecret))
+		if err != nil {
+			return errors.InternalServer("ORDER_SHIPPING_DECRYPT_FAILED", "cannot read order shipping information")
+		}
+		if err := biz.ValidateShippingAddress(address.ReceiverName, phone, address.Province, address.City, address.District, address.DetailAddress, address.AddressTag.String); err != nil {
 			return err
 		}
 

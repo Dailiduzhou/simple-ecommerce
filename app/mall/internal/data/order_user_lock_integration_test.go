@@ -100,7 +100,7 @@ func TestOrderWritesSerializeWithAccountDeletionIntegration(t *testing.T) {
 				workers.Wait()
 			}()
 			tx := orderUserLockTx{f.tx, barrier}
-			repo := NewOrderRepoWithJobs(f.data, tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
+			repo := NewOrderRepoWithJobs(f.data, tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), integrationAuthConfig(), log.DefaultLogger)
 			var orderID, paymentID int64
 			if operation != "checkout" {
 				orderID, paymentID = fulfillmentOrder(t, f)
