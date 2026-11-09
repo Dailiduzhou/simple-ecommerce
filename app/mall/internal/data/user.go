@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	stderrors "errors"
 
+	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	"github.com/go-kratos/kratos/v2/errors"
@@ -53,6 +54,10 @@ func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEnc
 		Role:         "user",
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if stderrors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_users_phone_hash" {
+			return nil, userv1.ErrorUserAlreadyExists("phone already registered")
+		}
 		return nil, err
 	}
 	bizUser := toBizUser(u)

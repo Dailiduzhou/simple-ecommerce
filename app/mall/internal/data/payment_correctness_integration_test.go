@@ -22,7 +22,7 @@ func TestLastStockIdempotencyIntegration(t *testing.T) {
 	f := newCorrectnessFixture(t)
 	_, err := f.pool.Exec(f.ctx, `UPDATE products SET stock = 1 WHERE id = $1`, f.productID)
 	require.NoError(t, err)
-	repo := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
+	repo := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), integrationAuthConfig(), log.DefaultLogger)
 	start := make(chan struct{})
 	type outcome struct {
 		order biz.Order

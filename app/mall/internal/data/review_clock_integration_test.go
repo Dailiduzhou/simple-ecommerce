@@ -14,7 +14,7 @@ import (
 
 func TestReviewPaymentWindowUsesDatabaseClockIntegration(t *testing.T) {
 	f := newCorrectnessFixture(t)
-	orders := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
+	orders := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), integrationAuthConfig(), log.DefaultLogger)
 	var before, after time.Time
 	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT clock_timestamp()`).Scan(&before))
 	order, err := orders.CreateOrder(f.ctx, biz.CreateOrderArgs{

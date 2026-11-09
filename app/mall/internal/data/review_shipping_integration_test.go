@@ -26,7 +26,7 @@ func (g shippingIDGenerator) GenerateOrderNo32(string) string        { return g.
 func (g shippingIDGenerator) GenerateOrderNo64(string, int64) string { return g.GenerateString() }
 
 func shippingOrderUsecase(f *correctnessFixture, tx biz.TxManager) biz.OrderUsecase {
-	repo := NewOrderRepoWithJobs(f.data, tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
+	repo := NewOrderRepoWithJobs(f.data, tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), integrationAuthConfig(), log.DefaultLogger)
 	return biz.NewConfiguredOrderUsecase(repo, shippingIDGenerator{f.prefix}, biz.OrderPolicy{}, integrationAuthConfig(), log.DefaultLogger)
 }
 func shippingCheckout(f *correctnessFixture) *biz.CreateOrderReq {

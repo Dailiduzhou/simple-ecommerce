@@ -19,7 +19,7 @@ import (
 func TestReviewContentEditsAndStockConservationIntegration(t *testing.T) {
 	f := newCorrectnessFixture(t)
 	products := NewProductRepo(f.data, f.tx, log.DefaultLogger)
-	orders := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
+	orders := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), integrationAuthConfig(), log.DefaultLogger)
 	create := func(index int) (biz.Order, error) {
 		return orders.CreateOrder(f.ctx, biz.CreateOrderArgs{UserID: f.userID, AddressID: f.addressID, Currency: "CNY",
 			OutTradeNo: fmt.Sprintf("%s_order_%d", f.prefix, index), IdempotencyKey: fmt.Sprintf("%s_key_%d", f.prefix, index), RequestHash: f.prefix,
@@ -157,7 +157,7 @@ func TestStockAdjustmentLeavesRoomForCancelAndRefundIntegration(t *testing.T) {
 	for _, operation := range []string{"cancel", "refund"} {
 		t.Run(operation, func(t *testing.T) {
 			f := newCorrectnessFixture(t)
-			orders := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
+			orders := NewOrderRepoWithJobs(f.data, f.tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), integrationAuthConfig(), log.DefaultLogger)
 			order, err := orders.CreateOrder(f.ctx, biz.CreateOrderArgs{UserID: f.userID, AddressID: f.addressID, Currency: "CNY",
 				OutTradeNo: f.prefix + "_order", IdempotencyKey: f.prefix + "_key", RequestHash: f.prefix,
 				PaymentTimeout: time.Hour, Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 1}}})

@@ -71,7 +71,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, auth *conf.Auth, snow
 	browsingHistoryUsecase := biz.NewBrowsingHistoryUsecase(browsingHistoryRepo)
 	userService := service.NewUserService(authUsecase, userUsecase, shippingAddressUsecase, browsingHistoryUsecase, logger)
 	paymentMQRepo := data.NewPaymentMQRepoForWire(riverInsertClient, logger)
-	orderRepo := data.NewOrderRepoWithJobs(dataData, txManager, paymentMQRepo, logger)
+	orderRepo := data.NewOrderRepoWithJobs(dataData, txManager, paymentMQRepo, auth, logger)
 	snowflakeGenerator, err := data.NewSnowflakeIDGenerator(snowflake)
 	if err != nil {
 		cleanup2()

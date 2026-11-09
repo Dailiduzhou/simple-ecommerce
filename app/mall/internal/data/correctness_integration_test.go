@@ -127,8 +127,8 @@ func (f *correctnessFixture) seedBase(t *testing.T) {
 		INSERT INTO shipping_addresses (
 			user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt,
 			province, city, district, detail_address, is_default
-		) VALUES ($1, 'receiver', 'phone-hash', 'phone-cipher', 'p', 'c', 'd', 'detail', false)
-		RETURNING id`, f.userID).Scan(&f.addressID))
+		) VALUES ($1, 'receiver', 'phone-hash', $2, 'p', 'c', 'd', 'detail', false)
+		RETURNING id`, f.userID, shippingCipher(t, "13800138000")).Scan(&f.addressID))
 	require.NoError(t, f.pool.QueryRow(f.ctx,
 		`INSERT INTO categories (name) VALUES ($1) RETURNING id`, f.prefix).Scan(&f.categoryID))
 	require.NoError(t, f.pool.QueryRow(f.ctx, `
@@ -340,7 +340,7 @@ func TestCorrectnessIntegration(t *testing.T) {
 		var stockBefore int32
 		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT stock FROM products WHERE id = $1`, f.productID).Scan(&stockBefore))
 		mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
-		repo := NewOrderRepoWithJobs(f.data, f.tx, mq, log.DefaultLogger)
+		repo := NewOrderRepoWithJobs(f.data, f.tx, mq, integrationAuthConfig(), log.DefaultLogger)
 		idempotencyKey := f.prefix + "_concurrent_key"
 
 		const workers = 8
@@ -452,7 +452,7 @@ func TestCorrectnessIntegration(t *testing.T) {
 			require.NoError(t, f.rdb.Set(f.ctx, key, 7, 0).Err())
 		}
 		mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
-		repo := NewOrderRepoWithJobs(f.data, f.tx, mq, log.DefaultLogger)
+		repo := NewOrderRepoWithJobs(f.data, f.tx, mq, integrationAuthConfig(), log.DefaultLogger)
 		order, err := repo.CreateOrder(f.ctx, biz.CreateOrderArgs{
 			UserID: f.userID, AddressID: f.addressID, OutTradeNo: f.prefix + "_created_order",
 			Currency: "CNY", Items: []biz.OrderItemInput{{ProductID: f.productID, Quantity: 2}},
