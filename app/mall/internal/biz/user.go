@@ -297,6 +297,9 @@ func (uc *userUsecase) DeleteUser(ctx context.Context, id int64) error {
 }
 
 func (uc *shippingAddressUsecase) CreateShippingAddress(ctx context.Context, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string, isDefault bool) (*ShippingAddress, error) {
+	if err := ValidateShippingAddress(receiverName, receiverPhone, province, city, district, detailAddress, addressTag); err != nil {
+		return nil, err
+	}
 	secret := []byte(uc.phoneSecret)
 	phoneHash := phonecrypto.HashPhone(receiverPhone, secret)
 	phoneEncrypt, err := phonecrypto.EncryptPhone(receiverPhone, secret)
@@ -343,6 +346,9 @@ func (uc *shippingAddressUsecase) ListShippingAddressesByUser(ctx context.Contex
 }
 
 func (uc *shippingAddressUsecase) UpdateShippingAddress(ctx context.Context, id int64, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string) (*ShippingAddress, error) {
+	if err := ValidateShippingAddress(receiverName, receiverPhone, province, city, district, detailAddress, addressTag); err != nil {
+		return nil, err
+	}
 	secret := []byte(uc.phoneSecret)
 	phoneHash := phonecrypto.HashPhone(receiverPhone, secret)
 	phoneEncrypt, err := phonecrypto.EncryptPhone(receiverPhone, secret)

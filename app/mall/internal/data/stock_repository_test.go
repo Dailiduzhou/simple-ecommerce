@@ -34,6 +34,7 @@ func TestStockAdjustmentReservesRestorationCapacity(t *testing.T) {
 			q := mockdb.NewMockQuerier(gomock.NewController(t))
 			input := biz.StockAdjustmentInput{ProductID: 1, ActorID: 2, Delta: tc.delta, Reason: "restock", IdempotencyKey: "stock-boundary"}
 			gomock.InOrder(
+				q.EXPECT().LockUserForReference(gomock.Any(), input.ActorID).Return(input.ActorID, nil),
 				q.EXPECT().GetProductForOrder(gomock.Any(), input.ProductID).Return(db.Product{Stock: tc.stock}, nil),
 				q.EXPECT().GetStockAdjustment(gomock.Any(), gomock.Any()).Return(db.StockAdjustment{}, pgx.ErrNoRows),
 				q.EXPECT().GetRestorableProductStock(gomock.Any(), input.ProductID).Return(tc.reserved, nil),

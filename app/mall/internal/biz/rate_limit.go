@@ -5,6 +5,7 @@ import (
 
 	communityv1 "github.com/Dailiduzhou/simple-ecommerce/api/community/v1"
 	mediav1 "github.com/Dailiduzhou/simple-ecommerce/api/media/v1"
+	orderv1 "github.com/Dailiduzhou/simple-ecommerce/api/order/v1"
 	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 )
 
@@ -13,12 +14,15 @@ type WriteLimiter interface {
 }
 
 // RateLimitCategory returns the quota bucket for a rate-limited write
-// operation, or "" for read-only operations. Transport middleware uses it so
+// operation, or "" for operations without a write quota. Transport middleware uses it so
 // reads never depend on the limiter or Redis availability. The "auth" bucket
 // also applies to the JWT-whitelisted login/register/refresh endpoints, which
-// arrive without claims and are throttled on the IP dimension alone.
+// arrive without claims and are throttled on the IP dimension alone. Checkout
+// uses a separate user-only bucket, shared across sessions, IPs and transports.
 func RateLimitCategory(operation string) string {
 	switch operation {
+	case orderv1.OperationOrderCreateOrder:
+		return "orders"
 	case communityv1.OperationCommunityCreatePost, communityv1.OperationCommunityUpdatePost:
 		return "posts"
 	case communityv1.OperationCommunityCreateComment:

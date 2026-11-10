@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 
+	userv1 "github.com/Dailiduzhou/simple-ecommerce/api/user/v1"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/biz"
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/data/db"
 	kratoserrors "github.com/go-kratos/kratos/v2/errors"
@@ -19,6 +20,14 @@ func (r *ProductRepo) AdjustStock(ctx context.Context, input biz.StockAdjustment
 	var categoryID int64
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
+		// The audit FK locks the actor too. Acquire it before the product to
+		// match browsing-history writes and avoid a user/product lock inversion.
+		if _, err := q.LockUserForReference(ctx, input.ActorID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return userv1.ErrorUnauthorized("user no longer exists")
+			}
+			return err
+		}
 		product, err := q.GetProductForOrder(ctx, input.ProductID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return biz.ErrProductNotFound

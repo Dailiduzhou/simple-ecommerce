@@ -29,7 +29,7 @@ func NewWriteLimiter(rdb *redis.Client, c *conf.Community, a *conf.Auth) (biz.Wr
 	if e := validateAuthLimits(a); e != nil {
 		return nil, e
 	}
-	limits := map[string]int32{"posts": 10, "comments": 30, "uploads": 20, "interactions": 120, "auth": 10}
+	limits := map[string]int32{"posts": 10, "comments": 30, "uploads": 20, "interactions": 120, "auth": 10, "orders": 10}
 	for k, v := range map[string]int32{"posts": c.GetPostsPerMinute(), "comments": c.GetCommentsPerMinute(), "uploads": c.GetUploadsPerMinute(), "interactions": c.GetInteractionsPerMinute()} {
 		if v > 0 {
 			limits[k] = v
@@ -65,9 +65,8 @@ local b=redis.call('INCR',KEYS[2]); if b==1 then redis.call('PEXPIRE',KEYS[2],60
 if a>tonumber(ARGV[1]) or b>tonumber(ARGV[2]) then return 0 end
 return 1`)
 
-// Single-dimension window for anonymous auth requests (login/register/refresh
-// arrive without claims), with the same fixed-window semantics.
-var anonLimitScript = redis.NewScript(`
+// Single-dimension window: IP for anonymous auth, user ID for checkout.
+var singleDimensionLimitScript = redis.NewScript(`
 local a=redis.call('INCR',KEYS[1]); if a==1 then redis.call('PEXPIRE',KEYS[1],60000) end
 if a>tonumber(ARGV[1]) then return 0 end
 return 1`)
@@ -88,8 +87,12 @@ func (r *RedisWriteLimiter) Allow(ctx context.Context, uid int64, ip, op string)
 	limit := r.limits[category]
 	var n int
 	var e error
-	if uid <= 0 {
-		n, e = anonLimitScript.Run(ctx, r.rdb, []string{ipKey}, limit).Int()
+	if category == "orders" {
+		// Do not share an IP budget: distinct users behind a NAT stay independent,
+		// while switching sessions or IPs cannot reset the same user's quota.
+		n, e = singleDimensionLimitScript.Run(ctx, r.rdb, []string{redisKey("order", "limit", "user", uid)}, limit).Int()
+	} else if uid <= 0 {
+		n, e = singleDimensionLimitScript.Run(ctx, r.rdb, []string{ipKey}, limit).Int()
 	} else {
 		// Defensive only: at the transport layer the auth operations are
 		// JWT-whitelisted, so the selector skips InjectClaims and requests
@@ -109,10 +112,9 @@ func (r *RedisWriteLimiter) Allow(ctx context.Context, uid int64, ip, op string)
 
 func (r *RedisWriteLimiter) unavailable(ctx context.Context, category string) error {
 	observability.CommunityEvent(ctx, "rate_limit", "unavailable")
-	// The auth bucket stays fail-closed like the JWT blacklist chain:
-	// community.rate_limit_fail_open is an availability knob for social
-	// writes and must never unthrottle login/register/refresh.
-	if category == "auth" {
+	// Security and checkout quotas stay fail-closed. The community availability
+	// knob must not unthrottle authentication or stock reservations.
+	if category == "auth" || category == "orders" {
 		return errors.ServiceUnavailable("RATE_LIMIT_UNAVAILABLE", "write limiter is unavailable")
 	}
 	if r.failOpen {
