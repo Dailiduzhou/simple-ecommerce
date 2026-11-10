@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-for name in MALL_IMAGE TEST_SSH_HOST TEST_SSH_USER TEST_SSH_PRIVATE_KEY TEST_SSH_KNOWN_HOSTS TEST_SSH_PORT TEST_DEPLOY_PATH RELEASE_ID; do
+for name in MALL_IMAGE MINIO_IMAGE TEST_SSH_HOST TEST_SSH_USER TEST_SSH_PRIVATE_KEY TEST_SSH_KNOWN_HOSTS TEST_SSH_PORT TEST_DEPLOY_PATH RELEASE_ID; do
   [[ -n "${!name:-}" ]] || { echo "Required deployment variable missing: $name" >&2; exit 1; }
 done
 # These values become remote shell arguments. Restrict them before interpolation.
@@ -15,7 +15,9 @@ fi
 TEST_DEPLOY_PATH="${TEST_DEPLOY_PATH%/}"
 [[ "$TEST_DEPLOY_PATH" =~ ^/[a-zA-Z0-9_/-]+$ ]] || { echo 'Use an absolute deployment path containing only letters, numbers, /, _ and -' >&2; exit 1; }
 [[ "$RELEASE_ID" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'Invalid release ID' >&2; exit 1; }
-[[ "$MALL_IMAGE" =~ ^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$ ]] || { echo 'An immutable image digest is required' >&2; exit 1; }
+for name in MALL_IMAGE MINIO_IMAGE; do
+  [[ "${!name}" =~ ^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$ ]] || { echo "An immutable image digest is required: $name" >&2; exit 1; }
+done
 
 ssh_dir="$(mktemp -d)"
 trap 'rm -rf "$ssh_dir"' EXIT
@@ -34,11 +36,13 @@ release_dir="$TEST_DEPLOY_PATH/releases/$RELEASE_ID"
 # Remote arguments intentionally expand here, after the validation above.
 # shellcheck disable=SC2029
 ssh "${ssh_options[@]}" "$target" "umask 077; mkdir -p '$release_dir'"
-# Only versioned deployment/configuration files travel to the server. Runtime
-# secrets remain in TEST_DEPLOY_PATH/.env, outside these release directories.
+# Only files tracked in HEAD travel to the server, so a new deployment file must be
+# committed with the workflow that ships it. Runtime secrets remain in
+# TEST_DEPLOY_PATH/.env, outside these release directories.
 # shellcheck disable=SC2029
-tar -czf - docker-compose.yml docker-compose.test.yml deploy app/mall/configs |
+git archive --format=tar HEAD docker-compose.yml docker-compose.test.yml docker-compose.caddy.yml deploy app/mall/configs |
+  gzip |
   ssh "${ssh_options[@]}" "$target" "tar -xzf - -C '$release_dir'"
 # shellcheck disable=SC2029
 ssh "${ssh_options[@]}" "$target" \
-  "bash '$release_dir/deploy/deploy-test.sh' '$TEST_DEPLOY_PATH' '$MALL_IMAGE'"
+  "bash '$release_dir/deploy/deploy-test.sh' '$TEST_DEPLOY_PATH' '$MALL_IMAGE' '$MINIO_IMAGE'"
