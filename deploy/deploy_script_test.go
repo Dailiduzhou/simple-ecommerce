@@ -24,7 +24,7 @@ func TestServerDeployment(t *testing.T) {
 		{name: "registry-pull-failed", pullRC: "1"},
 		{name: "unhealthy-application", upRC: "1"},
 		{name: "unreachable-minio", probeRC: "1"},
-		{name: "invalid-caddy-or-missing-frontend", configRC: "1"},
+		{name: "invalid-caddy-config", configRC: "1"},
 		{name: "unhealthy-gateway", gatewayRC: "1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

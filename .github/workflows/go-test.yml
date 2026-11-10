@@ -111,14 +111,11 @@ jobs:
       MINIO_ROOT_PASSWORD: ci-config-admin-not-a-runtime-secret
       STORAGE_ACCESS_KEY: ci-config-app
       STORAGE_SECRET_KEY: ci-config-app-not-a-runtime-secret
-      WEB_ROOT: /tmp/ecommerce-web-config-test
     steps:
       - uses: actions/checkout@v4
       - name: Validate scripts and merged Compose (no runtime secrets)
         run: |
           bash -n .github/scripts/deploy-test.sh .github/scripts/image-metadata.sh deploy/deploy-test.sh
-          mkdir -p "$WEB_ROOT"
-          printf '%s\n' '<!doctype html><title>CI configuration fixture</title>' > "$WEB_ROOT/index.html"
           docker compose --env-file deploy/test.env.example \
             -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.caddy.yml \
             config --quiet

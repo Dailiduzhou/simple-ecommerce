@@ -12,7 +12,9 @@ services:
     restart: unless-stopped
     image: ${MALL_IMAGE:?set the immutable mall image reference}
     environment:
-      APP_IS_PRODUCTION: ${APP_IS_PRODUCTION:-true}
+      # The API is called by a separately deployed frontend; the Caddy overlay
+      # widens this to "*". Keep the base default closed.
+      HTTP_CORS_ALLOWED_ORIGINS: ${HTTP_CORS_ALLOWED_ORIGINS:-}
       STORAGE_PROVIDER: s3
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?set the server-reachable MinIO API endpoint}
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:?set the browser-reachable MinIO API endpoint}

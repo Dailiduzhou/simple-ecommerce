@@ -3,30 +3,14 @@
 # an empty value leaves the site block unusable, so Caddy fails to load instead of
 # serving an unintended hostname. Never commit real domains or point these at IPs.
 # No access logs here: presigned S3 query strings contain temporary credentials.
-{$WEB_DOMAIN} {
-	encode zstd gzip
-	root * /srv/web
-	try_files {path} /index.html
-	file_server
-}
+#
+# The frontend is built and published separately from this backend stack, so there
+# is no web virtual host or static root. API CORS is configured on the backend via
+# HTTP_CORS_ALLOWED_ORIGINS; adding headers here would duplicate them and break
+# browsers. The frontend's public origin therefore needs no DNS entry on this host.
 
 {$API_DOMAIN} {
 	encode zstd gzip
-
-	@frontend header Origin https://{$WEB_DOMAIN}
-	@preflight {
-		method OPTIONS
-		header Origin https://{$WEB_DOMAIN}
-		header Access-Control-Request-Method *
-	}
-	header +Vary Origin
-	header @frontend {
-		Access-Control-Allow-Origin https://{$WEB_DOMAIN}
-		Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-		Access-Control-Allow-Headers "Authorization, Content-Type, Idempotency-Key"
-		Access-Control-Max-Age "600"
-	}
-	respond @preflight 204
 
 	# Caddy is the public edge. Its default (no trusted_proxies configured) is to
 	# set X-Forwarded-For to this hop's client address, so a spoofed incoming chain
@@ -36,7 +20,7 @@
 
 {$MINIO_DOMAIN} {
 	# Preserve Host, path and query: changing them breaks S3 signatures.
-	# CORS is handled by MinIO, not duplicated at the proxy.
+	# CORS is handled by MinIO (MINIO_API_CORS_ALLOW_ORIGIN), not duplicated here.
 	request_body {
 		max_size 20MB
 	}

@@ -27,10 +27,10 @@ compose=(
 # Provision read-only ACR docker login as the SSH deployment user beforehand.
 # Never forward CI push credentials to the server or build images here.
 "${compose[@]}" pull mall minio caddy
-# Validate the gateway and frontend artifact BEFORE replacing running services.
-# Do not print the interpolated Compose config: it contains runtime secrets.
+# Validate the gateway BEFORE replacing running services. The frontend is deployed
+# separately, so there is no local static root to check here. Do not print the
+# interpolated Compose config: it contains runtime secrets.
 "${compose[@]}" run --rm --no-deps caddy-check sh -ec '
-  test -s /srv/web/index.html || { echo "WEB_ROOT must contain the frontend build (index.html)" >&2; exit 1; }
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 '
 if ! "${compose[@]}" up -d --wait --wait-timeout 180; then
@@ -42,18 +42,18 @@ fi
 # boot also issues certificates, so allow more time than a plain container start.
 # Docker network aliases keep this traffic local while still verifying the public
 # certificate chain. Console may intentionally answer 403 for unlisted source IPs.
+# There is no frontend web virtual host: it is deployed separately.
 # shellcheck disable=SC2016
 if ! "${compose[@]}" exec -T caddy sh -ec '
   for attempt in $(seq 1 60); do
-    if wget -q -O /dev/null -T 5 "https://$WEB_DOMAIN/" &&
-       wget -S -O /dev/null -T 5 "https://$API_DOMAIN/" 2>&1 | grep -q "HTTP/1.1 404" &&
+    if wget -S -O /dev/null -T 5 "https://$API_DOMAIN/" 2>&1 | grep -q "HTTP/1.1 404" &&
        wget -S -O /dev/null -T 5 "https://$CONSOLE_DOMAIN/" 2>&1 | grep -Eq "HTTP/1.1 (200|403)" &&
        wget -q -O /dev/null -T 5 http://minio:9001/; then exit 0; fi
     sleep 2
   done
   exit 1
 '; then
-  echo 'Deployment failed: Caddy HTTPS/frontend/API or MinIO Console is not ready; check DNS, ACME, ports 80/443' >&2
+  echo 'Deployment failed: Caddy HTTPS/API or MinIO Console is not ready; check DNS, ACME, ports 80/443' >&2
   "${compose[@]}" logs --tail=100 caddy mall
   exit 1
 fi

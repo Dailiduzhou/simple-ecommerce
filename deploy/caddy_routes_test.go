@@ -35,18 +35,16 @@ func TestCaddyRoutes(t *testing.T) {
 	}))
 	defer upstream.Close()
 	root := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(root, "index.html"), []byte("frontend-fixture"), 0600))
 	raw, err := os.ReadFile("Caddyfile")
 	require.NoError(t, err)
 	content := string(raw)
 	for _, dial := range []string{"mall:8000", "minio:9000", "minio:9001"} {
 		content = strings.ReplaceAll(content, dial, strings.TrimPrefix(upstream.URL, "http://"))
 	}
-	content = strings.ReplaceAll(content, "/srv/web", root)
 	file := filepath.Join(root, "Caddyfile")
 	require.NoError(t, os.WriteFile(file, []byte(content), 0600))
 	adapt := exec.Command(binary, "adapt", "--config", file, "--adapter", "caddyfile")
-	adapt.Env = append(os.Environ(), "WEB_DOMAIN=web.example.com", "API_DOMAIN=api.example.com",
+	adapt.Env = append(os.Environ(), "API_DOMAIN=api.example.com",
 		"MINIO_DOMAIN=minio.example.com", "CONSOLE_DOMAIN=console.example.com", "CONSOLE_ALLOWED_CIDRS=192.0.2.1/32")
 	out, err := adapt.Output()
 	require.NoError(t, err)
@@ -98,15 +96,14 @@ func TestCaddyRoutes(t *testing.T) {
 	for _, tc := range []struct {
 		name, host, method, path, origin string
 		status                           int
-		allowOrigin                      string
 		body                             string
 	}{
-		{"spa-fallback", "web.example.com", "GET", "/account/orders", "", 200, "", "frontend-fixture"},
-		{"allowed-preflight", "api.example.com", "OPTIONS", "/v1/users", "https://web.example.com", 204, "https://web.example.com", ""},
-		{"foreign-preflight", "api.example.com", "OPTIONS", "/v1/users", "https://evil.example", 200, "", "upstream"},
-		{"cors-on-error", "api.example.com", "GET", "/unauthorized", "https://web.example.com", 401, "https://web.example.com", "upstream"},
-		{"signed-object", "minio.example.com", "GET", "/bucket/images/a%20b.jpg?X-Amz-Signature=test&x=1", "", 200, "", "upstream"},
-		{"console-denied-despite-spoofed-ip", "console.example.com", "GET", "/", "", 403, "", "Forbidden"},
+		// CORS belongs to the backend (HTTP_CORS_ALLOWED_ORIGINS). Caddy must not
+		// answer preflights itself nor add a second Access-Control-Allow-Origin.
+		{"api-preflight-reaches-backend", "api.example.com", "OPTIONS", "/v1/users", "https://web.example.com", 200, "upstream"},
+		{"api-passes-origin-through", "api.example.com", "GET", "/unauthorized", "https://web.example.com", 401, "upstream"},
+		{"signed-object", "minio.example.com", "GET", "/bucket/images/a%20b.jpg?X-Amz-Signature=test&x=1", "", 200, "upstream"},
+		{"console-denied-despite-spoofed-ip", "console.example.com", "GET", "/", "", 403, "Forbidden"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, err := http.NewRequest(tc.method, "http://"+address+tc.path, nil)
@@ -124,7 +121,7 @@ func TestCaddyRoutes(t *testing.T) {
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 			require.Equal(t, tc.status, resp.StatusCode)
-			require.Equal(t, tc.allowOrigin, resp.Header.Get("Access-Control-Allow-Origin"))
+			require.Empty(t, resp.Header.Get("Access-Control-Allow-Origin"), "Caddy must not set CORS headers")
 			require.Equal(t, tc.body, string(body))
 			if tc.body == "upstream" {
 				require.Equal(t, tc.host, resp.Header.Get("X-Test-Host"))
