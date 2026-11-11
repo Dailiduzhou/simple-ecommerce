@@ -66,7 +66,7 @@ func TestLogoutRetriesAfterStoreFailureAndAmbiguousCommit(t *testing.T) {
 	require.Error(t, auth.ValidateSession(ctx, claims))
 	// Retry reaches the handler despite an already-revoked SID, but ordinary
 	// authenticated routes cannot use that exception.
-	handler := custommid.CheckBlacklist(auth)(func(ctx context.Context, _ any) (any, error) { return nil, auth.Logout(ctx, claims, pair.RefreshToken) })
+	handler := custommid.Authenticate(auth)(func(ctx context.Context, _ any) (any, error) { return nil, auth.Logout(ctx, claims, pair.RefreshToken) })
 	_, err = handler(kratosjwt.NewContext(ctx, claims), &pb.LogoutRequest{})
 	require.NoError(t, err)
 	_, err = handler(kratosjwt.NewContext(ctx, claims), &pb.GetUserRequest{})

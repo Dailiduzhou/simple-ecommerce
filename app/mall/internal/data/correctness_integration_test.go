@@ -39,6 +39,7 @@ type correctnessFixture struct {
 	handler     *PaymentRiverErrorHandler
 	provider    string
 	userID      int64
+	merchantID  int64
 	addressID   int64
 	categoryID  int64
 	productID   int64
@@ -124,6 +125,9 @@ func (f *correctnessFixture) seedBase(t *testing.T) {
 		INSERT INTO users (nickname, phone_hash, phone_encrypt, password_hash)
 		VALUES ('integration', $1, 'ciphertext', 'hash') RETURNING id`, f.prefix).Scan(&f.userID))
 	require.NoError(t, f.pool.QueryRow(f.ctx, `
+		INSERT INTO users (nickname, phone_hash, phone_encrypt, password_hash, role)
+		VALUES ('merchant', $1, 'ciphertext', 'hash', 'merchant') RETURNING id`, f.prefix+"_merchant").Scan(&f.merchantID))
+	require.NoError(t, f.pool.QueryRow(f.ctx, `
 		INSERT INTO shipping_addresses (
 			user_id, receiver_name, receiver_phone_hash, receiver_phone_encrypt,
 			province, city, district, detail_address, is_default
@@ -132,9 +136,9 @@ func (f *correctnessFixture) seedBase(t *testing.T) {
 	require.NoError(t, f.pool.QueryRow(f.ctx,
 		`INSERT INTO categories (name) VALUES ($1) RETURNING id`, f.prefix).Scan(&f.categoryID))
 	require.NoError(t, f.pool.QueryRow(f.ctx, `
-		INSERT INTO products (category_id, name, price_minor, stock, status, cover_image, media_assets)
-		VALUES ($1, $2, 12345, 100, 1, '[]'::jsonb, '[]'::jsonb) RETURNING id`,
-		f.categoryID, f.prefix).Scan(&f.productID))
+		INSERT INTO products (merchant_id, category_id, name, price_minor, stock, status, cover_image, media_assets)
+		VALUES ($3, $1, $2, 12345, 100, 1, '[]'::jsonb, '[]'::jsonb) RETURNING id`,
+		f.categoryID, f.prefix, f.merchantID).Scan(&f.productID))
 }
 
 func (f *correctnessFixture) cleanup(t *testing.T) {
@@ -170,6 +174,7 @@ func (f *correctnessFixture) cleanup(t *testing.T) {
 		{`DELETE FROM products WHERE category_id = $1`, []any{f.categoryID}},
 		{`DELETE FROM categories WHERE id = $1`, []any{f.categoryID}},
 		{`DELETE FROM users WHERE id = $1`, []any{f.userID}},
+		{`DELETE FROM users WHERE id = $1`, []any{f.merchantID}},
 	}
 	for _, statement := range statements {
 		_, err := f.pool.Exec(f.ctx, statement.sql, statement.args...)
@@ -183,21 +188,21 @@ func (f *correctnessFixture) seedPayment(t *testing.T, status string) (int64, in
 	var orderID int64
 	require.NoError(t, f.pool.QueryRow(f.ctx, `
 		INSERT INTO orders (
-			user_id, address_id, total_amount_minor, status, out_trade_no, currency,
+			user_id, merchant_id, address_id, total_amount_minor, status, out_trade_no, currency,
 			idempotency_key, request_hash, expires_at, receiver_name, receiver_phone_encrypt,
 			shipping_province, shipping_city, shipping_district, shipping_detail_address
 		)
-		SELECT $1, $2, 12345, 'pending_payment', $3, 'CNY', $4, $5, CURRENT_TIMESTAMP + INTERVAL '30 minutes',
+		SELECT $1, $6, $2, 12345, 'pending_payment', $3, 'CNY', $4, $5, CURRENT_TIMESTAMP + INTERVAL '30 minutes',
 			receiver_name,receiver_phone_encrypt,province,city,district,detail_address FROM shipping_addresses WHERE id=$2
 		RETURNING id`,
-		f.userID, f.addressID, orderNo, orderNo, strings.Repeat("a", 64)).Scan(&orderID))
+		f.userID, f.addressID, orderNo, orderNo, strings.Repeat("a", 64), f.merchantID).Scan(&orderID))
 	outTradeNo := fmt.Sprintf("%s_pay_%d", f.prefix, time.Now().UnixNano())
 	var paymentID int64
 	require.NoError(t, f.pool.QueryRow(f.ctx, `
 		INSERT INTO payments (
 			order_id, user_id, merchant_id, amount_minor, status, pay_channel, out_trade_no, currency
-		) VALUES ($1, $2, 0, 12345, $3, 'wechat:native', $4, 'CNY') RETURNING id`,
-		orderID, f.userID, status, outTradeNo).Scan(&paymentID))
+		) VALUES ($1, $2, $5, 12345, $3, 'wechat:native', $4, 'CNY') RETURNING id`,
+		orderID, f.userID, status, outTradeNo, f.merchantID).Scan(&paymentID))
 	return orderID, paymentID, outTradeNo
 }
 

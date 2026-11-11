@@ -45,8 +45,7 @@ func NewGRPCServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 			validatorv2.ProtoValidate(),
 			selector.Server(
 				jwtMiddleware,
-				custommid.InjectClaims(),
-				custommid.CheckBlacklist(authUc),
+				custommid.Authenticate(authUc),
 			).
 				Match(grpcWhiteListMatcher()).
 				Build(),

@@ -7,7 +7,7 @@ import (
 )
 
 func (s *MallService) GetTodayWellness(ctx context.Context, _ *pb.GetTodayWellnessRequest) (*pb.TodayWellnessReply, error) {
-	if _, err := authenticatedClaims(ctx); err != nil {
+	if _, err := authenticatedActor(ctx); err != nil {
 		return nil, err
 	}
 	card, err := s.wellnessUc.GetTodayWellness(ctx)

@@ -127,7 +127,7 @@ func TestOrderWritesSerializeWithAccountDeletionIntegration(t *testing.T) {
 					})
 				} else if reconciliation {
 					reconciliationRepo := NewPaymentReconciliationRepo(f.data, tx, NewPaymentMQRepo(f.riverClient, log.DefaultLogger), log.DefaultLogger)
-					_, err = reconciliationRepo.ApplyReconciliation(ctx, biz.Actor{ID: f.userID, Admin: true}, reconciliationInput(paymentID, 1, operation, "delete-overlap"))
+					_, err = reconciliationRepo.ApplyReconciliation(ctx, biz.Actor{ID: f.userID, Role: biz.RoleAdmin}, reconciliationInput(paymentID, 1, operation, "delete-overlap"))
 				} else if operation == "prepare_refund" {
 					payments := NewPaymentRepo(f.data, tx, log.DefaultLogger)
 					_, _, err = payments.PreparePaymentRefund(ctx, paymentID, f.prefix+"_refund")
@@ -136,7 +136,13 @@ func TestOrderWritesSerializeWithAccountDeletionIntegration(t *testing.T) {
 					if operation == biz.OrderActionComplete {
 						input = biz.OrderFulfillmentInput{OrderID: orderID, Action: operation, IdempotencyKey: "complete-001", Reason: "received"}
 					}
-					_, err = repo.ApplyFulfillment(ctx, biz.Actor{ID: f.userID, Admin: operation == biz.OrderActionShip}, input)
+					// Dispatch is performed by the collecting merchant; receipt is
+					// confirmed by the buyer.
+					actor := biz.Actor{ID: f.userID, Role: biz.RoleUser}
+					if operation == biz.OrderActionShip {
+						actor = biz.Actor{ID: f.merchantID, Role: biz.RoleMerchant}
+					}
+					_, err = repo.ApplyFulfillment(ctx, actor, input)
 				}
 				operationDone <- err
 			})

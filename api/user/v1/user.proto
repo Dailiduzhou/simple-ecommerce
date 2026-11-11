@@ -61,6 +61,14 @@ service User {
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserReply) {
     option (google.api.http) = {delete: "/v1/users/{id}"};
   }
+  // Administrator-only role assignment. Refuses self-changes and demoting the
+  // last administrator; the account's next request picks up the new role.
+  rpc UpdateUserRole(UpdateUserRoleRequest) returns (UserInfo) {
+    option (google.api.http) = {
+      put: "/v1/users/{id}/role"
+      body: "*"
+    };
+  }
 
   // Shipping Addresses
   rpc CreateShippingAddress(CreateShippingAddressRequest) returns (ShippingAddress) {
@@ -139,6 +147,11 @@ message DeleteUserRequest {
   int64 id = 1;
 }
 message DeleteUserReply {}
+
+message UpdateUserRoleRequest {
+  int64 id = 1 [(buf.validate.field).int64.gt = 0];
+  string role = 2 [(buf.validate.field).string = {in: ["user", "merchant", "admin"]}];
+}
 
 message UserInfo {
   int64 id = 1;

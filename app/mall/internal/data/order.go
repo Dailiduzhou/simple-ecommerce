@@ -108,6 +108,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		}
 		snapshots := make([]itemSnapshot, 0, len(itemInputs))
 		var total int64
+		var merchantID int64
 		for _, item := range itemInputs {
 			product, err := q.GetProductForOrder(ctx, item.ProductID)
 			if err != nil {
@@ -118,6 +119,13 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 			}
 			if product.Status != 1 || product.Stock < item.Quantity {
 				return biz.ErrInsufficientStock
+			}
+			// One order, one collecting merchant: shipment, refund and
+			// reconciliation must always have a single responsible account.
+			if merchantID == 0 {
+				merchantID = product.MerchantID
+			} else if product.MerchantID != merchantID {
+				return biz.ErrOrderMultiMerchant
 			}
 			// Charge the discounted price and snapshot it on the item, so the
 			// list price can never diverge from what the order actually costs.
@@ -137,7 +145,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 		}
 
 		order, err := q.CreateOrder(ctx, db.CreateOrderParams{
-			UserID: args.UserID, AddressID: args.AddressID, TotalAmountMinor: total,
+			UserID: args.UserID, MerchantID: merchantID, AddressID: args.AddressID, TotalAmountMinor: total,
 			Currency: args.Currency, OutTradeNo: args.OutTradeNo, IdempotencyKey: args.IdempotencyKey,
 			RequestHash: args.RequestHash, PaymentTimeoutSeconds: args.PaymentTimeout.Seconds(),
 			ReceiverName: address.ReceiverName, ReceiverPhoneEncrypt: address.ReceiverPhoneEncrypt,
@@ -212,7 +220,7 @@ func (r *OrderRepo) CreateOrder(ctx context.Context, args biz.CreateOrderArgs) (
 	}
 	batchCacheInvalidations(ctx, func(ctx context.Context) {
 		if created {
-			r.invalidateUserLists(ctx, result.UserID)
+			r.invalidateUserLists(ctx, result.UserID, result.MerchantID)
 			for _, item := range result.Items {
 				bumpCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", item.ProductID, "gen"))
 				r.deleteKey(ctx, redisKey("product", item.ProductID))
@@ -281,6 +289,42 @@ func (r *OrderRepo) ListOngoingOrdersByUser(ctx context.Context, userID int64, l
 	return r.listOrders(ctx, cacheKey, func() ([]db.Order, error) {
 		return querierFromContext(ctx, r.data.q).ListOngoingOrdersByUser(ctx, db.ListOngoingOrdersByUserParams{UserID: userID, Limit: limit, Offset: offset})
 	})
+}
+
+func (r *OrderRepo) ListOrdersByMerchant(ctx context.Context, merchantID int64, ongoing bool, limit, offset int32) ([]biz.Order, error) {
+	pagination, err := biz.NewOffsetPage(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	limit, offset = pagination.Limit, pagination.Offset
+	genKey := redisKey("order", "merchant", merchantID, "gen")
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, genKey)
+	cacheKey := generationCacheKey(generation, redisKey("order", "merchant", merchantID, generation, ongoing, limit, offset))
+	return r.listOrders(ctx, cacheKey, func() ([]db.Order, error) {
+		return querierFromContext(ctx, r.data.q).ListOrdersByMerchant(ctx, db.ListOrdersByMerchantParams{MerchantID: merchantID, Ongoing: ongoing, LimitRows: limit, OffsetRows: offset})
+	})
+}
+
+func (r *OrderRepo) CountOrdersByMerchant(ctx context.Context, merchantID int64, ongoing bool) (int64, error) {
+	return querierFromContext(ctx, r.data.q).CountOrdersByMerchant(ctx, db.CountOrdersByMerchantParams{MerchantID: merchantID, Ongoing: ongoing})
+}
+
+func (r *OrderRepo) ListAllOrders(ctx context.Context, ongoing bool, limit, offset int32) ([]biz.Order, error) {
+	pagination, err := biz.NewOffsetPage(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	limit, offset = pagination.Limit, pagination.Offset
+	genKey := redisKey("order", "all", "gen")
+	generation := readCacheGeneration(ctx, r.data.rdb, r.log, genKey)
+	cacheKey := generationCacheKey(generation, redisKey("order", "all", generation, ongoing, limit, offset))
+	return r.listOrders(ctx, cacheKey, func() ([]db.Order, error) {
+		return querierFromContext(ctx, r.data.q).ListAllOrders(ctx, db.ListAllOrdersParams{Ongoing: ongoing, LimitRows: limit, OffsetRows: offset})
+	})
+}
+
+func (r *OrderRepo) CountAllOrders(ctx context.Context, ongoing bool) (int64, error) {
+	return querierFromContext(ctx, r.data.q).CountAllOrders(ctx, ongoing)
 }
 
 func (r *OrderRepo) ListOrdersByUser(ctx context.Context, userID int64, limit, offset int32) ([]biz.Order, error) {
@@ -428,14 +472,19 @@ func (r *OrderRepo) invalidateOrder(ctx context.Context, order biz.Order) {
 	if order.OutTradeNo != "" {
 		deletes = append(deletes, redisKey("order", "no", order.OutTradeNo))
 	}
-	r.invalidateUserLists(ctx, order.UserID, deletes...)
+	r.invalidateUserLists(ctx, order.UserID, order.MerchantID, deletes...)
 }
 
-func (r *OrderRepo) invalidateUserLists(ctx context.Context, userID int64, deletes ...string) {
-	scheduleCacheInvalidation(ctx, r.data.rdb, r.log, []string{
+func (r *OrderRepo) invalidateUserLists(ctx context.Context, userID, merchantID int64, deletes ...string) {
+	generations := []string{
 		redisKey("order", "user", userID, "gen"),
 		redisKey("order", "user", "ongoing", userID, "gen"),
-	}, deletes)
+		redisKey("order", "all", "gen"),
+	}
+	if merchantID > 0 {
+		generations = append(generations, redisKey("order", "merchant", merchantID, "gen"))
+	}
+	scheduleCacheInvalidation(ctx, r.data.rdb, r.log, generations, deletes)
 }
 
 func (r *OrderRepo) getListCache(ctx context.Context, key string) ([]biz.Order, error) {
@@ -452,7 +501,7 @@ func (r *OrderRepo) deleteKey(ctx context.Context, key string) {
 
 func toBizOrder(row db.Order) biz.Order {
 	return biz.Order{
-		ID: row.ID, UserID: row.UserID, AddressID: row.AddressID, PaidPaymentID: row.PaidPaymentID.Int64,
+		ID: row.ID, UserID: row.UserID, MerchantID: row.MerchantID, AddressID: row.AddressID, PaidPaymentID: row.PaidPaymentID.Int64,
 		TotalAmount: row.TotalAmountMinor, Currency: row.Currency, Status: row.Status,
 		IsCompleted: row.IsCompleted, CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time,
 		OutTradeNo: row.OutTradeNo, IdempotencyKey: row.IdempotencyKey, RequestHash: row.RequestHash,

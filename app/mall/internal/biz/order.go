@@ -48,8 +48,11 @@ var (
 	// orders.out_trade_no index. A rollback-safe id generator makes it
 	// practically unreachable, but a duplicate must be retried with a fresh
 	// number instead of surfacing a 500 to the client.
-	ErrOrderNoCollision       = errors.InternalServer("ORDER_NO_COLLISION", "order number already exists")
-	ErrOrderInputInvalid      = errors.BadRequest("ORDER_INPUT_INVALID", "order items are invalid")
+	ErrOrderNoCollision  = errors.InternalServer("ORDER_NO_COLLISION", "order number already exists")
+	ErrOrderInputInvalid = errors.BadRequest("ORDER_INPUT_INVALID", "order items are invalid")
+	// ErrOrderMultiMerchant blocks a mixed-merchant cart: one order must have a
+	// single collecting merchant, otherwise shipment/refund have no owner.
+	ErrOrderMultiMerchant     = errors.BadRequest("ORDER_MULTI_MERCHANT", "all order items must belong to the same merchant; split the cart")
 	ErrOrderTooManyItems      = errors.BadRequest("ORDER_TOO_MANY_ITEMS", "order items exceed the per-order limit")
 	ErrOrderQuantityInvalid   = errors.BadRequest("ORDER_ITEM_QUANTITY_INVALID", "order item quantity is out of range")
 	ErrOrderAmountInvalid     = errors.Conflict("ORDER_AMOUNT_INVALID", "order total must be greater than zero")
@@ -66,6 +69,7 @@ var (
 type Order struct {
 	ID             int64
 	UserID         int64
+	MerchantID     int64
 	AddressID      int64
 	PaidPaymentID  int64
 	Shipping       *OrderShippingSnapshot
@@ -139,6 +143,10 @@ type OrderRepo interface {
 	CountOngoingOrdersByUser(ctx context.Context, userID int64) (int64, error)
 	ListOrdersByUser(ctx context.Context, userID int64, limit, offset int32) ([]Order, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
+	ListOrdersByMerchant(ctx context.Context, merchantID int64, ongoing bool, limit, offset int32) ([]Order, error)
+	CountOrdersByMerchant(ctx context.Context, merchantID int64, ongoing bool) (int64, error)
+	ListAllOrders(ctx context.Context, ongoing bool, limit, offset int32) ([]Order, error)
+	CountAllOrders(ctx context.Context, ongoing bool) (int64, error)
 	CancelOrderByUser(ctx context.Context, id, userID int64) error
 }
 
@@ -181,10 +189,11 @@ type CreateOrderReq struct {
 }
 
 type ListOrdersReq struct {
-	UserID  int64
-	Ongoing bool
-	Limit   int32
-	Offset  int32
+	UserID     int64
+	MerchantID int64
+	Ongoing    bool
+	Limit      int32
+	Offset     int32
 }
 
 func (uc *orderUsecase) CreateOrder(ctx context.Context, req *CreateOrderReq) (*Order, error) {
@@ -272,9 +281,16 @@ func (uc *orderUsecase) GetOrder(ctx context.Context, id int64, actor Actor) (*O
 	}
 	var order Order
 	var err error
-	if actor.Admin {
+	switch {
+	case actor.IsAdmin():
 		order, err = uc.repo.GetOrder(ctx, id)
-	} else {
+	case actor.Allows(CapShipOrder):
+		// Merchants retain buyer access as well as access to their own sales.
+		order, err = uc.repo.GetOrder(ctx, id)
+		if err == nil && order.UserID != actor.ID && !actor.CanManageMerchant(order.MerchantID) {
+			return nil, ErrOrderNotFound
+		}
+	default:
 		order, err = uc.repo.GetOrderByUser(ctx, id, actor.ID)
 	}
 	if err != nil {
@@ -290,45 +306,70 @@ func (uc *orderUsecase) ListOrders(ctx context.Context, actor Actor, req *ListOr
 	if err := actor.Validate(); err != nil {
 		return nil, 0, err
 	}
-	if req == nil || req.UserID <= 0 {
+	if req == nil || (req.UserID <= 0 && req.MerchantID <= 0 && !actor.IsAdmin() && !actor.Allows(CapShipOrder)) {
 		return nil, 0, ErrOrderInputInvalid
 	}
-	if !actor.Admin && actor.ID != req.UserID {
-		return nil, 0, errors.Forbidden("FORBIDDEN", "resource does not belong to the authenticated user")
-	}
+	// Scoping must not mutate a caller-owned request.
+	scoped := *req
+	req = &scoped
 	pagination, err := NewOffsetPage(req.Limit, req.Offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	if req.Ongoing {
-		orders, err := uc.repo.ListOngoingOrdersByUser(ctx, req.UserID, pagination.Limit, pagination.Offset)
+	switch {
+	case actor.IsAdmin():
+		// Administrators may filter by user, by merchant, or list everything.
+	case actor.Allows(CapShipOrder):
+		// Explicit user_id=self without a merchant filter selects purchases.
+		// Otherwise retain the merchant's default, strictly scoped sales view.
+		if req.UserID != actor.ID || req.MerchantID != 0 {
+			req.UserID = 0
+			req.MerchantID = actor.ID
+		}
+	default:
+		if actor.ID != req.UserID {
+			return nil, 0, errors.Forbidden("FORBIDDEN", "resource does not belong to the authenticated user")
+		}
+		// Buyer self-service never selects somebody's merchant sales page.
+		req.MerchantID = 0
+	}
+	var orders []Order
+	var total int64
+	switch {
+	case req.MerchantID > 0:
+		orders, err = uc.repo.ListOrdersByMerchant(ctx, req.MerchantID, req.Ongoing, pagination.Limit, pagination.Offset)
 		if err != nil {
 			return nil, 0, err
 		}
-		// Cache misses coalesced by singleflight may share the backing array.
-		orders = slices.Clone(orders)
-		for i := range orders {
-			if err := uc.decryptShipping(&orders[i]); err != nil {
-				return nil, 0, err
-			}
+		total, err = uc.repo.CountOrdersByMerchant(ctx, req.MerchantID, req.Ongoing)
+	case req.UserID > 0 && req.Ongoing:
+		orders, err = uc.repo.ListOngoingOrdersByUser(ctx, req.UserID, pagination.Limit, pagination.Offset)
+		if err != nil {
+			return nil, 0, err
 		}
-		total, err := uc.repo.CountOngoingOrdersByUser(ctx, req.UserID)
-		return orders, total, err
+		total, err = uc.repo.CountOngoingOrdersByUser(ctx, req.UserID)
+	case req.UserID > 0:
+		orders, err = uc.repo.ListOrdersByUser(ctx, req.UserID, pagination.Limit, pagination.Offset)
+		if err != nil {
+			return nil, 0, err
+		}
+		total, err = uc.repo.CountOrdersByUser(ctx, req.UserID)
+	default:
+		orders, err = uc.repo.ListAllOrders(ctx, req.Ongoing, pagination.Limit, pagination.Offset)
+		if err != nil {
+			return nil, 0, err
+		}
+		total, err = uc.repo.CountAllOrders(ctx, req.Ongoing)
 	}
-	orders, err := uc.repo.ListOrdersByUser(ctx, req.UserID, pagination.Limit, pagination.Offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	// Own the elements before decryptShipping replaces their Shipping pointers.
+	// Cache misses coalesced by singleflight may share the backing array.
 	orders = slices.Clone(orders)
 	for i := range orders {
 		if err := uc.decryptShipping(&orders[i]); err != nil {
 			return nil, 0, err
 		}
-	}
-	total, err := uc.repo.CountOrdersByUser(ctx, req.UserID)
-	if err != nil {
-		return nil, 0, err
 	}
 	return orders, total, nil
 }

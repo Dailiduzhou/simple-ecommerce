@@ -1,5 +1,6 @@
 -- name: CreateProduct :one
 INSERT INTO products (
+  merchant_id,
   category_id,
   name,
   price_minor,
@@ -10,7 +11,9 @@ INSERT INTO products (
   media_assets,
   description
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+VALUES (sqlc.arg(merchant_id), sqlc.arg(category_id), sqlc.arg(name), sqlc.arg(price_minor),
+  sqlc.arg(discount), sqlc.arg(stock), sqlc.arg(status), sqlc.arg(cover_image),
+  sqlc.arg(media_assets), sqlc.arg(description))
 RETURNING *;
 
 -- name: GetProduct :one
@@ -30,18 +33,20 @@ FOR UPDATE;
 -- name: ListProductsByCategory :many
 SELECT *
 FROM products
-WHERE category_id = $1
+WHERE category_id = sqlc.arg(category_id)
   AND status = 1
   AND deleted_at IS NULL
+  AND (sqlc.narg(merchant_id)::bigint IS NULL OR merchant_id = sqlc.narg(merchant_id))
 ORDER BY id DESC
-LIMIT $2 OFFSET $3;
+LIMIT sqlc.arg(limit_rows) OFFSET sqlc.arg(offset_rows);
 
 -- name: ListProducts :many
 SELECT *
 FROM products
 WHERE deleted_at IS NULL
+  AND (sqlc.narg(merchant_id)::bigint IS NULL OR merchant_id = sqlc.narg(merchant_id))
 ORDER BY id DESC
-LIMIT $1 OFFSET $2;
+LIMIT sqlc.arg(limit_rows) OFFSET sqlc.arg(offset_rows);
 
 -- name: UpdateProduct :one
 UPDATE products
@@ -95,11 +100,13 @@ WHERE id = $1;
 -- name: CountProducts :one
 SELECT count(*)
 FROM products
-WHERE deleted_at IS NULL;
+WHERE deleted_at IS NULL
+  AND (sqlc.narg(merchant_id)::bigint IS NULL OR merchant_id = sqlc.narg(merchant_id));
 
 -- name: CountProductsByCategory :one
 SELECT count(*)
 FROM products
-WHERE category_id = $1
+WHERE category_id = sqlc.arg(category_id)
   AND status = 1
-  AND deleted_at IS NULL;
+  AND deleted_at IS NULL
+  AND (sqlc.narg(merchant_id)::bigint IS NULL OR merchant_id = sqlc.narg(merchant_id));

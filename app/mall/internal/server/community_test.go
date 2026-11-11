@@ -112,7 +112,7 @@ func (*transportComments) Delete(ctx context.Context, a biz.Actor, post, id int6
 
 func communityToken(t *testing.T, uid int64, role, jti string) string {
 	t.Helper()
-	token, e := jwt.NewWithClaims(jwt.SigningMethodHS256, &biz.EcommerceClaims{UserID: uid, Role: role, RegisteredClaims: jwt.RegisteredClaims{ID: jti, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}}).SignedString([]byte(strings.Repeat("a", 32)))
+	token, e := jwt.NewWithClaims(jwt.SigningMethodHS256, &biz.EcommerceClaims{UserID: uid, Role: biz.Role(role), RegisteredClaims: jwt.RegisteredClaims{ID: jti, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))}}).SignedString([]byte(strings.Repeat("a", 32)))
 	require.NoError(t, e)
 	return token
 }

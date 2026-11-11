@@ -992,12 +992,6 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
-                "403":
-                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/errors.Status'
                 "404":
                     description: 目标资源不存在或已被删除
                     content:
@@ -3022,6 +3016,12 @@ paths:
                     type: integer
                     format: int32
                     minimum: 0
+                - name: merchantId
+                  in: query
+                  description: Optional catalog filter; 0 means every merchant.
+                  schema:
+                    type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -4242,6 +4242,85 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+    /v1/users/{id}/role:
+        put:
+            tags:
+                - User
+            summary: Update user role
+            description: |-
+                Administrator-only role assignment. Refuses self-changes and demoting the
+                 last administrator; the account's next request picks up the new role.
+            operationId: User_UpdateUserRole
+            parameters:
+                - name: id
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/api.user.v1.UpdateUserRoleRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/api.user.v1.UserInfo'
+                "400":
+                    description: 请求不合法：报文格式、参数校验或业务规则校验失败
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "401":
+                    description: 未认证：缺少、无效、已过期或已登出的访问令牌
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "403":
+                    description: 无权限：需要管理员角色，或只能操作自己名下的资源
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "404":
+                    description: 目标资源不存在或已被删除
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "409":
+                    description: 状态冲突：并发更新、重复提交、库存或支付状态不一致
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "500":
+                    description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/users/{user_id}/addresses:
         get:
             tags:
@@ -4651,6 +4730,15 @@ paths:
                     type: integer
                     format: int32
                     minimum: 0
+                - name: merchantId
+                  in: query
+                  description: |-
+                    Administrator filter by collecting merchant. Merchants default to their
+                     own sales; user_id=self with merchant_id=0 selects their own purchases.
+                     Other merchant filters never broaden access; buyer self-service ignores it.
+                  schema:
+                    type: string
+                    format: int64
             responses:
                 "200":
                     description: OK
@@ -5004,6 +5092,12 @@ components:
         api.mall.v1.CreateProductRequest:
             type: object
             properties:
+                merchantId:
+                    type: string
+                    description: |-
+                        Administrators must name the owning merchant. Merchants omit it (or repeat
+                         their own id); any other value is rejected.
+                    format: int64
                 categoryId:
                     type: string
                     format: int64
@@ -5139,6 +5233,12 @@ components:
                     description: |-
                         Discounted unit price in minor units computed by the server with the same
                          rounding the order flow uses; rendering it keeps display equal to charge.
+                    format: int64
+                merchantId:
+                    type: string
+                    description: |-
+                        Account that owns and sells this product. Merchants may only modify
+                         products carrying their own id; administrators may act on any merchant.
                     format: int64
         api.mall.v1.StockAdjustment:
             type: object
@@ -5451,6 +5551,12 @@ components:
                     allOf:
                         - $ref: '#/components/schemas/api.order.v1.OrderShippingSnapshot'
                     description: Immutable checkout snapshot; address_id is only the historical source ID.
+                merchantId:
+                    type: string
+                    description: |-
+                        Collecting merchant. Every order has exactly one (mixed cart are split by
+                         the client); shipment and refunds are scoped to it.
+                    format: int64
         api.order.v1.OrderItem:
             type: object
             properties:
@@ -6043,6 +6149,21 @@ components:
                 realName:
                     type: string
                     maxLength: 50
+        api.user.v1.UpdateUserRoleRequest:
+            type: object
+            properties:
+                id:
+                    type: string
+                    format: int64
+                    x-exclusiveMinimum: 0
+                role:
+                    type: string
+                    enum:
+                        - user
+                        - merchant
+                        - admin
+            required:
+                - role
         api.user.v1.UserInfo:
             type: object
             properties:

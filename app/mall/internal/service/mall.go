@@ -24,12 +24,13 @@ func NewMallService(productUc biz.ProductUsecase, categoryUc biz.CategoryUsecase
 }
 
 func (s *MallService) CreateProduct(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	actor, err := requireCapability(ctx, biz.CapManageCatalog)
+	if err != nil {
 		return nil, err
 	}
 	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
-	p, err := s.productUc.CreateProduct(ctx, req.CategoryId, req.Name, req.Price, req.Discount, req.Stock, 1, req.CoverImage, mediaAssets, req.Description)
+	p, err := s.productUc.CreateProduct(ctx, actor, req.MerchantId, req.CategoryId, req.Name, req.Price, req.Discount, req.Stock, 1, req.CoverImage, mediaAssets, req.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +58,7 @@ func (s *MallService) ListProducts(ctx context.Context, req *pb.ListProductsRequ
 		page = 1
 	}
 
-	ps, total, err := s.productUc.ListProducts(ctx, req.CategoryId, pageSize, page)
+	ps, total, err := s.productUc.ListProducts(ctx, req.MerchantId, req.CategoryId, pageSize, page)
 	if err != nil {
 		return nil, err
 	}
@@ -78,12 +79,13 @@ func (s *MallService) ListProducts(ctx context.Context, req *pb.ListProductsRequ
 }
 
 func (s *MallService) UpdateProduct(ctx context.Context, req *pb.UpdateProductRequest) (*pb.Product, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	actor, err := requireCapability(ctx, biz.CapManageCatalog)
+	if err != nil {
 		return nil, err
 	}
 	mediaAssets := protoToMediaInfo(req.MediaAssets)
 
-	p, err := s.productUc.UpdateProduct(ctx, req.Id, req.CategoryId, req.Name, req.Price, req.Discount, req.CoverImage, mediaAssets, req.Description)
+	p, err := s.productUc.UpdateProduct(ctx, actor, req.Id, req.CategoryId, req.Name, req.Price, req.Discount, req.CoverImage, mediaAssets, req.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -94,10 +96,11 @@ func (s *MallService) UpdateProduct(ctx context.Context, req *pb.UpdateProductRe
 }
 
 func (s *MallService) UpdateProductStatus(ctx context.Context, req *pb.UpdateProductStatusRequest) (*pb.UpdateProductStatusReply, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	actor, err := requireCapability(ctx, biz.CapManageCatalog)
+	if err != nil {
 		return nil, err
 	}
-	err := s.productUc.UpdateProductStatus(ctx, req.Id, req.Status)
+	err = s.productUc.UpdateProductStatus(ctx, actor, req.Id, req.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -105,11 +108,11 @@ func (s *MallService) UpdateProductStatus(ctx context.Context, req *pb.UpdatePro
 }
 
 func (s *MallService) AdjustProductStock(ctx context.Context, req *pb.AdjustProductStockRequest) (*pb.StockAdjustment, error) {
-	claims, err := requireAdmin(ctx)
+	actor, err := requireCapability(ctx, biz.CapManageCatalog)
 	if err != nil {
 		return nil, err
 	}
-	adjustment, err := s.productUc.AdjustStock(ctx, biz.StockAdjustmentInput{ProductID: req.Id, ActorID: claims.UserID, Delta: req.Delta, Reason: req.Reason, IdempotencyKey: req.IdempotencyKey})
+	adjustment, err := s.productUc.AdjustStock(ctx, actor, biz.StockAdjustmentInput{ProductID: req.Id, Delta: req.Delta, Reason: req.Reason, IdempotencyKey: req.IdempotencyKey})
 	if err != nil {
 		return nil, err
 	}
@@ -119,10 +122,11 @@ func (s *MallService) AdjustProductStock(ctx context.Context, req *pb.AdjustProd
 }
 
 func (s *MallService) DeleteProduct(ctx context.Context, req *pb.DeleteProductRequest) (*pb.DeleteProductReply, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	actor, err := requireCapability(ctx, biz.CapManageCatalog)
+	if err != nil {
 		return nil, err
 	}
-	err := s.productUc.DeleteProduct(ctx, req.Id)
+	err = s.productUc.DeleteProduct(ctx, actor, req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -280,6 +284,7 @@ func (s *MallService) DeleteEvent(ctx context.Context, req *pb.DeleteEventReques
 }
 
 func toProtoProduct(p *biz.Product) (*pb.Product, error) {
+
 	// Compute the charged price with the exact helper the order flow uses so a
 	// rendered product can never disagree with what checkout would charge.
 	priceMinor, err := biz.ProductPriceMinor(p.Price)
@@ -292,6 +297,7 @@ func toProtoProduct(p *biz.Product) (*pb.Product, error) {
 	}
 	proto := &pb.Product{
 		Id:                  p.ID,
+		MerchantId:          p.MerchantID,
 		CategoryId:          p.CategoryID,
 		Name:                p.Name,
 		Price:               p.Price.String(),

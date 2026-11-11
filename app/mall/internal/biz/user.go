@@ -28,6 +28,10 @@ type UserRepo interface {
 	GetUserByPhoneHash(ctx context.Context, phoneHash string) (*User, error)
 	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*UserProfile, error)
 	UpdateUserPassword(ctx context.Context, id, expectedVersion int64, passwordHash string) error
+	// UpdateUserRole and DeleteUser must atomically preserve the last admin;
+	// usecase profile/count prechecks alone cannot protect concurrent writes.
+	UpdateUserRole(ctx context.Context, id int64, role Role) error
+	CountAdmins(ctx context.Context) (int64, error)
 	DeleteUser(ctx context.Context, id int64) error
 }
 
@@ -90,16 +94,17 @@ type User struct {
 	PhoneEncrypt string
 	PasswordHash string
 	AuthVersion  int64
-	Role         string
+	Role         Role
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
 
 // Public profile reads have no credential fields, including on cache misses.
 type UserProfile struct {
-	ID                       int64
-	Nickname, RealName, Role string
-	CreatedAt, UpdatedAt     time.Time
+	ID                   int64
+	Nickname, RealName   string
+	Role                 Role
+	CreatedAt, UpdatedAt time.Time
 }
 
 func (u *User) Profile() *UserProfile {
@@ -115,7 +120,8 @@ type UserUsecase interface {
 	GetUser(ctx context.Context, id int64) (*UserProfile, error)
 	UpdateUser(ctx context.Context, id int64, nickname, realName string) (*UserProfile, error)
 	ChangePassword(ctx context.Context, id int64, oldPassword, newPassword string) error
-	DeleteUser(ctx context.Context, id int64) error
+	DeleteUser(ctx context.Context, actor Actor, id int64) error
+	UpdateUserRole(ctx context.Context, actor Actor, id int64, role string) (*UserProfile, error)
 }
 
 type userUsecase struct {
@@ -292,8 +298,86 @@ func (uc *userUsecase) ChangePassword(ctx context.Context, id int64, oldPassword
 	return nil
 }
 
-func (uc *userUsecase) DeleteUser(ctx context.Context, id int64) error {
+// DeleteUser enforces the account-level policy: users delete themselves,
+// administrators may delete others, and the last administrator cannot be
+// removed (that would lock the platform out). Retained history is still the
+// database's call.
+func (uc *userUsecase) DeleteUser(ctx context.Context, actor Actor, id int64) error {
+	if err := actor.Validate(); err != nil {
+		return err
+	}
+	if id <= 0 {
+		return userv1.ErrorUserNotFound("user not found")
+	}
+	targetRole := actor.Role
+	if actor.ID != id {
+		if !actor.IsAdmin() {
+			return errors.Forbidden("FORBIDDEN", "resource does not belong to the authenticated user")
+		}
+		target, err := uc.userRepo.GetUserByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if target == nil {
+			return userv1.ErrorUserNotFound("user %d not found", id)
+		}
+		targetRole = target.Role
+	}
+	if targetRole == RoleAdmin {
+		admins, err := uc.userRepo.CountAdmins(ctx)
+		if err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return ErrLastAdmin
+		}
+	}
 	return uc.userRepo.DeleteUser(ctx, id)
+}
+
+var (
+	ErrRoleChangeSelf = userv1.ErrorRoleChangeSelf("cannot change your own role")
+	ErrLastAdmin      = userv1.ErrorLastAdminRequired("at least one administrator must remain")
+)
+
+// UpdateUserRole is the only way to grant merchant/administrator rights. It
+// refuses self-changes and demoting the last administrator so the platform
+// cannot lock itself out. The caller's session role is refreshed on the next
+// request from the database, so no token re-issue is needed.
+func (uc *userUsecase) UpdateUserRole(ctx context.Context, actor Actor, id int64, rawRole string) (*UserProfile, error) {
+	if err := actor.Require(CapManageRoles); err != nil {
+		return nil, err
+	}
+	role, err := ParseRole(rawRole)
+	if err != nil {
+		return nil, userv1.ErrorRoleInvalid("role must be one of user, merchant, admin")
+	}
+	if id <= 0 {
+		return nil, userv1.ErrorUserNotFound("user not found")
+	}
+	if id == actor.ID {
+		return nil, ErrRoleChangeSelf
+	}
+	current, err := uc.userRepo.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil {
+		return nil, userv1.ErrorUserNotFound("user %d not found", id)
+	}
+	if current.Role == RoleAdmin && role != RoleAdmin {
+		admins, err := uc.userRepo.CountAdmins(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if admins <= 1 {
+			return nil, ErrLastAdmin
+		}
+	}
+	if err := uc.userRepo.UpdateUserRole(ctx, id, role); err != nil {
+		return nil, err
+	}
+	return uc.userRepo.GetUserByID(ctx, id)
 }
 
 func (uc *shippingAddressUsecase) CreateShippingAddress(ctx context.Context, userID int64, receiverName, receiverPhone, province, city, district, detailAddress, addressTag string, isDefault bool) (*ShippingAddress, error) {

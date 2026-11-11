@@ -25,8 +25,8 @@ func (i OrderFulfillmentInput) Validate(a Actor) error {
 	if err := a.Validate(); err != nil {
 		return err
 	}
-	if i.Action == OrderActionShip && !a.Admin {
-		return errors.Forbidden("FORBIDDEN", "administrator role is required to ship an order")
+	if i.Action == OrderActionShip && !a.Allows(CapShipOrder) {
+		return errors.Forbidden("FORBIDDEN", "the order's merchant or an administrator must ship it")
 	}
 	if i.OrderID <= 0 || (i.Action != OrderActionShip && i.Action != OrderActionComplete) ||
 		len(i.IdempotencyKey) < 8 || len(i.IdempotencyKey) > 64 || strings.TrimSpace(i.IdempotencyKey) != i.IdempotencyKey ||

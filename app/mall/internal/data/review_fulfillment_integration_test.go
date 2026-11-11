@@ -35,7 +35,7 @@ func TestReviewFulfillmentLifecycleAndIdempotencyIntegration(t *testing.T) {
 	f := newCorrectnessFixture(t)
 	orderID, paymentID := fulfillmentOrder(t, f)
 	repo := NewOrderRepo(f.data, f.tx, log.DefaultLogger)
-	admin, owner := biz.Actor{ID: f.userID, Admin: true}, biz.Actor{ID: f.userID}
+	admin, owner := biz.Actor{ID: f.userID, Role: biz.RoleAdmin}, biz.Actor{ID: f.userID, Role: biz.RoleUser}
 	ship := shipmentInput(orderID)
 	complete := biz.OrderFulfillmentInput{OrderID: orderID, Action: biz.OrderActionComplete, IdempotencyKey: "complete-001", Reason: "received"}
 	_, err := repo.ApplyFulfillment(f.ctx, owner, ship)
@@ -77,7 +77,7 @@ func TestReviewFulfillmentLifecycleAndIdempotencyIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, page, 1)
 	require.Equal(t, biz.OrderStatusShipped, page[0].Status)
-	other := biz.Actor{ID: f.userID + 100000}
+	other := biz.Actor{ID: f.userID + 100000, Role: biz.RoleUser}
 	_, err = repo.ApplyFulfillment(f.ctx, other, complete)
 	require.ErrorIs(t, err, biz.ErrOrderNotFound)
 	_, err = repo.ListFulfillmentActions(f.ctx, other, orderID)
@@ -134,7 +134,7 @@ func TestReviewFulfillmentAuditFailureRollsBackIntegration(t *testing.T) {
 	repo := NewOrderRepo(f.data, failFulfillmentTx{f.tx}, log.DefaultLogger)
 	key := redisKey("order", "user", f.userID, "gen")
 	require.NoError(t, f.rdb.Set(f.ctx, key, 7, 0).Err())
-	_, err := repo.ApplyFulfillment(f.ctx, biz.Actor{ID: f.userID, Admin: true}, shipmentInput(orderID))
+	_, err := repo.ApplyFulfillment(f.ctx, biz.Actor{ID: f.userID, Role: biz.RoleAdmin}, shipmentInput(orderID))
 	require.ErrorContains(t, err, "audit storage unavailable")
 	row, err := f.data.DB(f.ctx).GetOrder(f.ctx, orderID)
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestReviewFulfillmentRacesRefundIntegration(t *testing.T) {
 			shipped, refunded := make(chan error, 1), make(chan error, 1)
 			go func() {
 				<-start
-				_, err := orders.ApplyFulfillment(f.ctx, biz.Actor{ID: f.userID, Admin: true}, shipmentInput(orderID))
+				_, err := orders.ApplyFulfillment(f.ctx, biz.Actor{ID: f.userID, Role: biz.RoleAdmin}, shipmentInput(orderID))
 				shipped <- err
 			}()
 			go func() {

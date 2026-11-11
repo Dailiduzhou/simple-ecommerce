@@ -35,6 +35,21 @@ func (r *authorizedOrderReadRepo) ListOngoingOrdersByUser(context.Context, int64
 	r.reads++
 	return []Order{r.order}, nil
 }
+func (r *authorizedOrderReadRepo) ListOrdersByMerchant(context.Context, int64, bool, int32, int32) ([]Order, error) {
+	r.reads++
+	return []Order{r.order}, nil
+}
+func (r *authorizedOrderReadRepo) CountOrdersByMerchant(context.Context, int64, bool) (int64, error) {
+	return 1, nil
+}
+func (r *authorizedOrderReadRepo) ListAllOrders(context.Context, bool, int32, int32) ([]Order, error) {
+	r.reads++
+	r.adminReads++
+	return []Order{r.order}, nil
+}
+func (r *authorizedOrderReadRepo) CountAllOrders(context.Context, bool) (int64, error) {
+	return 1, nil
+}
 
 func TestOrderUsecase_ReadAuthorizationAndShippingSnapshot(t *testing.T) {
 	const secret = "0123456789abcdef0123456789abcdef"
@@ -45,11 +60,12 @@ func TestOrderUsecase_ReadAuthorizationAndShippingSnapshot(t *testing.T) {
 		actor   Actor
 		allowed bool
 	}{
-		{"owner", Actor{ID: 42}, true},
-		{"admin", Actor{ID: 99, Admin: true}, true},
-		{"other user", Actor{ID: 99}, false},
+		{"owner", Actor{ID: 42, Role: RoleUser}, true},
+		{"merchant buyer", Actor{ID: 42, Role: RoleMerchant}, true},
+		{"admin", Actor{ID: 99, Role: RoleAdmin}, true},
+		{"other user", Actor{ID: 99, Role: RoleUser}, false},
 		{"anonymous", Actor{}, false},
-		{"admin without identity", Actor{Admin: true}, false},
+		{"admin without identity", Actor{Role: RoleAdmin}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			shipping := &OrderShippingSnapshot{ReceiverName: "buyer", ReceiverPhoneEncrypt: cipher, DetailAddress: "checkout address"}
@@ -65,7 +81,7 @@ func TestOrderUsecase_ReadAuthorizationAndShippingSnapshot(t *testing.T) {
 				require.Error(t, err)
 				require.Nil(t, order)
 			}
-			if tc.actor.Admin && tc.allowed {
+			if tc.allowed && (tc.actor.IsAdmin() || tc.actor.Allows(CapShipOrder)) {
 				require.Equal(t, 1, repo.adminReads)
 			} else {
 				require.Zero(t, repo.adminReads, "ordinary callers never get an unscoped read")

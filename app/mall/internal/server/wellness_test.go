@@ -50,7 +50,7 @@ func wellnessToken(t *testing.T, secret string, userID int64, role string, expir
 	t.Helper()
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &biz.EcommerceClaims{
 		UserID: userID,
-		Role:   role,
+		Role:   biz.Role(role),
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID: "wellness-test-token", ExpiresAt: jwt.NewNumericDate(expiry),
 		},

@@ -24,19 +24,19 @@ type callbackPaymentUsecase struct {
 func (u *callbackPaymentUsecase) PrepayForOrder(context.Context, biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
 	return nil, nil
 }
-func (u *callbackPaymentUsecase) GetPayment(context.Context, int64, int64) (*biz.PaymentDO, error) {
+func (u *callbackPaymentUsecase) GetPayment(context.Context, biz.Actor, int64) (*biz.PaymentDO, error) {
 	return nil, nil
 }
-func (u *callbackPaymentUsecase) GetPaymentByOrder(context.Context, int64, int64) (*biz.PaymentDO, error) {
+func (u *callbackPaymentUsecase) GetPaymentByOrder(context.Context, biz.Actor, int64) (*biz.PaymentDO, error) {
 	return nil, nil
 }
-func (u *callbackPaymentUsecase) QueryPayment(context.Context, string, int64) (*biz.PaymentQueryResult, error) {
+func (u *callbackPaymentUsecase) QueryPayment(context.Context, biz.Actor, string) (*biz.PaymentQueryResult, error) {
 	return nil, nil
 }
-func (u *callbackPaymentUsecase) ClosePayment(context.Context, string, int64) (*biz.PaymentCloseResult, error) {
+func (u *callbackPaymentUsecase) ClosePayment(context.Context, biz.Actor, string) (*biz.PaymentCloseResult, error) {
 	return nil, nil
 }
-func (u *callbackPaymentUsecase) RefundPayment(context.Context, int64) (*biz.PaymentRefundResult, error) {
+func (u *callbackPaymentUsecase) RefundPayment(context.Context, biz.Actor, int64) (*biz.PaymentRefundResult, error) {
 	return nil, nil
 }
 func (u *callbackPaymentUsecase) ReconcilePendingRefunds(context.Context, time.Duration, int) (int, error) {

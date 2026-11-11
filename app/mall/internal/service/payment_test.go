@@ -15,32 +15,34 @@ import (
 )
 
 type servicePaymentUsecase struct {
-	prepayArgs biz.PrepayForOrderArgs
-	payment    *biz.PaymentDO
-	refundID   int64
-	refundErr  error
+	prepayArgs  biz.PrepayForOrderArgs
+	payment     *biz.PaymentDO
+	refundID    int64
+	refundActor biz.Actor
+	refundErr   error
 }
 
 func (f *servicePaymentUsecase) PrepayForOrder(_ context.Context, args biz.PrepayForOrderArgs) (*biz.PrepayForOrderResult, error) {
 	f.prepayArgs = args
 	return &biz.PrepayForOrderResult{Payment: f.payment, Prepay: &biz.PaymentPrepayResult{Action: biz.PaymentAction{Type: biz.PaymentActionInvoke, Payload: []byte(`{"sdk":"value"}`)}}}, nil
 }
-func (f *servicePaymentUsecase) GetPayment(context.Context, int64, int64) (*biz.PaymentDO, error) {
+func (f *servicePaymentUsecase) GetPayment(context.Context, biz.Actor, int64) (*biz.PaymentDO, error) {
 	if f.payment == nil {
 		return nil, biz.ErrPaymentNotFound
 	}
 	return f.payment, nil
 }
-func (f *servicePaymentUsecase) GetPaymentByOrder(context.Context, int64, int64) (*biz.PaymentDO, error) {
+func (f *servicePaymentUsecase) GetPaymentByOrder(context.Context, biz.Actor, int64) (*biz.PaymentDO, error) {
 	return f.payment, nil
 }
-func (f *servicePaymentUsecase) QueryPayment(context.Context, string, int64) (*biz.PaymentQueryResult, error) {
+func (f *servicePaymentUsecase) QueryPayment(context.Context, biz.Actor, string) (*biz.PaymentQueryResult, error) {
 	return nil, nil
 }
-func (f *servicePaymentUsecase) ClosePayment(context.Context, string, int64) (*biz.PaymentCloseResult, error) {
+func (f *servicePaymentUsecase) ClosePayment(context.Context, biz.Actor, string) (*biz.PaymentCloseResult, error) {
 	return nil, nil
 }
-func (f *servicePaymentUsecase) RefundPayment(_ context.Context, paymentID int64) (*biz.PaymentRefundResult, error) {
+func (f *servicePaymentUsecase) RefundPayment(_ context.Context, actor biz.Actor, paymentID int64) (*biz.PaymentRefundResult, error) {
+	f.refundActor = actor
 	f.refundID = paymentID
 	return &biz.PaymentRefundResult{Success: f.refundErr == nil}, f.refundErr
 }
@@ -55,7 +57,7 @@ func (f *servicePaymentUsecase) HandleNotification(context.Context, string, *htt
 }
 
 func authenticatedPaymentContext(userID int64, role string) context.Context {
-	return biz.WithClaims(context.Background(), &biz.EcommerceClaims{UserID: userID, Role: role})
+	return biz.WithClaims(context.Background(), &biz.EcommerceClaims{UserID: userID, Role: biz.Role(role)})
 }
 
 func TestPaymentService_CreatePaymentPassesNeutralMethodAndAction(t *testing.T) {
@@ -75,16 +77,21 @@ func TestPaymentService_CreatePaymentRequiresAuthentication(t *testing.T) {
 	require.True(t, errors.IsUnauthorized(err))
 }
 
-func TestPaymentService_RefundRequiresAdminAndDelegates(t *testing.T) {
+func TestPaymentService_RefundRequiresMerchantOrAdminAndDelegates(t *testing.T) {
 	uc := &servicePaymentUsecase{}
 	service := NewPaymentService(uc, nil, nil, log.DefaultLogger)
 	_, err := service.RefundPayment(authenticatedPaymentContext(42, "user"), &pb.RefundPaymentRequest{Id: 1})
 	require.True(t, errors.IsForbidden(err))
 
-	reply, err := service.RefundPayment(authenticatedPaymentContext(7, "admin"), &pb.RefundPaymentRequest{Id: 1})
+	reply, err := service.RefundPayment(authenticatedPaymentContext(7, "merchant"), &pb.RefundPaymentRequest{Id: 1})
 	require.NoError(t, err)
 	require.NotNil(t, reply)
+	require.Equal(t, biz.Actor{ID: 7, Role: biz.RoleMerchant}, uc.refundActor)
 	require.Equal(t, int64(1), uc.refundID)
+
+	_, err = service.RefundPayment(authenticatedPaymentContext(9, "admin"), &pb.RefundPaymentRequest{Id: 1})
+	require.NoError(t, err)
+	require.Equal(t, biz.Actor{ID: 9, Role: biz.RoleAdmin}, uc.refundActor)
 }
 
 func TestProviderCallbackLimiterIsScopedAndBounded(t *testing.T) {

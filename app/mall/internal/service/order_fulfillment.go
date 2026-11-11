@@ -10,14 +10,14 @@ import (
 )
 
 func (s *OrderService) ShipOrder(ctx context.Context, req *pb.ShipOrderRequest) (*pb.OrderFulfillmentAction, error) {
-	claims, err := requireAdmin(ctx)
+	actor, err := requireCapability(ctx, biz.CapShipOrder)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("ORDER_REQUEST_REQUIRED", "request is required")
 	}
-	result, err := s.fulfillment.Apply(ctx, biz.Actor{ID: claims.UserID, Admin: true}, biz.OrderFulfillmentInput{
+	result, err := s.fulfillment.Apply(ctx, actor, biz.OrderFulfillmentInput{
 		OrderID: req.Id, Action: biz.OrderActionShip, IdempotencyKey: req.IdempotencyKey, Reason: req.Reason, Carrier: req.Carrier, TrackingNumber: req.TrackingNumber,
 	})
 	if err != nil {

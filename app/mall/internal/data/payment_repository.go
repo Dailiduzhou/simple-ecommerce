@@ -180,17 +180,6 @@ func (r *PaymentRepo) GetPaymentForJob(ctx context.Context, id int64) (*biz.Paym
 	return toBizPayment(row), nil
 }
 
-func (r *PaymentRepo) GetPaymentByUser(ctx context.Context, id, userID int64) (*biz.PaymentDO, error) {
-	payment, err := r.GetPayment(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if payment.UserID != userID {
-		return nil, biz.ErrPaymentNotFound
-	}
-	return payment, nil
-}
-
 func (r *PaymentRepo) GetLatestPaymentByOrder(ctx context.Context, orderID int64) (*biz.PaymentDO, error) {
 	return r.getPayment(ctx, redisKey("payment", "order", orderID, "gen"), func(gen int64) string { return redisKey("payment", "order", orderID, "g", gen) }, func() (db.Payment, error) {
 		return querierFromContext(ctx, r.data.q).GetLatestPaymentByOrder(ctx, orderID)

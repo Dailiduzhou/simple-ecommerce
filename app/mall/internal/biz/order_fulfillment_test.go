@@ -9,7 +9,7 @@ import (
 
 func TestOrderFulfillmentInputBoundaries(t *testing.T) {
 	valid := OrderFulfillmentInput{OrderID: 7, Action: OrderActionShip, IdempotencyKey: "shipment-1", Reason: "sent", Carrier: "carrier", TrackingNumber: "tracking"}
-	a := Actor{ID: 1, Admin: true}
+	a := Actor{ID: 1, Role: RoleAdmin}
 	require.NoError(t, valid.Validate(a))
 	for name, mutate := range map[string]func(*OrderFulfillmentInput){
 		"order":                      func(i *OrderFulfillmentInput) { i.OrderID = 0 },
@@ -28,7 +28,7 @@ func TestOrderFulfillmentInputBoundaries(t *testing.T) {
 		t.Run(name, func(t *testing.T) { i := valid; mutate(&i); require.Error(t, i.Validate(a)) })
 	}
 	require.Error(t, valid.Validate(Actor{}))
-	require.Error(t, valid.Validate(Actor{ID: 1}))
+	require.Error(t, valid.Validate(Actor{ID: 1, Role: RoleUser}))
 	valid.Action, valid.Carrier, valid.TrackingNumber = OrderActionComplete, "", ""
-	require.NoError(t, valid.Validate(Actor{ID: 1}))
+	require.NoError(t, valid.Validate(Actor{ID: 1, Role: RoleUser}))
 }

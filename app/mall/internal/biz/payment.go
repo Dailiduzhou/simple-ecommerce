@@ -49,20 +49,30 @@ func NewConfiguredPaymentUsecase(gateway PaymentGateway, paymentRepo PaymentRepo
 	return &paymentUsecase{gateway: gateway, paymentRepo: paymentRepo, notificationRepo: notificationRepo, orderRepo: orderRepo, paymentJobs: paymentJobs, tx: tx, idGen: idGen, policy: policy, log: log.NewHelper(logger)}
 }
 
-func (uc *paymentUsecase) GetPayment(ctx context.Context, id, userID int64) (*PaymentDO, error) {
-	return uc.paymentRepo.GetPaymentByUser(ctx, id, userID)
+func (uc *paymentUsecase) GetPayment(ctx context.Context, actor Actor, id int64) (*PaymentDO, error) {
+	payment, err := uc.paymentRepo.GetPayment(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := authorizePayment(actor, payment); err != nil {
+		return nil, err
+	}
+	return payment, nil
 }
 
-func (uc *paymentUsecase) GetPaymentByOrder(ctx context.Context, orderID, userID int64) (*PaymentDO, error) {
-	order, err := uc.orderRepo.GetOrderByUser(ctx, orderID, userID)
+func (uc *paymentUsecase) GetPaymentByOrder(ctx context.Context, actor Actor, orderID int64) (*PaymentDO, error) {
+	order, err := uc.orderRepo.GetOrder(ctx, orderID)
 	if err != nil {
+		return nil, err
+	}
+	if err := authorizeOrder(actor, order.UserID, order.MerchantID); err != nil {
 		return nil, err
 	}
 	return uc.paymentRepo.GetLatestPaymentByOrder(ctx, order.ID)
 }
 
-func (uc *paymentUsecase) QueryPayment(ctx context.Context, outTradeNo string, userID int64) (*PaymentQueryResult, error) {
-	payment, err := uc.authorizedByOutTradeNo(ctx, outTradeNo, userID)
+func (uc *paymentUsecase) QueryPayment(ctx context.Context, actor Actor, outTradeNo string) (*PaymentQueryResult, error) {
+	payment, err := uc.authorizedByOutTradeNo(ctx, outTradeNo, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +90,8 @@ func (uc *paymentUsecase) QueryPayment(ctx context.Context, outTradeNo string, u
 	return result, err
 }
 
-func (uc *paymentUsecase) ClosePayment(ctx context.Context, outTradeNo string, userID int64) (*PaymentCloseResult, error) {
-	payment, err := uc.authorizedByOutTradeNo(ctx, outTradeNo, userID)
+func (uc *paymentUsecase) ClosePayment(ctx context.Context, actor Actor, outTradeNo string) (*PaymentCloseResult, error) {
+	payment, err := uc.authorizedByOutTradeNo(ctx, outTradeNo, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -137,15 +147,38 @@ func (uc *paymentUsecase) ClosePayment(ctx context.Context, outTradeNo string, u
 	return result, err
 }
 
-func (uc *paymentUsecase) authorizedByOutTradeNo(ctx context.Context, outTradeNo string, userID int64) (*PaymentDO, error) {
-	if outTradeNo == "" || userID <= 0 {
+// authorizeOrder lets a payment reader see the order if they are the buyer,
+// the collecting merchant, or an administrator. Anything else observes a
+// not-found so IDs cannot be probed.
+func authorizeOrder(actor Actor, buyerID, merchantID int64) error {
+	if err := actor.Validate(); err != nil {
+		return err
+	}
+	if actor.ID == buyerID || actor.CanManageMerchant(merchantID) {
+		return nil
+	}
+	return ErrOrderNotFound
+}
+
+func authorizePayment(actor Actor, payment *PaymentDO) error {
+	if err := actor.Validate(); err != nil {
+		return err
+	}
+	if payment == nil || (actor.ID != payment.UserID && !actor.CanManageMerchant(payment.MerchantID)) {
+		return ErrPaymentNotFound
+	}
+	return nil
+}
+
+func (uc *paymentUsecase) authorizedByOutTradeNo(ctx context.Context, outTradeNo string, actor Actor) (*PaymentDO, error) {
+	if outTradeNo == "" {
 		return nil, ErrPaymentNotFound
 	}
 	payment, err := uc.paymentRepo.GetPaymentByOutTradeNo(ctx, outTradeNo)
 	if err != nil {
 		return nil, err
 	}
-	if payment == nil || payment.UserID != userID {
+	if err := authorizePayment(actor, payment); err != nil {
 		return nil, ErrPaymentNotFound
 	}
 	return payment, nil

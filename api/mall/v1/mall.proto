@@ -176,9 +176,15 @@ message Product {
   // Discounted unit price in minor units computed by the server with the same
   // rounding the order flow uses; rendering it keeps display equal to charge.
   int64  effective_price_minor = 12;
+  // Account that owns and sells this product. Merchants may only modify
+  // products carrying their own id; administrators may act on any merchant.
+  int64  merchant_id = 13;
 }
 
 message CreateProductRequest {
+  // Administrators must name the owning merchant. Merchants omit it (or repeat
+  // their own id); any other value is rejected.
+  int64  merchant_id  = 9;
   int64  category_id  = 1;
   string name         = 2;
   string price        = 3;
@@ -197,6 +203,8 @@ message ListProductsRequest {
   int64 category_id = 1;
   int32 page_size   = 2 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
   int32 page        = 3 [(buf.validate.field).int32.gte = 0];
+  // Optional catalog filter; 0 means every merchant.
+  int64 merchant_id = 4;
 }
 message ListProductsReply {
   repeated Product products = 1;

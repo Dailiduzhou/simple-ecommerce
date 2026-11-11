@@ -23,11 +23,12 @@ var (
 
 type UserRepo struct {
 	data *Data
+	tx   biz.TxManager
 	log  *log.Helper
 }
 
 func NewUserRepo(data *Data, logger log.Logger) *UserRepo {
-	return &UserRepo{data: data, log: log.NewHelper(logger)}
+	return &UserRepo{data: data, tx: NewTransaction(data.pool, logger), log: log.NewHelper(logger)}
 }
 
 type ShippingAddressRepo struct {
@@ -51,7 +52,7 @@ func (r *UserRepo) CreateUser(ctx context.Context, nickname, phoneHash, phoneEnc
 		PhoneHash:    phoneHash,
 		PhoneEncrypt: phoneEncrypt,
 		PasswordHash: passwordHash,
-		Role:         "user",
+		Role:         string(biz.RoleUser),
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -119,7 +120,29 @@ func (r *UserRepo) UpdateUser(ctx context.Context, id int64, nickname, realName 
 	return bizUser, nil
 }
 
+func (r *UserRepo) UpdateUserRole(ctx context.Context, id int64, role biz.Role) error {
+	return r.withAccountMutation(ctx, id, role != biz.RoleAdmin, func(ctx context.Context) error {
+		if err := r.data.DB(ctx).UpdateUserRole(ctx, db.UpdateUserRoleParams{ID: id, Role: string(role)}); err != nil {
+			return err
+		}
+		bumpCacheGeneration(ctx, r.data.rdb, r.log, userGenerationKey(id))
+		return nil
+	})
+}
+
+func (r *UserRepo) CountAdmins(ctx context.Context) (int64, error) {
+	return r.data.DB(ctx).CountAdmins(ctx)
+}
+
 func (r *UserRepo) DeleteUser(ctx context.Context, id int64) error {
+	return r.withAccountMutation(ctx, id, true, func(ctx context.Context) error {
+		return r.deleteUser(ctx, id)
+	})
+}
+
+// deleteUser runs only after withAccountMutation has protected the admin set.
+// Community deletion also uses this primitive, in the same cleanup transaction.
+func (r *UserRepo) deleteUser(ctx context.Context, id int64) error {
 	err := r.data.DB(ctx).DeleteUser(ctx, id)
 	if err != nil {
 		// Physical deletion is supported only for accounts without retained audit
@@ -171,7 +194,7 @@ func toBizUser(u db.User) *biz.User {
 		PhoneEncrypt: u.PhoneEncrypt,
 		PasswordHash: u.PasswordHash,
 		AuthVersion:  u.AuthVersion,
-		Role:         u.Role,
+		Role:         biz.Role(u.Role),
 		CreatedAt:    u.CreatedAt.Time,
 		UpdatedAt:    u.UpdatedAt.Time,
 	}

@@ -69,6 +69,9 @@ message OrderInfo {
   string currency = 11;
   // Immutable checkout snapshot; address_id is only the historical source ID.
   OrderShippingSnapshot shipping = 12;
+  // Collecting merchant. Every order has exactly one (mixed cart are split by
+  // the client); shipment and refunds are scoped to it.
+  int64  merchant_id = 13;
 }
 
 message OrderShippingSnapshot {
@@ -102,6 +105,10 @@ message ListOrdersRequest {
   bool  ongoing    = 2; // true 只查未完成
   int32 page_size  = 3 [(buf.validate.field).int32 = {gte: 0, lte: 100}];
   int32 page       = 4 [(buf.validate.field).int32.gte = 0];
+  // Administrator filter by collecting merchant. Merchants default to their
+  // own sales; user_id=self with merchant_id=0 selects their own purchases.
+  // Other merchant filters never broaden access; buyer self-service ignores it.
+  int64 merchant_id = 5;
 }
 message ListOrdersReply {
   repeated OrderInfo orders = 1;

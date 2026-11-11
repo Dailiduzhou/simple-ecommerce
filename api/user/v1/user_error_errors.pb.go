@@ -130,3 +130,39 @@ func IsUserLoginLocked(err error) bool {
 func ErrorUserLoginLocked(format string, args ...interface{}) *errors.Error {
 	return errors.New(429, ErrorReason_USER_LOGIN_LOCKED.String(), fmt.Sprintf(format, args...))
 }
+
+func IsRoleChangeSelf(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_ROLE_CHANGE_SELF.String() && e.Code == 409
+}
+
+func ErrorRoleChangeSelf(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_ROLE_CHANGE_SELF.String(), fmt.Sprintf(format, args...))
+}
+
+func IsLastAdminRequired(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_LAST_ADMIN_REQUIRED.String() && e.Code == 409
+}
+
+func ErrorLastAdminRequired(format string, args ...interface{}) *errors.Error {
+	return errors.New(409, ErrorReason_LAST_ADMIN_REQUIRED.String(), fmt.Sprintf(format, args...))
+}
+
+func IsRoleInvalid(err error) bool {
+	if err == nil {
+		return false
+	}
+	e := errors.FromError(err)
+	return e.Reason == ErrorReason_ROLE_INVALID.String() && e.Code == 400
+}
+
+func ErrorRoleInvalid(format string, args ...interface{}) *errors.Error {
+	return errors.New(400, ErrorReason_ROLE_INVALID.String(), fmt.Sprintf(format, args...))
+}

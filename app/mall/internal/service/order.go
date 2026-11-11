@@ -22,7 +22,7 @@ func NewOrderService(orderUc biz.OrderUsecase, fulfillment *biz.OrderFulfillment
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, req *pb.CreateOrderRequest) (*pb.OrderInfo, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *pb.CreateOrderReque
 		items[i] = biz.OrderItemInput{ProductID: item.ProductId, Quantity: item.Quantity}
 	}
 	order, err := s.orderUc.CreateOrder(ctx, &biz.CreateOrderReq{
-		UserID: claims.UserID, AddressID: req.AddressId, Items: items, IdempotencyKey: idempotencyKey,
+		UserID: actor.ID, AddressID: req.AddressId, Items: items, IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		return nil, err
@@ -47,20 +47,16 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *pb.CreateOrderReque
 }
 
 func (s *OrderService) GetOrder(ctx context.Context, req *pb.GetOrderRequest) (*pb.OrderInfo, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("ORDER_REQUEST_REQUIRED", "request is required")
 	}
-	a := biz.Actor{ID: claims.UserID, Admin: claims.Role == "admin"}
-	if !a.Admin {
-		if err := requireResourceOwner(claims, req.UserId); err != nil {
-			return nil, err
-		}
-	}
-	order, err := s.orderUc.GetOrder(ctx, req.Id, a)
+	// The usecase authorizes the caller against the stored order: buyers by
+	// ownership, merchants by the collecting merchant, administrators by role.
+	order, err := s.orderUc.GetOrder(ctx, req.Id, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -71,25 +67,38 @@ func (s *OrderService) GetOrder(ctx context.Context, req *pb.GetOrderRequest) (*
 }
 
 func (s *OrderService) ListOrders(ctx context.Context, req *pb.ListOrdersRequest) (*pb.ListOrdersReply, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("ORDER_REQUEST_REQUIRED", "request is required")
 	}
-	a := biz.Actor{ID: claims.UserID, Admin: claims.Role == "admin"}
-	userID := claims.UserID
-	if a.Admin && req.UserId != 0 {
+	userID, merchantID := actor.ID, int64(0)
+	switch {
+	case actor.IsAdmin():
+		// Administrators may read one buyer, one merchant, or everything.
+		if req.UserId > 0 && req.MerchantId > 0 {
+			return nil, errors.BadRequest("ORDER_FILTER_CONFLICT", "filter by buyer or merchant, not both")
+		}
 		userID = req.UserId
-	} else if err := requireResourceOwner(claims, req.UserId); err != nil {
-		return nil, err
+		merchantID = req.MerchantId
+	case actor.Allows(biz.CapShipOrder):
+		// Keep the default sales view, but let merchants explicitly select
+		// their own purchases using the existing buyer filter.
+		if req.UserId != actor.ID || req.MerchantId != 0 {
+			userID, merchantID = 0, actor.ID
+		}
+	default:
+		if err := requireResourceOwner(ctx, actor, req.UserId); err != nil {
+			return nil, err
+		}
 	}
 	pagination, err := biz.NewPage(req.Page, req.PageSize)
 	if err != nil {
 		return nil, err
 	}
-	orders, total, err := s.orderUc.ListOrders(ctx, a, &biz.ListOrdersReq{UserID: userID, Ongoing: req.Ongoing, Limit: pagination.Limit, Offset: pagination.Offset})
+	orders, total, err := s.orderUc.ListOrders(ctx, actor, &biz.ListOrdersReq{UserID: userID, MerchantID: merchantID, Ongoing: req.Ongoing, Limit: pagination.Limit, Offset: pagination.Offset})
 	if err != nil {
 		return nil, err
 	}
@@ -101,17 +110,19 @@ func (s *OrderService) ListOrders(ctx context.Context, req *pb.ListOrdersRequest
 }
 
 func (s *OrderService) CancelOrder(ctx context.Context, req *pb.CancelOrderRequest) (*pb.CancelOrderReply, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("ORDER_REQUEST_REQUIRED", "request is required")
 	}
-	if err := requireResourceOwner(claims, req.UserId); err != nil {
+	// Cancellation is a buyer self-service action; merchants and administrators
+	// use the refund/reconciliation flows instead.
+	if err := requireResourceOwner(ctx, actor, req.UserId); err != nil {
 		return nil, err
 	}
-	if err := s.orderUc.CancelOrder(ctx, req.Id, claims.UserID); err != nil {
+	if err := s.orderUc.CancelOrder(ctx, req.Id, actor.ID); err != nil {
 		return nil, err
 	}
 	return &pb.CancelOrderReply{}, nil
@@ -121,7 +132,7 @@ func toProtoOrder(order *biz.Order) *pb.OrderInfo {
 	if order == nil {
 		return nil
 	}
-	result := &pb.OrderInfo{Id: order.ID, UserId: order.UserID, AddressId: order.AddressID,
+	result := &pb.OrderInfo{Id: order.ID, UserId: order.UserID, MerchantId: order.MerchantID, AddressId: order.AddressID,
 		TotalAmount: minorAmountString(order.TotalAmount), Status: order.Status, IsCompleted: order.IsCompleted,
 		CreatedAt: timestamppb.New(order.CreatedAt), UpdatedAt: timestamppb.New(order.UpdatedAt), Items: make([]*pb.OrderItem, len(order.Items)), OrderNo: order.OutTradeNo, Currency: order.Currency}
 	for i, item := range order.Items {

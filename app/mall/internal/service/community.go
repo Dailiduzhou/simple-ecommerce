@@ -19,11 +19,11 @@ func NewCommunityService(p *biz.PostUsecase, c *biz.CommentUsecase) *CommunitySe
 }
 
 func actor(ctx context.Context) (biz.Actor, error) {
-	c, e := authenticatedClaims(ctx)
+	a, e := authenticatedActor(ctx)
 	if e != nil {
 		return biz.Actor{}, e
 	}
-	return biz.Actor{ID: c.UserID, Admin: c.Role == "admin"}, nil
+	return a, nil
 }
 func authorProto(a biz.Author) *pb.Author { return &pb.Author{Id: a.ID, Nickname: a.Nickname} }
 func postProto(p *biz.Post) *pb.Post {

@@ -48,7 +48,10 @@ func EffectivePriceMinor(priceMinor int64, discount decimal.Decimal) (int64, err
 }
 
 type Product struct {
-	ID          int64
+	ID int64
+	// MerchantID is the account that owns and sells this product. Catalog
+	// writes are scoped to it; order creation copies it onto the order.
+	MerchantID  int64
 	CategoryID  int64
 	Name        string
 	Price       decimal.Decimal
@@ -72,12 +75,14 @@ type MediaInfo struct {
 }
 
 type ProductRepo interface {
-	CountProducts(ctx context.Context, categoryID int64) (int64, error)
-	CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	CountProducts(ctx context.Context, merchantID, categoryID int64) (int64, error)
+	CreateProduct(ctx context.Context, merchantID, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	DecrProductStock(ctx context.Context, ID int64, amount int32) (int32, error)
 	GetProduct(ctx context.Context, id int64) (*Product, error)
-	ListProducts(ctx context.Context, limit int32, offset int32) ([]Product, error)
-	ListProductsByCategory(ctx context.Context, categoryID int64, limit int32, offset int32) ([]Product, error)
+	// GetProductForManagement bypasses the read cache for authorization decisions.
+	GetProductForManagement(ctx context.Context, id int64) (*Product, error)
+	ListProducts(ctx context.Context, merchantID int64, limit int32, offset int32) ([]Product, error)
+	ListProductsByCategory(ctx context.Context, merchantID, categoryID int64, limit int32, offset int32) ([]Product, error)
 	SoftDeleteProduct(ctx context.Context, id int64) error
 	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, coverImage []MediaInfo, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	AdjustStock(context.Context, StockAdjustmentInput) (*StockAdjustment, error)
@@ -85,13 +90,38 @@ type ProductRepo interface {
 }
 
 type ProductUsecase interface {
-	CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	// CreateProduct: an administrator must name the owning merchant; a merchant
+	// always creates for themselves.
+	CreateProduct(ctx context.Context, actor Actor, merchantID, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
 	GetProduct(ctx context.Context, id int64) (*Product, error)
-	ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error)
-	UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
-	AdjustStock(context.Context, StockAdjustmentInput) (*StockAdjustment, error)
-	UpdateProductStatus(ctx context.Context, id int64, status int32) error
-	DeleteProduct(ctx context.Context, id int64) error
+	ListProducts(ctx context.Context, merchantID, categoryID int64, pageSize int32, page int32) ([]Product, int32, error)
+	UpdateProduct(ctx context.Context, actor Actor, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error)
+	AdjustStock(context.Context, Actor, StockAdjustmentInput) (*StockAdjustment, error)
+	UpdateProductStatus(ctx context.Context, actor Actor, id int64, status int32) error
+	DeleteProduct(ctx context.Context, actor Actor, id int64) error
+}
+
+// requireProductManager loads the authoritative product row and enforces both
+// the catalog capability and merchant ownership. Not-found is returned for a
+// missing row; another merchant's row is forbidden.
+func (uc *productUsecase) requireProductManager(ctx context.Context, actor Actor, id int64) (*Product, error) {
+	if err := actor.Require(CapManageCatalog); err != nil {
+		return nil, err
+	}
+	if id <= 0 {
+		return nil, ErrProductNotFound
+	}
+	product, err := uc.repo.GetProductForManagement(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if product == nil {
+		return nil, ErrProductNotFound
+	}
+	if err := actor.RequireMerchant(product.MerchantID); err != nil {
+		return nil, err
+	}
+	return product, nil
 }
 
 type productUsecase struct {
@@ -103,7 +133,22 @@ func NewProductUsecase(repo ProductRepo, logger log.Logger) ProductUsecase {
 	return &productUsecase{repo: repo, log: log.NewHelper(logger)}
 }
 
-func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+func (uc *productUsecase) CreateProduct(ctx context.Context, actor Actor, merchantID, categoryID int64, name string, priceStr string, discountStr string, stock int32, status int16, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+	if err := actor.Require(CapManageCatalog); err != nil {
+		return nil, err
+	}
+	if actor.IsAdmin() {
+		if merchantID <= 0 {
+			return nil, errors.BadRequest("MERCHANT_REQUIRED", "an administrator must specify the owning merchant")
+		}
+	} else {
+		// Merchants cannot create inventory for another account, even by
+		// guessing IDs in the body.
+		if merchantID != 0 && merchantID != actor.ID {
+			return nil, errors.Forbidden("FORBIDDEN", "merchants may only create their own products")
+		}
+		merchantID = actor.ID
+	}
 	if err := ValidateProductStatus(int32(status)); err != nil {
 		return nil, err
 	}
@@ -124,31 +169,33 @@ func (uc *productUsecase) CreateProduct(ctx context.Context, categoryID int64, n
 		return nil, err
 	}
 	cover := mediaFromCoverURL(coverImage)
-	return uc.repo.CreateProduct(ctx, categoryID, name, price, discount, stock, status, cover, mediaAssets, descrption)
+	return uc.repo.CreateProduct(ctx, merchantID, categoryID, name, price, discount, stock, status, cover, mediaAssets, descrption)
 }
 
 func (uc *productUsecase) GetProduct(ctx context.Context, id int64) (*Product, error) {
 	return uc.repo.GetProduct(ctx, id)
 }
 
-func (uc *productUsecase) ListProducts(ctx context.Context, categoryID int64, pageSize int32, page int32) ([]Product, int32, error) {
+func (uc *productUsecase) ListProducts(ctx context.Context, merchantID, categoryID int64, pageSize int32, page int32) ([]Product, int32, error) {
 	pagination, err := NewPage(page, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := uc.repo.CountProducts(ctx, categoryID)
+	total, err := uc.repo.CountProducts(ctx, merchantID, categoryID)
 	if err != nil {
 		return nil, 0, err
 	}
 	if categoryID > 0 {
-		ps, err := uc.repo.ListProductsByCategory(ctx, categoryID, pagination.Limit, pagination.Offset)
+		ps, err := uc.repo.ListProductsByCategory(ctx, merchantID, categoryID, pagination.Limit, pagination.Offset)
 		return ps, int32(total), err
 	}
-	ps, err := uc.repo.ListProducts(ctx, pagination.Limit, pagination.Offset)
+	ps, err := uc.repo.ListProducts(ctx, merchantID, pagination.Limit, pagination.Offset)
 	return ps, int32(total), err
 }
 
-func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+func (uc *productUsecase) UpdateProduct(ctx context.Context, actor Actor, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
+	// Reject malformed client input before loading the row: a 400 about the
+	// caller's own payload cannot leak another merchant's product existence.
 	price, err := decimal.NewFromString(priceStr)
 	if err != nil {
 		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
@@ -165,18 +212,27 @@ func (uc *productUsecase) UpdateProduct(ctx context.Context, id int64, categoryI
 	if err := ProductDiscount(discount); err != nil {
 		return nil, err
 	}
+	if _, err := uc.requireProductManager(ctx, actor, id); err != nil {
+		return nil, err
+	}
 	cover := mediaFromCoverURL(coverImage)
 	return uc.repo.UpdateProduct(ctx, id, categoryID, name, price, discount, cover, mediaAssets, descrption)
 }
 
-func (uc *productUsecase) UpdateProductStatus(ctx context.Context, id int64, status int32) error {
+func (uc *productUsecase) UpdateProductStatus(ctx context.Context, actor Actor, id int64, status int32) error {
+	if _, err := uc.requireProductManager(ctx, actor, id); err != nil {
+		return err
+	}
 	if err := ValidateProductStatus(status); err != nil {
 		return err
 	}
 	return uc.repo.UpdateProductStatus(ctx, id, status)
 }
 
-func (uc *productUsecase) DeleteProduct(ctx context.Context, id int64) error {
+func (uc *productUsecase) DeleteProduct(ctx context.Context, actor Actor, id int64) error {
+	if _, err := uc.requireProductManager(ctx, actor, id); err != nil {
+		return err
+	}
 	return uc.repo.SoftDeleteProduct(ctx, id)
 }
 

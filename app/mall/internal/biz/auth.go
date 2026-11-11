@@ -25,7 +25,7 @@ type AuthRepo interface {
 
 type EcommerceClaims struct {
 	UserID      int64  `json:"user_id"`
-	Role        string `json:"role"`
+	Role        Role   `json:"role"`
 	AuthVersion int64  `json:"auth_version"`
 	SessionID   string `json:"sid"`
 	TokenKind   string `json:"token_kind"`
@@ -76,6 +76,11 @@ func (uc *authUsecase) ValidateAccount(ctx context.Context, claims *EcommerceCla
 	}
 	if claims.AuthVersion != u.AuthVersion {
 		return userv1.ErrorUnauthorized("credentials changed; sign in again")
+	}
+	if !u.Role.Valid() {
+		// A row with an unknown role cannot be authorized safely; fail closed
+		// instead of treating it as a normal user.
+		return userv1.ErrorUnauthorized("account role is invalid")
 	}
 	claims.Role = u.Role
 	return nil
@@ -138,7 +143,7 @@ func (uc *authUsecase) RefreshSession(ctx context.Context, refreshToken string) 
 	return uc.signPair(claims.UserID, claims.Role, claims.AuthVersion, claims.SessionID, time.Now(), claims.ExpiresAt.Time)
 }
 
-func (uc *authUsecase) signPair(userID int64, role string, version int64, sessionID string, now, deadline time.Time) (*TokenPair, error) {
+func (uc *authUsecase) signPair(userID int64, role Role, version int64, sessionID string, now, deadline time.Time) (*TokenPair, error) {
 	accessDeadline := now.Add(uc.accessTimeout)
 	if deadline.Before(accessDeadline) {
 		accessDeadline = deadline

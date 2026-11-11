@@ -47,8 +47,9 @@ func newCommunityFixture(t *testing.T) *communityFixture {
 	policy, e := NewCommunityPolicy(nil)
 	require.NoError(t, e)
 	m := NewMediaRepo(f.data, f.tx, insert, policy)
-	c := &communityFixture{correctnessFixture: f, media: m, posts: NewPostRepo(f.data, f.tx, m), comments: NewCommentRepo(f.data, f.tx), history: NewBrowsingHistoryRepo(f.data, f.tx, policy), actor: biz.Actor{ID: f.userID}}
+	c := &communityFixture{correctnessFixture: f, media: m, posts: NewPostRepo(f.data, f.tx, m), comments: NewCommentRepo(f.data, f.tx), history: NewBrowsingHistoryRepo(f.data, f.tx, policy), actor: biz.Actor{ID: f.userID, Role: biz.RoleUser}}
 	require.NoError(t, f.pool.QueryRow(f.ctx, `INSERT INTO users(nickname,phone_hash,phone_encrypt,password_hash) VALUES('other',$1,'secret','secret') RETURNING id`, f.prefix+"_other").Scan(&c.other.ID))
+	c.other.Role = biz.RoleUser
 	t.Cleanup(func() {
 		_, e := f.pool.Exec(f.ctx, `DELETE FROM river_job WHERE kind=$1 AND (args->>'media_id')::bigint=ANY($2::bigint[])`, biz.MediaDeleteKind, c.mediaIDs)
 		require.NoError(t, e)
@@ -128,7 +129,7 @@ func TestCommunityIntegrationHistory(t *testing.T) {
 	require.Len(t, rows, 1)
 	// Identical timestamps use product ID as the second key.
 	var second int64
-	require.NoError(t, f.pool.QueryRow(ctx, `INSERT INTO products(category_id,name,status) VALUES($1,'second',1) RETURNING id`, f.categoryID).Scan(&second))
+	require.NoError(t, f.pool.QueryRow(ctx, `INSERT INTO products(merchant_id,category_id,name,status) VALUES($2,$1,'second',1) RETURNING id`, f.categoryID, f.merchantID).Scan(&second))
 	_, e = f.history.Record(ctx, f.actor.ID, second)
 	require.NoError(t, e)
 	_, e = f.pool.Exec(ctx, `UPDATE product_browsing_history SET last_viewed_at=clock_timestamp()+interval '1 second' WHERE user_id=$1`, f.actor.ID)
@@ -218,7 +219,7 @@ func TestCommunityIntegrationHistoryTimeFilter(t *testing.T) {
 	stamps := []time.Time{base.Add(-3 * time.Hour), base.Add(-2 * time.Hour), base.Add(-time.Hour)}
 	ids := make([]int64, len(stamps))
 	for i := range ids {
-		require.NoError(t, f.pool.QueryRow(ctx, `INSERT INTO products(category_id,name,status) VALUES($1,'history-filter',1) RETURNING id`, f.categoryID).Scan(&ids[i]))
+		require.NoError(t, f.pool.QueryRow(ctx, `INSERT INTO products(merchant_id,category_id,name,status) VALUES($2,$1,'history-filter',1) RETURNING id`, f.categoryID, f.merchantID).Scan(&ids[i]))
 		_, e := f.pool.Exec(ctx, `INSERT INTO product_browsing_history(user_id,product_id,first_viewed_at,last_viewed_at) VALUES($1,$2,$3,$3)`, f.actor.ID, ids[i], stamps[i])
 		require.NoError(t, e)
 	}
@@ -269,7 +270,7 @@ func TestCommunityIntegrationHistoryTimeFilter(t *testing.T) {
 	// the requested window but older than the cutoff stays invisible.
 	var staleID int64
 	stale := time.Now().UTC().Add(-91 * 24 * time.Hour).Truncate(time.Microsecond)
-	require.NoError(t, f.pool.QueryRow(ctx, `INSERT INTO products(category_id,name,status) VALUES($1,'history-stale',1) RETURNING id`, f.categoryID).Scan(&staleID))
+	require.NoError(t, f.pool.QueryRow(ctx, `INSERT INTO products(merchant_id,category_id,name,status) VALUES($2,$1,'history-stale',1) RETURNING id`, f.categoryID, f.merchantID).Scan(&staleID))
 	_, e = f.pool.Exec(ctx, `INSERT INTO product_browsing_history(user_id,product_id,first_viewed_at,last_viewed_at) VALUES($1,$2,$3,$3)`, f.actor.ID, staleID, stale)
 	require.NoError(t, e)
 	rows, _, e = f.history.List(ctx, f.actor.ID, pageFor(t, scope, 20), biz.HistoryFilter{Start: stale.Add(-24 * time.Hour), End: stale.Add(24 * time.Hour), HasStart: true, HasEnd: true})
@@ -293,7 +294,7 @@ func TestCommunityIntegrationPostsLikesAndComments(t *testing.T) {
 	_, e = f.posts.Update(ctx, f.other, post.ID, biz.PostInput{Title: "x", Content: "x", ImageIDs: []int64{m1, m2}, ExpectedVersion: 1})
 	require.True(t, communityv1.IsForbidden(e))
 	admin := f.other
-	admin.Admin = true
+	admin.Role = biz.RoleAdmin
 	_, e = f.posts.Update(ctx, admin, post.ID, biz.PostInput{Title: "x", Content: "x", ImageIDs: []int64{m1, m2}, ExpectedVersion: 1})
 	require.True(t, communityv1.IsForbidden(e))
 	updated, e := f.posts.Update(ctx, f.actor, post.ID, biz.PostInput{Title: "更新", Content: "正文", ImageIDs: []int64{m2, m1}, ExpectedVersion: 1})
@@ -696,7 +697,7 @@ func TestCommunityIntegrationPageQueriesAndExplain(t *testing.T) {
 	require.NoError(t, e)
 	_, e = f.pool.Exec(ctx, `INSERT INTO post_comments(post_id,author_id,content) SELECT unnest($1::bigint[]),$2,'comment'`, ids, f.other.ID)
 	require.NoError(t, e)
-	_, e = f.pool.Exec(ctx, `WITH seeded AS (INSERT INTO products(category_id,name,status) SELECT $1,'history-explain',1 FROM generate_series(1,3000) RETURNING id) INSERT INTO product_browsing_history(user_id,product_id,first_viewed_at,last_viewed_at) SELECT $2,id,clock_timestamp()-interval '100 days',CASE WHEN id%30=0 THEN clock_timestamp()-interval '91 days' ELSE clock_timestamp() END FROM seeded`, f.categoryID, f.actor.ID)
+	_, e = f.pool.Exec(ctx, `WITH seeded AS (INSERT INTO products(merchant_id,category_id,name,status) SELECT $3,$1,'history-explain',1 FROM generate_series(1,3000) RETURNING id) INSERT INTO product_browsing_history(user_id,product_id,first_viewed_at,last_viewed_at) SELECT $2,id,clock_timestamp()-interval '100 days',CASE WHEN id%30=0 THEN clock_timestamp()-interval '91 days' ELSE clock_timestamp() END FROM seeded`, f.categoryID, f.actor.ID, f.merchantID)
 	require.NoError(t, e)
 	_, e = f.pool.Exec(ctx, `ANALYZE posts; ANALYZE post_likes; ANALYZE post_comments; ANALYZE product_browsing_history;`)
 	require.NoError(t, e)

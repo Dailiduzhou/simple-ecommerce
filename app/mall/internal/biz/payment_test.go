@@ -103,9 +103,6 @@ func (r *paymentTestRepo) RecordPaymentPrepayError(context.Context, int64, strin
 func (r *paymentTestRepo) GetPayment(context.Context, int64) (*PaymentDO, error) {
 	return r.payment, nil
 }
-func (r *paymentTestRepo) GetPaymentByUser(context.Context, int64, int64) (*PaymentDO, error) {
-	return r.payment, nil
-}
 func (r *paymentTestRepo) GetLatestPaymentByOrder(context.Context, int64) (*PaymentDO, error) {
 	return r.payment, nil
 }
@@ -194,6 +191,16 @@ func (r *orderTestRepo) CountOngoingOrdersByUser(context.Context, int64) (int64,
 	return 0, nil
 }
 func (r *orderTestRepo) CancelOrderByUser(context.Context, int64, int64) error { return nil }
+func (r *orderTestRepo) ListOrdersByMerchant(context.Context, int64, bool, int32, int32) ([]Order, error) {
+	return nil, nil
+}
+func (r *orderTestRepo) CountOrdersByMerchant(context.Context, int64, bool) (int64, error) {
+	return 0, nil
+}
+func (r *orderTestRepo) ListAllOrders(context.Context, bool, int32, int32) ([]Order, error) {
+	return nil, nil
+}
+func (r *orderTestRepo) CountAllOrders(context.Context, bool) (int64, error) { return 0, nil }
 
 type paymentTestTx struct{ active bool }
 
@@ -290,7 +297,7 @@ func TestClosePayment_PersistsIntentAndJobBeforeProviderCall(t *testing.T) {
 		closeResult: &PaymentCloseResult{Method: PaymentMethod{Provider: "newpay", Product: "app"}, OutTradeNo: payment.OutTradeNo, Success: true},
 	}
 	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, jobs, tx, paymentTestID{}, log.DefaultLogger)
-	result, err := uc.ClosePayment(context.Background(), payment.OutTradeNo, payment.UserID)
+	result, err := uc.ClosePayment(context.Background(), Actor{ID: payment.UserID, Role: RoleUser}, payment.OutTradeNo)
 	require.NoError(t, err)
 	require.True(t, result.Success)
 	require.True(t, repo.closePending)
@@ -313,7 +320,7 @@ func TestRefundPayment_UsesPersistedRefundNumberOutsideTransaction(t *testing.T)
 		},
 	}
 	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, tx, paymentTestID{}, log.DefaultLogger)
-	result, err := uc.RefundPayment(context.Background(), payment.ID)
+	result, err := uc.RefundPayment(context.Background(), Actor{ID: 1, Role: RoleAdmin}, payment.ID)
 	require.NoError(t, err)
 	require.True(t, result.Success)
 	require.True(t, repo.refundApplied)
@@ -337,7 +344,7 @@ func TestRefundPayment_AlreadySucceededIsIdempotent(t *testing.T) {
 	}
 	gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsRefund: true}}
 	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
-	result, err := uc.RefundPayment(context.Background(), payment.ID)
+	result, err := uc.RefundPayment(context.Background(), Actor{ID: 1, Role: RoleAdmin}, payment.ID)
 	require.NoError(t, err)
 	require.True(t, result.Success)
 	require.Equal(t, "refund_existing", result.OutRefundNo)
@@ -356,7 +363,7 @@ func TestRefundPayment_RecordsProviderRejection(t *testing.T) {
 		refundErr:    stderrors.New("refund rejected"),
 	}
 	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
-	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	_, err := uc.RefundPayment(context.Background(), Actor{ID: 1, Role: RoleAdmin}, payment.ID)
 	require.Error(t, err)
 	require.Equal(t, "refund rejected", repo.refundError)
 	require.False(t, repo.refundApplied)
@@ -367,7 +374,7 @@ func TestRefundPayment_RejectsUnsupportedProviderBeforeCreatingRefund(t *testing
 	repo := &paymentTestRepo{payment: payment}
 	gateway := &paymentTestGateway{}
 	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
-	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	_, err := uc.RefundPayment(context.Background(), Actor{ID: 1, Role: RoleAdmin}, payment.ID)
 	require.Error(t, err)
 	require.Nil(t, repo.refund)
 	require.False(t, gateway.refundCalled)
@@ -448,7 +455,7 @@ func TestRefundPayment_TransientErrorKeepsRefundPending(t *testing.T) {
 		refundErr:    stderrors.New("alipay system busy"),
 	}
 	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
-	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	_, err := uc.RefundPayment(context.Background(), Actor{ID: 1, Role: RoleAdmin}, payment.ID)
 	require.Error(t, err)
 	require.NotNil(t, repo.refundDefinitive)
 	require.False(t, *repo.refundDefinitive)
@@ -464,7 +471,7 @@ func TestRefundPayment_BusinessRejectionMarksDefinitiveFailure(t *testing.T) {
 		refundErr:    stderrors.New("refund rejected"),
 	}
 	uc := NewPaymentUsecase(gateway, repo, nil, &orderTestRepo{}, nil, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
-	_, err := uc.RefundPayment(context.Background(), payment.ID)
+	_, err := uc.RefundPayment(context.Background(), Actor{ID: 1, Role: RoleAdmin}, payment.ID)
 	require.Error(t, err)
 	require.NotNil(t, repo.refundDefinitive)
 	require.True(t, *repo.refundDefinitive)
@@ -529,7 +536,7 @@ func TestClosePayment_ConflictingCloseSettlesActualPaidState(t *testing.T) {
 	gateway := &paymentTestGateway{capabilities: PaymentCapabilities{SupportsClose: true}, closeErr: ErrProviderTradeStateConflict,
 		queryResult: &PaymentQueryResult{Method: PaymentMethod{Provider: "alipay", Product: "wap"}, OutTradeNo: "pay_7", TradeState: TradeStateSuccess}}
 	uc := NewPaymentUsecase(gateway, repo, nil, nil, &paymentTestJobs{}, &paymentTestTx{}, paymentTestID{}, log.DefaultLogger)
-	result, err := uc.ClosePayment(context.Background(), "pay_7", 42)
+	result, err := uc.ClosePayment(context.Background(), Actor{ID: 42, Role: RoleUser}, "pay_7")
 	require.NoError(t, err)
 	require.False(t, result.Success, "payment won; close was not successful")
 	require.True(t, repo.applied)

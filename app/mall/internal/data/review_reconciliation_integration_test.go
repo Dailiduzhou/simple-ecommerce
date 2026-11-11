@@ -31,9 +31,9 @@ func TestReviewReconciliationRetryResolveAndReopenIntegration(t *testing.T) {
 	require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "wechat", Reason: "job_exhausted", LastError: "provider temporarily unavailable"}))
 	mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
 	repo := NewPaymentReconciliationRepo(f.data, f.tx, mq, log.DefaultLogger)
-	admin := biz.Actor{ID: f.userID, Admin: true}
+	admin := biz.Actor{ID: f.userID, Role: biz.RoleAdmin}
 	input := reconciliationInput(paymentID, 1, biz.ReconciliationActionRetry, "manual-retry-001")
-	_, err := repo.ApplyReconciliation(f.ctx, biz.Actor{ID: f.userID}, input)
+	_, err := repo.ApplyReconciliation(f.ctx, biz.Actor{ID: f.userID, Role: biz.RoleUser}, input)
 	require.Error(t, err)
 	type result struct {
 		action *biz.ReconciliationAction
@@ -149,7 +149,7 @@ func TestReviewReconciliationQueueAuditFailuresRollbackIntegration(t *testing.T)
 			} else {
 				jobs = reconciliationFailedJobs{}
 			}
-			_, err := NewPaymentReconciliationRepo(f.data, tx, jobs, log.DefaultLogger).ApplyReconciliation(f.ctx, biz.Actor{ID: f.userID, Admin: true}, reconciliationInput(paymentID, 1, biz.ReconciliationActionRetry, "retry-fault-001"))
+			_, err := NewPaymentReconciliationRepo(f.data, tx, jobs, log.DefaultLogger).ApplyReconciliation(f.ctx, biz.Actor{ID: f.userID, Role: biz.RoleAdmin}, reconciliationInput(paymentID, 1, biz.ReconciliationActionRetry, "retry-fault-001"))
 			require.Error(t, err)
 			row, err := f.data.q.GetPayment(f.ctx, paymentID)
 			require.NoError(t, err)
@@ -166,20 +166,20 @@ func TestReviewReconciliationCompensationRequiredIntegration(t *testing.T) {
 	f := newCorrectnessFixture(t)
 	orderID, paymentID, trade := f.seedPayment(t, biz.PaymentStatusSuccess)
 	var primaryID int64
-	require.NoError(t, f.pool.QueryRow(f.ctx, `INSERT INTO payments(order_id,user_id,merchant_id,amount_minor,status,pay_channel,out_trade_no,third_party_tx_id,currency) VALUES ($1,$2,0,12345,'success','wechat:native',$3,$4,'CNY') RETURNING id`, orderID, f.userID, trade+"-primary", trade+"-primary-tx").Scan(&primaryID))
+	require.NoError(t, f.pool.QueryRow(f.ctx, `INSERT INTO payments(order_id,user_id,merchant_id,amount_minor,status,pay_channel,out_trade_no,third_party_tx_id,currency) VALUES ($1,$2,$5,12345,'success','wechat:native',$3,$4,'CNY') RETURNING id`, orderID, f.userID, trade+"-primary", trade+"-primary-tx", f.merchantID).Scan(&primaryID))
 	_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status='paid',paid_payment_id=$2 WHERE id=$1`, orderID, primaryID)
 	require.NoError(t, err)
 	payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 	require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "wechat", Reason: "duplicate_success", LastError: "duplicate money"}))
 	repo := NewPaymentReconciliationRepo(f.data, f.tx, nil, log.DefaultLogger)
 	input := reconciliationInput(paymentID, 1, biz.ReconciliationActionResolve, "resolve-duplicate")
-	_, err = repo.ApplyReconciliation(f.ctx, biz.Actor{ID: f.userID, Admin: true}, input)
+	_, err = repo.ApplyReconciliation(f.ctx, biz.Actor{ID: f.userID, Role: biz.RoleAdmin}, input)
 	require.ErrorIs(t, err, biz.ErrReconciliationConflict)
 	_, refund, err := payments.PreparePaymentRefund(f.ctx, paymentID, trade+"-refund")
 	require.NoError(t, err)
 	require.Equal(t, biz.RefundDuplicate, refund.Purpose)
 	require.NoError(t, payments.ApplyPaymentRefund(f.ctx, paymentID, refund.ID))
-	receipt, err := repo.ApplyReconciliation(f.ctx, biz.Actor{ID: f.userID, Admin: true}, input)
+	receipt, err := repo.ApplyReconciliation(f.ctx, biz.Actor{ID: f.userID, Role: biz.RoleAdmin}, input)
 	require.NoError(t, err)
 	require.Equal(t, biz.ReconciliationStatusResolved, receipt.ToStatus)
 	primary, err := f.data.q.GetPayment(f.ctx, primaryID)
@@ -205,11 +205,11 @@ func TestReviewReconciliationProcessingBlocksOrderChangesUntilResolvedIntegratio
 	orders := NewOrderRepo(f.data, f.tx, log.DefaultLogger)
 	expiry := NewOrderExpiryRepo(f.data, f.tx, mq, log.DefaultLogger)
 	repo := NewPaymentReconciliationRepo(f.data, f.tx, mq, log.DefaultLogger)
-	admin := biz.Actor{ID: f.userID, Admin: true}
+	admin := biz.Actor{ID: f.userID, Role: biz.RoleAdmin}
 	require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "wechat", Reason: "job_exhausted", LastError: "timeout"}))
 	_, err = repo.ApplyReconciliation(f.ctx, admin, reconciliationInput(paymentID, 1, biz.ReconciliationActionRetry, "processing-retry"))
 	require.NoError(t, err)
-	_, err = payments.CreatePayment(f.ctx, biz.CreatePaymentArgs{OrderID: orderID, UserID: f.userID, Amount: 12345, Currency: "CNY", Method: "wechat:native", OutTradeNo: trade + "-new"})
+	_, err = payments.CreatePayment(f.ctx, biz.CreatePaymentArgs{OrderID: orderID, UserID: f.userID, MerchantID: f.merchantID, Amount: 12345, Currency: "CNY", Method: "wechat:native", OutTradeNo: trade + "-new"})
 	require.ErrorIs(t, err, biz.ErrPaymentReconciliationRequired)
 	require.ErrorIs(t, orders.CancelOrderByUser(f.ctx, orderID, f.userID), biz.ErrPaymentReconciliationRequired)
 	_, err = f.pool.Exec(f.ctx, `UPDATE orders SET expires_at=clock_timestamp()-interval '1 hour' WHERE id=$1`, orderID)
@@ -259,7 +259,7 @@ func TestReviewReconciliationSiblingAfterPrimaryRefundIntegration(t *testing.T) 
 				initialStatus = biz.PaymentStatusSuccess
 			}
 			var siblingID int64
-			require.NoError(t, f.pool.QueryRow(f.ctx, `INSERT INTO payments(order_id,user_id,merchant_id,amount_minor,status,pay_channel,out_trade_no,third_party_tx_id,currency) VALUES($1,$2,0,12345,$3,'wechat:native',$4,$5,'CNY') RETURNING id`, orderID, f.userID, initialStatus, trade+"-sibling", trade+"-sibling-tx").Scan(&siblingID))
+			require.NoError(t, f.pool.QueryRow(f.ctx, `INSERT INTO payments(order_id,user_id,merchant_id,amount_minor,status,pay_channel,out_trade_no,third_party_tx_id,currency) VALUES($1,$2,$6,12345,$3,'wechat:native',$4,$5,'CNY') RETURNING id`, orderID, f.userID, initialStatus, trade+"-sibling", trade+"-sibling-tx", f.merchantID).Scan(&siblingID))
 			payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 			if status == biz.PaymentStatusRefunded {
 				_, refund, err := payments.PreparePaymentRefund(f.ctx, siblingID, trade+"-sibling-refund")
@@ -268,7 +268,7 @@ func TestReviewReconciliationSiblingAfterPrimaryRefundIntegration(t *testing.T) 
 			}
 			require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: siblingID, Provider: "wechat", Reason: "job_exhausted", LastError: "timeout"}))
 			repo := NewPaymentReconciliationRepo(f.data, f.tx, nil, log.DefaultLogger)
-			admin := biz.Actor{ID: f.userID, Admin: true}
+			admin := biz.Actor{ID: f.userID, Role: biz.RoleAdmin}
 			input := reconciliationInput(siblingID, 1, biz.ReconciliationActionResolve, "resolve-settled-sibling")
 			_, primaryRefund, err := payments.PreparePaymentRefund(f.ctx, primaryID, trade+"-primary-refund")
 			require.NoError(t, err)
@@ -313,7 +313,7 @@ func TestReconciliationRetryDoesNotReuseDelayedJobIntegration(t *testing.T) {
 			require.NoError(t, err)
 			payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 			repo := NewPaymentReconciliationRepo(f.data, f.tx, mq, log.DefaultLogger)
-			admin := biz.Actor{ID: f.userID, Admin: true}
+			admin := biz.Actor{ID: f.userID, Role: biz.RoleAdmin}
 			previousID := old.ID
 			// A reopened case must also get a fresh immediate job, even while
 			// the preceding manual retry is still available/running.
@@ -383,7 +383,7 @@ func TestProviderSideRefundResolutionRequiresSettlementIntegration(t *testing.T)
 	result.TradeState = biz.TradeStateRefund
 	require.NoError(t, payments.ApplyPayQuery(f.ctx, args, result))
 	repo := NewPaymentReconciliationRepo(f.data, f.tx, nil, log.DefaultLogger)
-	admin := biz.Actor{ID: f.userID, Admin: true}
+	admin := biz.Actor{ID: f.userID, Role: biz.RoleAdmin}
 	input := reconciliationInput(paymentID, 1, biz.ReconciliationActionResolve, "resolve-provider-refund")
 	_, err := repo.ApplyReconciliation(f.ctx, admin, input)
 	require.ErrorIs(t, err, biz.ErrReconciliationConflict)
@@ -436,7 +436,7 @@ func TestManualRetryVersionFenceIntegration(t *testing.T) {
 				payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 				mq := NewPaymentMQRepo(f.riverClient, log.DefaultLogger)
 				repo := NewPaymentReconciliationRepo(f.data, f.tx, mq, log.DefaultLogger)
-				admin := biz.Actor{ID: f.userID, Admin: true}
+				admin := biz.Actor{ID: f.userID, Role: biz.RoleAdmin}
 				require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "wechat", Reason: "job_exhausted", LastError: "timeout"}))
 				action, err := repo.ApplyReconciliation(f.ctx, admin, reconciliationInput(paymentID, 1, biz.ReconciliationActionRetry, "retry-version-fence"))
 				require.NoError(t, err)

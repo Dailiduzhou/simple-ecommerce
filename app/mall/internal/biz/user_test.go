@@ -24,6 +24,8 @@ type fakeUserRepo struct {
 	getUserByPhoneHash func(ctx context.Context, phoneHash string) (*User, error)
 	updateUser         func(ctx context.Context, id int64, nickname, realName string) (*User, error)
 	updateUserPassword func(ctx context.Context, id int64, passwordHash string) error
+	updateUserRole     func(ctx context.Context, id int64, role Role) error
+	countAdmins        func(ctx context.Context) (int64, error)
 	deleteUser         func(ctx context.Context, id int64) error
 }
 
@@ -50,6 +52,19 @@ func (r *fakeUserRepo) UpdateUserPassword(ctx context.Context, id, expectedVersi
 		return nil
 	}
 	return r.updateUserPassword(ctx, id, passwordHash)
+}
+
+func (r *fakeUserRepo) UpdateUserRole(ctx context.Context, id int64, role Role) error {
+	if r.updateUserRole == nil {
+		return nil
+	}
+	return r.updateUserRole(ctx, id, role)
+}
+func (r *fakeUserRepo) CountAdmins(ctx context.Context) (int64, error) {
+	if r.countAdmins == nil {
+		return 1, nil
+	}
+	return r.countAdmins(ctx)
 }
 
 func (r *fakeUserRepo) DeleteUser(ctx context.Context, id int64) error {
@@ -300,7 +315,7 @@ func TestUserUsecase_GetUpdateDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new", u.Nickname)
 
-	err = uc.DeleteUser(context.Background(), 3)
+	err = uc.DeleteUser(context.Background(), Actor{ID: 3, Role: RoleUser}, 3)
 	assert.ErrorIs(t, err, deleteErr)
 }
 
@@ -372,5 +387,5 @@ func TestAuthUsecase_ValidateAccountRevokesOldVersionEvenInSameSecond(t *testing
 	// Identical iat values do not affect revocation; only the verified version does.
 	fresh := &EcommerceClaims{UserID: 1, AuthVersion: 2, RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(changedAt)}}
 	require.NoError(t, uc.ValidateAccount(context.Background(), fresh))
-	require.Equal(t, "user", fresh.Role)
+	require.Equal(t, RoleUser, fresh.Role)
 }

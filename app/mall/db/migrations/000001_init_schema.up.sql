@@ -11,7 +11,10 @@ CREATE TABLE users (
   phone_encrypt VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   auth_version BIGINT NOT NULL DEFAULT 1 CHECK (auth_version > 0),
-  role VARCHAR(10) NOT NULL DEFAULT 'user',
+  -- 平台角色：user=普通用户，merchant=商户，admin=平台管理员。
+  -- 角色决定能力，资源归属再决定具体对象，两者缺一不可。
+  role VARCHAR(10) NOT NULL DEFAULT 'user'
+    CHECK (role IN ('user', 'merchant', 'admin')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -24,6 +27,7 @@ COMMENT ON COLUMN users.phone_hash IS '手机号HMAC摘要，用于等值匹配�
 COMMENT ON COLUMN users.phone_encrypt IS '手机号AES对称加密密文，用于解密展示';
 COMMENT ON COLUMN users.password_hash IS 'Bcrypt加密后的密码';
 COMMENT ON COLUMN users.auth_version IS '凭证版本；改密原子递增，令牌必须携带验证密码时读取的同一版本';
+COMMENT ON COLUMN users.role IS '平台角色：user/merchant/admin；每次请求以数据库为准，不信任令牌内的旧角色';
 
 CREATE TABLE shipping_addresses (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -63,6 +67,8 @@ CREATE INDEX idx_categories_parent_id ON categories(parent_id);
 
 CREATE TABLE products (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  -- 商品归属于一个商户账号；分类/活动仍是平台级资源。
+  merchant_id BIGINT NOT NULL,
   category_id BIGINT NOT NULL,
   name VARCHAR(255) NOT NULL,
   price_minor BIGINT NOT NULL DEFAULT 0,
@@ -75,6 +81,8 @@ CREATE TABLE products (
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at TIMESTAMPTZ,
+  CONSTRAINT fk_product_merchant
+    FOREIGN KEY (merchant_id) REFERENCES users(id),
   CONSTRAINT fk_product_category
     FOREIGN KEY (category_id) REFERENCES categories(id),
   CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1 AND discount = round(discount, 2)),
@@ -85,6 +93,7 @@ CREATE TABLE products (
 );
 
 CREATE INDEX idx_products_category_id ON products(category_id);
+CREATE INDEX idx_products_merchant_id ON products(merchant_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_products_status ON products(status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_products_image_main ON products USING GIN (cover_image);
 CREATE INDEX idx_products_media_assets ON products USING GIN (media_assets);
@@ -106,6 +115,9 @@ CREATE TABLE stock_adjustments (
 CREATE TABLE orders (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL,
+  -- 一个订单只属于一个收款商户。跨商户购物车必须拆成多笔订单,
+  -- 否则发货、退款和对账都没有唯一责任人。
+  merchant_id BIGINT NOT NULL,
   address_id BIGINT NOT NULL,
   -- Historical source ID only: address-book deletion must not rewrite orders.
   receiver_name VARCHAR(64) NOT NULL,
@@ -127,6 +139,8 @@ CREATE TABLE orders (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_order_user
     FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_order_merchant
+    FOREIGN KEY (merchant_id) REFERENCES users(id),
   CONSTRAINT orders_shipping_snapshot_check CHECK (
     address_id > 0 AND receiver_name <> '' AND receiver_phone_encrypt <> ''
     AND shipping_detail_address <> ''
@@ -176,6 +190,7 @@ CREATE TRIGGER orders_shipping_snapshot_immutable BEFORE UPDATE ON orders
   FOR EACH ROW EXECUTE FUNCTION protect_order_shipping_snapshot();
 
 CREATE INDEX idx_orders_user_id ON orders(user_id);
+CREATE INDEX idx_orders_merchant_id ON orders(merchant_id, id DESC);
 CREATE INDEX idx_orders_ongoing ON orders(user_id, is_completed)
   WHERE is_completed = FALSE;
 CREATE INDEX idx_orders_done ON orders(user_id, is_completed)
@@ -235,6 +250,9 @@ CREATE TABLE payments (
     FOREIGN KEY (order_id) REFERENCES orders(id),
   CONSTRAINT fk_payment_user
     FOREIGN KEY (user_id) REFERENCES users(id),
+  -- 收款商户必须与订单商户一致；由下单事务写入,不再留 0 占位值。
+  CONSTRAINT fk_payment_merchant
+    FOREIGN KEY (merchant_id) REFERENCES users(id),
   CONSTRAINT payments_amount_check CHECK (amount_minor > 0),
   CONSTRAINT payments_status_check CHECK (
     status IN ('creating', 'pending', 'failed', 'close_pending', 'closed', 'success', 'refunded')
@@ -246,6 +264,7 @@ CREATE TABLE payments (
 
 CREATE INDEX idx_payments_order_id ON payments(order_id);
 CREATE INDEX idx_payments_user_id ON payments(user_id);
+CREATE INDEX idx_payments_merchant_id ON payments(merchant_id);
 CREATE UNIQUE INDEX idx_payments_third_party_tx_id_channel
   ON payments(third_party_tx_id, pay_channel)
   WHERE third_party_tx_id IS NOT NULL;

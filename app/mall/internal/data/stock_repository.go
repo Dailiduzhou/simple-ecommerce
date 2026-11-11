@@ -17,7 +17,7 @@ func (r *ProductRepo) AdjustStock(ctx context.Context, input biz.StockAdjustment
 		return nil, err
 	}
 	var adjustment db.StockAdjustment
-	var categoryID int64
+	var categoryID, merchantID int64
 	err := r.tx.InTx(ctx, func(ctx context.Context) error {
 		q := querierFromContext(ctx, nil)
 		// The audit FK locks the actor too. Acquire it before the product to
@@ -35,7 +35,7 @@ func (r *ProductRepo) AdjustStock(ctx context.Context, input biz.StockAdjustment
 		if err != nil {
 			return err
 		}
-		categoryID = product.CategoryID
+		categoryID, merchantID = product.CategoryID, product.MerchantID
 		adjustment, err = q.GetStockAdjustment(ctx, db.GetStockAdjustmentParams{ProductID: input.ProductID, IdempotencyKey: input.IdempotencyKey})
 		if err == nil {
 			if adjustment.ActorID != input.ActorID || adjustment.Delta != input.Delta || adjustment.Reason != input.Reason {
@@ -70,7 +70,7 @@ func (r *ProductRepo) AdjustStock(ctx context.Context, input biz.StockAdjustment
 	if err != nil {
 		return nil, err
 	}
-	r.invalidateProduct(ctx, input.ProductID, categoryID)
+	r.invalidateProduct(ctx, input.ProductID, merchantID, categoryID)
 	return &biz.StockAdjustment{
 		ID: adjustment.ID, ProductID: adjustment.ProductID, ActorID: adjustment.ActorID,
 		Delta: adjustment.Delta, ResultingStock: adjustment.ResultingStock,

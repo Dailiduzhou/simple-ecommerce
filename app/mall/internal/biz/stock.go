@@ -30,7 +30,12 @@ func (input StockAdjustmentInput) Validate() error {
 	return nil
 }
 
-func (uc *productUsecase) AdjustStock(ctx context.Context, input StockAdjustmentInput) (*StockAdjustment, error) {
+func (uc *productUsecase) AdjustStock(ctx context.Context, actor Actor, input StockAdjustmentInput) (*StockAdjustment, error) {
+	if _, err := uc.requireProductManager(ctx, actor, input.ProductID); err != nil {
+		return nil, err
+	}
+	// The audit row records the authenticated actor, never a body field.
+	input.ActorID = actor.ID
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}

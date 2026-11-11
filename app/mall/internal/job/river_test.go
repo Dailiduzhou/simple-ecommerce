@@ -87,10 +87,6 @@ func (r *workerRepo) GetPayment(context.Context, int64) (*biz.PaymentDO, error) 
 	return r.payment, nil
 }
 
-func (r *workerRepo) GetPaymentByUser(context.Context, int64, int64) (*biz.PaymentDO, error) {
-	return r.payment, nil
-}
-
 func (r *workerRepo) GetLatestPaymentByOrder(context.Context, int64) (*biz.PaymentDO, error) {
 	return r.payment, nil
 }
@@ -458,23 +454,23 @@ func (u *reaperPaymentUsecase) PrepayForOrder(context.Context, biz.PrepayForOrde
 	return nil, nil
 }
 
-func (u *reaperPaymentUsecase) GetPayment(context.Context, int64, int64) (*biz.PaymentDO, error) {
+func (u *reaperPaymentUsecase) GetPayment(context.Context, biz.Actor, int64) (*biz.PaymentDO, error) {
 	return nil, nil
 }
 
-func (u *reaperPaymentUsecase) GetPaymentByOrder(context.Context, int64, int64) (*biz.PaymentDO, error) {
+func (u *reaperPaymentUsecase) GetPaymentByOrder(context.Context, biz.Actor, int64) (*biz.PaymentDO, error) {
 	return nil, nil
 }
 
-func (u *reaperPaymentUsecase) QueryPayment(context.Context, string, int64) (*biz.PaymentQueryResult, error) {
+func (u *reaperPaymentUsecase) QueryPayment(context.Context, biz.Actor, string) (*biz.PaymentQueryResult, error) {
 	return nil, nil
 }
 
-func (u *reaperPaymentUsecase) ClosePayment(context.Context, string, int64) (*biz.PaymentCloseResult, error) {
+func (u *reaperPaymentUsecase) ClosePayment(context.Context, biz.Actor, string) (*biz.PaymentCloseResult, error) {
 	return nil, nil
 }
 
-func (u *reaperPaymentUsecase) RefundPayment(context.Context, int64) (*biz.PaymentRefundResult, error) {
+func (u *reaperPaymentUsecase) RefundPayment(context.Context, biz.Actor, int64) (*biz.PaymentRefundResult, error) {
 	return nil, nil
 }
 

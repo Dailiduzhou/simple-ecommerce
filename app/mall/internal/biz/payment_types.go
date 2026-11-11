@@ -356,7 +356,6 @@ type PaymentRepo interface {
 	GetPayment(context.Context, int64) (*PaymentDO, error)
 	// GetPaymentForJob bypasses caches so manual retries observe committed versions.
 	GetPaymentForJob(context.Context, int64) (*PaymentDO, error)
-	GetPaymentByUser(context.Context, int64, int64) (*PaymentDO, error)
 	GetLatestPaymentByOrder(context.Context, int64) (*PaymentDO, error)
 	GetActivePaymentByOrderMethod(context.Context, int64, string) (*PaymentDO, error)
 	GetPaymentByOutTradeNo(context.Context, string) (*PaymentDO, error)
@@ -427,11 +426,11 @@ type PrepayForOrderResult struct {
 
 type PaymentUsecase interface {
 	PrepayForOrder(context.Context, PrepayForOrderArgs) (*PrepayForOrderResult, error)
-	GetPayment(context.Context, int64, int64) (*PaymentDO, error)
-	GetPaymentByOrder(context.Context, int64, int64) (*PaymentDO, error)
-	QueryPayment(context.Context, string, int64) (*PaymentQueryResult, error)
-	ClosePayment(context.Context, string, int64) (*PaymentCloseResult, error)
-	RefundPayment(context.Context, int64) (*PaymentRefundResult, error)
+	GetPayment(context.Context, Actor, int64) (*PaymentDO, error)
+	GetPaymentByOrder(context.Context, Actor, int64) (*PaymentDO, error)
+	QueryPayment(context.Context, Actor, string) (*PaymentQueryResult, error)
+	ClosePayment(context.Context, Actor, string) (*PaymentCloseResult, error)
+	RefundPayment(context.Context, Actor, int64) (*PaymentRefundResult, error)
 	ReconcilePendingRefunds(context.Context, time.Duration, int) (int, error)
 	CreateCheckJob(context.Context, int64, int, time.Duration, time.Duration, string) (*MQJob, error)
 	HandleNotification(context.Context, string, *http.Request) error

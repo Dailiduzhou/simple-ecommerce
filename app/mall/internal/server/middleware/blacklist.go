@@ -9,7 +9,12 @@ import (
 	kratosjwt "github.com/go-kratos/kratos/v2/middleware/auth/jwt"
 )
 
-func CheckBlacklist(authUc biz.AuthUsecase) middleware.Middleware {
+// Authenticate turns a signed token into an authorized principal. Validation
+// (signature, expiry, account existence, credential version and live session)
+// happens BEFORE the claims are published on the context, so downstream
+// handlers can never observe an unvalidated role. ValidateAccount also
+// overwrites the token role with the authoritative database value.
+func Authenticate(authUc biz.AuthUsecase) middleware.Middleware {
 	return func(handler middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (any, error) {
 			claims, ok := kratosjwt.FromContext(ctx)
@@ -33,7 +38,7 @@ func CheckBlacklist(authUc biz.AuthUsecase) middleware.Middleware {
 					return nil, err
 				}
 			}
-			return handler(ctx, req)
+			return handler(WithClaims(ctx, ec), req)
 		}
 	}
 }
@@ -44,17 +49,4 @@ func WithClaims(ctx context.Context, claims *biz.EcommerceClaims) context.Contex
 
 func ClaimsFromContext(ctx context.Context) (*biz.EcommerceClaims, bool) {
 	return biz.ClaimsFromContext(ctx)
-}
-
-func InjectClaims() middleware.Middleware {
-	return func(handler middleware.Handler) middleware.Handler {
-		return func(ctx context.Context, req any) (any, error) {
-			if claims, ok := kratosjwt.FromContext(ctx); ok {
-				if ec, ok := claims.(*biz.EcommerceClaims); ok {
-					ctx = WithClaims(ctx, ec)
-				}
-			}
-			return handler(ctx, req)
-		}
-	}
 }

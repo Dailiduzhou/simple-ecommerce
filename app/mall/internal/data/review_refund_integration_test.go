@@ -27,8 +27,8 @@ func TestReviewRefundPurposesAndCacheIntegration(t *testing.T) {
 				if purpose == biz.RefundDuplicate {
 					require.NoError(t, f.pool.QueryRow(f.ctx, `
 						INSERT INTO payments (order_id,user_id,merchant_id,amount_minor,status,pay_channel,out_trade_no,currency)
-						VALUES ($1,$2,0,12345,'success','wechat:native',$3,'CNY') RETURNING id`,
-						orderID, f.userID, outTradeNo+"_primary").Scan(&paidID))
+						VALUES ($1,$2,$4,12345,'success','wechat:native',$3,'CNY') RETURNING id`,
+						orderID, f.userID, outTradeNo+"_primary", f.merchantID).Scan(&paidID))
 				}
 				_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status=$2::varchar, is_completed=($2::varchar='cancelled'), paid_payment_id=NULLIF($3::bigint,0) WHERE id=$1`, orderID, orderStatus, paidID)
 				require.NoError(t, err)
@@ -42,9 +42,9 @@ func TestReviewRefundPurposesAndCacheIntegration(t *testing.T) {
 				// Warm entity, category, all-products and both order-list projections.
 				_, err = products.GetProduct(f.ctx, f.productID)
 				require.NoError(t, err)
-				_, err = products.ListProducts(f.ctx, 20, 0)
+				_, err = products.ListProducts(f.ctx, 0, 20, 0)
 				require.NoError(t, err)
-				_, err = products.ListProductsByCategory(f.ctx, f.categoryID, 20, 0)
+				_, err = products.ListProductsByCategory(f.ctx, 0, f.categoryID, 20, 0)
 				require.NoError(t, err)
 				_, err = orders.ListOrdersByUser(f.ctx, f.userID, 20, 0)
 				require.NoError(t, err)
@@ -77,9 +77,9 @@ func TestReviewRefundPurposesAndCacheIntegration(t *testing.T) {
 				for _, byCategory := range []bool{false, true} {
 					var page []biz.Product
 					if byCategory {
-						page, err = products.ListProductsByCategory(f.ctx, f.categoryID, 20, 0)
+						page, err = products.ListProductsByCategory(f.ctx, 0, f.categoryID, 20, 0)
 					} else {
-						page, err = products.ListProducts(f.ctx, 20, 0)
+						page, err = products.ListProducts(f.ctx, 0, 20, 0)
 					}
 					require.NoError(t, err)
 					require.Len(t, page, 1)

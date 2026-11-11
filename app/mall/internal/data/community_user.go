@@ -21,36 +21,37 @@ func NewCommunityUserRepo(d *Data, tx biz.TxManager, media *MediaRepo, logger lo
 
 func (r *CommunityUserRepo) DeleteUser(ctx context.Context, id int64) error {
 	return r.tx.InTx(ctx, func(ctx context.Context) error {
-		q := r.data.DB(ctx)
-		if err := lockCommunityUser(ctx, q, id); err != nil {
-			return err
-		}
-		// Every community writer locks its actor first, then posts in ID order.
-		// Include posts containing this user's comments before redacting them.
-		if _, err := q.LockUserCommunityPosts(ctx, communityID(id)); err != nil {
-			return err
-		}
-		if err := q.HideUserPosts(ctx, communityID(id)); err != nil {
-			return err
-		}
-		if err := q.DeleteUserComments(ctx, communityID(id)); err != nil {
-			return err
-		}
-		media, err := q.LockUserMedia(ctx, communityID(id))
-		if err != nil {
-			return err
-		}
-		if err = q.UnbindUserImages(ctx, communityID(id)); err != nil {
-			return err
-		}
-		for _, m := range media {
-			if err = r.media.markDeleting(ctx, m); err != nil {
+		return r.UserRepo.withAccountMutation(ctx, id, true, func(ctx context.Context) error {
+			q := r.data.DB(ctx)
+			if err := lockCommunityUser(ctx, q, id); err != nil {
 				return err
 			}
-		}
-		// Existing order/payment FKs remain authoritative: any failure rolls back
-		// content changes and River inserts, and suppresses cache invalidation.
-		return r.UserRepo.DeleteUser(ctx, id)
+			// Every community writer locks its actor first, then posts in ID order.
+			// Include posts containing this user's comments before redacting them.
+			if _, err := q.LockUserCommunityPosts(ctx, communityID(id)); err != nil {
+				return err
+			}
+			if err := q.HideUserPosts(ctx, communityID(id)); err != nil {
+				return err
+			}
+			if err := q.DeleteUserComments(ctx, communityID(id)); err != nil {
+				return err
+			}
+			media, err := q.LockUserMedia(ctx, communityID(id))
+			if err != nil {
+				return err
+			}
+			if err = q.UnbindUserImages(ctx, communityID(id)); err != nil {
+				return err
+			}
+			for _, m := range media {
+				if err = r.media.markDeleting(ctx, m); err != nil {
+					return err
+				}
+			}
+			// FK failures roll back content cleanup and River inserts as well.
+			return r.UserRepo.deleteUser(ctx, id)
+		})
 	})
 }
 

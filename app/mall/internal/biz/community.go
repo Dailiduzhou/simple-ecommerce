@@ -14,30 +14,6 @@ import (
 	"github.com/go-kratos/kratos/v2/errors"
 )
 
-// All new write paths take the actor from trusted claims. Administrators cannot
-// impersonate another author, browse another user's history, or edit their posts.
-type Actor struct {
-	ID    int64
-	Admin bool
-}
-
-func (a Actor) Validate() error {
-	if a.ID <= 0 {
-		return errors.Unauthorized("UNAUTHORIZED", "authentication is required")
-	}
-	return nil
-}
-
-func (a Actor) Owns(id int64, allowAdmin bool) error {
-	if err := a.Validate(); err != nil {
-		return err
-	}
-	if a.ID != id && !(allowAdmin && a.Admin) {
-		return communityv1.ErrorForbidden("resource belongs to another user")
-	}
-	return nil
-}
-
 type CommunityPolicy struct {
 	HistoryRetention time.Duration
 	CleanupBatch     int32
