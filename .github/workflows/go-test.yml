@@ -147,9 +147,52 @@ jobs:
           chmod +x "$RUNNER_TEMP/caddy"
           PATH="$RUNNER_TEMP:$PATH" go test ./deploy -run '^TestCaddy' -count=1
 
+  mirror-dependencies:
+    name: Mirror Docker Hub dependencies into ACR
+    needs: [test, integration, deployment-config]
+    # Same opt-in as the deploy job: never on PRs, never for another branch.
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      vars.TEST_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    # The first release uploads ~1.5 GB from the runner to ACR across the public
+    # internet; later releases only check that each mirror exists.
+    timeout-minutes: 90
+    environment: testing
+    # Serialize mirroring across runs so a superseded run cannot upload the same
+    # layers while the newer one is deploying.
+    concurrency:
+      group: mirror-dependencies
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set shared ACR repository and commit-suffix tags
+        id: image
+        env:
+          ACR_REGISTRY: ${{ vars.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE || vars.NAMESPACE }}
+        run: bash .github/scripts/image-metadata.sh
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Alibaba Cloud ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.image.outputs.registry }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      # Runs in parallel with the mall/MinIO builds. Existing mirrors are
+      # skipped, so only the first release or an image bump transfers anything.
+      - name: Mirror third-party images into ACR
+        env:
+          DEPENDENCY_REGISTRY: ${{ steps.image.outputs.dependency_registry }}
+        run: bash .github/scripts/mirror-images.sh
+
   deploy-test:
     name: Publish and deploy behind Caddy
-    needs: [test, integration, deployment-config]
+    needs: [test, integration, deployment-config, mirror-dependencies]
     # This repository variable is an explicit opt-in. PRs never deploy or receive
     # deployment credentials; manual runs must also target the default branch.
     if: >-
@@ -157,7 +200,7 @@ jobs:
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
       vars.TEST_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     environment: testing
     concurrency:
       group: deploy-testing
@@ -191,13 +234,6 @@ jobs:
           registry: ${{ steps.image.outputs.registry }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
-      # The test server cannot reach Docker Hub. Copy the pinned third-party
-      # images into ACR once; later releases skip existing mirrors, so this step
-      # does not depend on Docker Hub availability after the first deploy.
-      - name: Mirror third-party images into ACR
-        env:
-          DEPENDENCY_REGISTRY: ${{ steps.image.outputs.dependency_registry }}
-        run: bash .github/scripts/mirror-images.sh
       - name: Build and publish mall
         id: build
         uses: docker/build-push-action@v6
@@ -206,6 +242,11 @@ jobs:
           file: app/mall/Dockerfile
           platforms: linux/amd64
           push: true
+          # ACR personal edition rejects the OCI artifact manifest buildx adds
+          # for provenance ("unknown manifest class for
+          # application/vnd.oci.empty.v1+json"), so publish a plain image index.
+          provenance: false
+          sbom: false
           tags: ${{ steps.image.outputs.mall_tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -220,6 +261,11 @@ jobs:
           file: deploy/minio.Dockerfile
           platforms: linux/amd64
           push: true
+          # ACR personal edition rejects the OCI artifact manifest buildx adds
+          # for provenance ("unknown manifest class for
+          # application/vnd.oci.empty.v1+json"), so publish a plain image index.
+          provenance: false
+          sbom: false
           tags: ${{ steps.image.outputs.minio_tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

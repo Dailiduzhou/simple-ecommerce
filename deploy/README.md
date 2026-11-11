@@ -174,7 +174,7 @@ CI 使用 GitHub Secrets 中的 ACR 推送凭据；不向服务器传递推送�
 
 1. 单元/竞态测试和一次性 PostgreSQL、Redis、MinIO 集成测试。
 2. 独立 deployment-config job 检查脚本、四份 Compose 合并结果（含 ACR overlay），并用实际部署版本的 Caddy 验证配置、执行回环 HTTP 路由/CORS 透传/Console ACL 测试。只使用临时假凭据，不申请证书。
-3. 仅默认分支、非 PR、显式启用后，先把 `deploy/mirror-images.txt` 列出的依赖镜像同步到 ACR（已存在则跳过），再分别构建 `linux/amd64` 后端及 MinIO 镜像（测试服务器只有 amd64；不启用 QEMU、不做多架构），推送到同一 ACR 仓库的 `mall-<末8位>` / `minio-<末8位>` 标签。镜像全部就绪后才部署。服务器若是 arm64，需同时修改 workflow 的 `platforms`、镜像同步的平台选择，并接受 MinIO 源码构建的耗时。
+3. 仅默认分支、非 PR、显式启用后，`mirror-dependencies` job 与镜像构建**并行**：前者把 `deploy/mirror-images.txt` 列出的依赖镜像同步到 ACR（已存在则跳过，缺失的默认 4 路并发复制，可用 `MIRROR_PARALLEL` 调整），同时分别构建 `linux/amd64` 后端及 MinIO 镜像（测试服务器只有 amd64；不启用 QEMU、不做多架构），推送到同一 ACR 仓库的 `mall-<末8位>` / `minio-<末8位>` 标签。全部就绪后才部署。首次同步受 runner 到 ACR 的跨境上传带宽限制，可能需要十几分钟，之后这一步只做存在性检查（约 10 秒）。服务器若是 arm64，需同时修改 workflow 的 `platforms`、镜像同步的平台选择和 MinIO 源码构建耗时。
 4. 校验 SSH host key，仅打包 Git 中已跟踪的部署文件，上传到独立 release 目录；服务器密钥、前端产物不打包。
 5. 通过 SSH 传入两个独立 digest 和 `DEPENDENCY_REGISTRY`，按 digest 拉取后端、MinIO，并从 ACR 拉取 Caddy 及其余依赖镜像；检查 Caddy 配置后替换服务。任一镜像拉取失败都不会进入服务替换阶段。
 6. 等待容器就绪，先验证 Caddy 对三个域名的 HTTPS 与 Console 上游（首次签发证书最多等约 2 分钟，失败时打印 Caddy 日志），再验证后端能否经 Caddy 访问存储 API。Console 允许预期的 403；全部通过后更新 `current`。
