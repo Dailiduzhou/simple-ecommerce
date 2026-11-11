@@ -8,8 +8,9 @@ info:
         用户、分类/商品/限时活动、下单与支付、图文社区、图片上传的统一 HTTP API。
 
         本文件由 protoc-gen-openapi 从 api/**/*.proto 生成，再由 tools/openapi-doc 补全
-        （认证、错误响应、buf.validate 约束、手工注册的回调路由与 info 元数据），
-        因此与生成器的原始输出不同：请通过 make -C app/mall api 重新生成，不要手工编辑。
+        （认证、错误响应、buf.validate 约束、请求体上限、写入限流、手工注册的回调路由与
+        info 元数据），因此与生成器的原始输出不同：请通过 make -C app/mall api 重新生成，
+        不要手工编辑。
 
         ## 认证
         注册、登录、刷新令牌和支付渠道回调不需要令牌；其余接口都必须携带
@@ -22,6 +23,18 @@ info:
         {"code":404,"reason":"PRODUCT_NOT_FOUND","message":"...","metadata":{}}，
         结构见 components.schemas.errors.Status。接口声明的 4xx/5xx 来自该服务
         *_error.proto 的错误码集合，以及服务层中实际存在的鉴权分支，属于服务级上界。
+        例外：请求体过大（413）由中间件在路由前返回 text/plain；支付回调的响应体是
+        渠道约定的确认串，见 Payment_NotifyCallback。
+
+        ## 请求体上限
+        普通接口的请求体上限为 64 KiB，支付渠道回调为 1 MiB。超限时返回
+        413 和 text/plain 的 request body too large，不会进入业务逻辑。
+
+        ## 写入限流
+        下单、发帖/改帖、评论、上传、点赞、删除帖子和浏览记录等写操作，以及
+        登录/注册/刷新令牌/改密，按 Redis 固定窗口限流；超限返回 429 RATE_LIMITED。
+        限流存储不可用时，认证与下单始终返回 503 RATE_LIMIT_UNAVAILABLE，
+        其余写操作按 rate_limit_fail_open 配置决定是否放行。读取接口不经过限流。
 
         ## 64 位整数
         protojson 把 int64/uint64 编码成 JSON 字符串，所以这类字段是 type: string
@@ -99,7 +112,7 @@ paths:
         post:
             tags:
                 - Mall
-            summary: Categories
+            summary: Create category
             description: Categories
             operationId: Mall_CreateCategory
             requestBody:
@@ -145,6 +158,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -207,6 +227,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -334,7 +361,7 @@ paths:
         post:
             tags:
                 - Mall
-            summary: Events
+            summary: Create event
             description: Events
             operationId: Mall_CreateEvent
             requestBody:
@@ -380,6 +407,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -491,6 +525,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -608,6 +649,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -663,6 +711,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -676,7 +731,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
                 "503":
-                    description: 依赖不可用：对象存储、消息队列或第三方支付未配置
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -745,7 +800,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
                 "503":
-                    description: 依赖不可用：对象存储、消息队列或第三方支付未配置
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -807,6 +862,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -820,7 +882,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
                 "503":
-                    description: 依赖不可用：对象存储、消息队列或第三方支付未配置
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -868,8 +930,27 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -991,6 +1072,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -1001,7 +1089,7 @@ paths:
         post:
             tags:
                 - Order
-            summary: The order owner or an administrator confirms receipt; only shipped orders.
+            summary: Complete order
             description: The order owner or an administrator confirms receipt; only shipped orders.
             operationId: Order_CompleteOrder
             parameters:
@@ -1049,6 +1137,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -1059,7 +1154,7 @@ paths:
         get:
             tags:
                 - Order
-            summary: Owner/admin audit history, bounded to dispatch and completion records.
+            summary: List order fulfillment actions
             description: Owner/admin audit history, bounded to dispatch and completion records.
             operationId: Order_ListOrderFulfillmentActions
             parameters:
@@ -1111,7 +1206,7 @@ paths:
         post:
             tags:
                 - Order
-            summary: Administrator dispatch after a settled payment and with no pending refund.
+            summary: Ship order
             description: Administrator dispatch after a settled payment and with no pending refund.
             operationId: Order_ShipOrder
             parameters:
@@ -1165,6 +1260,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -1312,7 +1414,7 @@ paths:
         post:
             tags:
                 - Payment
-            summary: 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
+            summary: Create payment
             description: |-
                 统一创建支付:取订单 → 建支付流水 → 调三方 → 返回前端动作。
                  同时取代了旧 Payment.CreatePayment(写流水) + WechatPayService.PrepayJSAPI
@@ -1361,6 +1463,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -1377,7 +1486,7 @@ paths:
         get:
             tags:
                 - Payment
-            summary: 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
+            summary: Query payment
             description: 统一查询订单(原 WechatPayService.QueryOrder + AliPayService.QueryOrder)。
             operationId: Payment_QueryPayment
             parameters:
@@ -1438,7 +1547,7 @@ paths:
         post:
             tags:
                 - Payment
-            summary: 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
+            summary: Close payment
             description: 统一关闭订单(原 WechatPayService.CloseOrder + AliPayService.CloseOrder)。
             operationId: Payment_ClosePayment
             requestBody:
@@ -1484,6 +1593,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -1565,7 +1681,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
                 "503":
-                    description: 依赖不可用：对象存储、消息队列或第三方支付未配置
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -1771,6 +1887,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -1787,7 +1910,7 @@ paths:
         post:
             tags:
                 - Payment
-            summary: 管理员人工对账；重试、解决与审计写入同一事务。
+            summary: Retry payment reconciliation
             description: 管理员人工对账；重试、解决与审计写入同一事务。解决必须有证据，且不能覆盖资金事实。
             operationId: Payment_RetryPaymentReconciliation
             parameters:
@@ -1841,6 +1964,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -1857,7 +1987,7 @@ paths:
         post:
             tags:
                 - Payment
-            summary: 管理员对指定支付发起整笔全额退款。
+            summary: Refund payment
             description: 管理员对指定支付发起整笔全额退款。
             operationId: Payment_RefundPayment
             parameters:
@@ -1916,6 +2046,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -1990,6 +2127,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -2053,6 +2197,13 @@ paths:
                             schema:
                                 type: string
                                 example: unsupported provider
+                "413":
+                    description: 请求体过大：支付回调上限 1 MiB，由请求体限制中间件在路由前返回
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误（panic 由 recovery 中间件转成统一错误体）
                     content:
@@ -2176,8 +2327,27 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -2295,8 +2465,27 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -2351,8 +2540,20 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -2408,8 +2609,20 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -2464,8 +2677,20 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -2595,8 +2820,27 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -2659,8 +2903,20 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "429":
+                    description: 触发限流：操作过于频繁或登录失败次数过多
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -2806,7 +3062,7 @@ paths:
         post:
             tags:
                 - Mall
-            summary: Products
+            summary: Create product
             description: Products
             operationId: Mall_CreateProduct
             requestBody:
@@ -2852,6 +3108,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -2963,6 +3226,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -3080,6 +3350,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -3090,7 +3367,7 @@ paths:
         post:
             tags:
                 - Mall
-            summary: Inventory changes are audited deltas; content editing cannot set stock.
+            summary: Adjust product stock
             description: Inventory changes are audited deltas; content editing cannot set stock.
             operationId: Mall_AdjustProductStock
             parameters:
@@ -3144,6 +3421,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "500":
                     description: 服务内部错误
                     content:
@@ -3154,7 +3438,7 @@ paths:
         post:
             tags:
                 - User
-            summary: Password checks share an account quota across all IPs (default burst 5,
+            summary: Login
             description: |-
                 Password checks share an account quota across all IPs (default burst 5,
                  one check replenished every 30 seconds). Rejections do not extend the wait.
@@ -3198,6 +3482,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -3206,6 +3497,12 @@ paths:
                                 $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -3254,6 +3551,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -3387,6 +3691,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -3395,6 +3706,12 @@ paths:
                                 $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -3443,6 +3760,12 @@ paths:
                                 $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -3504,11 +3827,17 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
     /v1/users/me/password:
         put:
             tags:
                 - User
-            summary: ChangePassword rotates the caller's password and revokes every session
+            summary: Change password
             description: |-
                 ChangePassword rotates the caller's password and revokes every session
                  issued before the change (including the caller's own tokens).
@@ -3550,6 +3879,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -3558,6 +3894,12 @@ paths:
                                 $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -3605,6 +3947,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -3613,6 +3962,12 @@ paths:
                                 $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -3661,6 +4016,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -3669,6 +4031,12 @@ paths:
                                 $ref: '#/components/schemas/errors.Status'
                 "500":
                     description: 服务内部错误
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/errors.Status'
+                "503":
+                    description: 依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用
                     content:
                         application/json:
                             schema:
@@ -3791,6 +4159,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -3806,7 +4181,7 @@ paths:
         delete:
             tags:
                 - User
-            summary: Physically deletes accounts without retained transaction/audit history.
+            summary: Delete user
             description: |-
                 Physically deletes accounts without retained transaction/audit history.
                  Otherwise returns 409 ACCOUNT_HAS_RETAINED_HISTORY and preserves the account.
@@ -3945,7 +4320,7 @@ paths:
         post:
             tags:
                 - User
-            summary: Shipping Addresses
+            summary: Create shipping address
             description: Shipping Addresses
             operationId: User_CreateShippingAddress
             parameters:
@@ -3998,6 +4373,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -4072,6 +4454,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -4213,6 +4602,13 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/errors.Status'
+                "413":
+                    description: 请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                example: request body too large
                 "429":
                     description: 触发限流：操作过于频繁或登录失败次数过多
                     content:
@@ -4302,7 +4698,7 @@ paths:
         get:
             tags:
                 - Mall
-            summary: 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
+            summary: Get today wellness
             description: 今日养生卡片：需要登录，仅返回北京时间当天的通用节气建议。
             operationId: Mall_GetTodayWellness
             responses:
