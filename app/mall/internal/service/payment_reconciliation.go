@@ -18,14 +18,14 @@ func (s *PaymentService) ResolvePaymentReconciliation(ctx context.Context, req *
 }
 
 func (s *PaymentService) applyReconciliation(ctx context.Context, req *pb.ReconciliationCommandRequest, action string) (*pb.ReconciliationActionInfo, error) {
-	claims, err := requireAdmin(ctx)
+	actor, err := requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("RECONCILIATION_INVALID", "request is required")
 	}
-	result, err := s.reconciliation.Apply(ctx, biz.Actor{ID: claims.UserID, Admin: true}, biz.ReconciliationInput{PaymentID: req.Id, ExpectedVersion: req.ExpectedVersion, Action: action, IdempotencyKey: req.IdempotencyKey, Reason: req.Reason, Evidence: req.Evidence})
+	result, err := s.reconciliation.Apply(ctx, actor, biz.ReconciliationInput{PaymentID: req.Id, ExpectedVersion: req.ExpectedVersion, Action: action, IdempotencyKey: req.IdempotencyKey, Reason: req.Reason, Evidence: req.Evidence})
 	if err != nil {
 		return nil, err
 	}
@@ -33,14 +33,14 @@ func (s *PaymentService) applyReconciliation(ctx context.Context, req *pb.Reconc
 }
 
 func (s *PaymentService) ListPaymentReconciliations(ctx context.Context, req *pb.ListReconciliationCasesRequest) (*pb.ListReconciliationCasesReply, error) {
-	claims, err := requireAdmin(ctx)
+	actor, err := requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("RECONCILIATION_INVALID", "request is required")
 	}
-	rows, err := s.reconciliation.ListCases(ctx, biz.Actor{ID: claims.UserID, Admin: true}, req.AfterId, req.PageSize)
+	rows, err := s.reconciliation.ListCases(ctx, actor, req.AfterId, req.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -52,14 +52,14 @@ func (s *PaymentService) ListPaymentReconciliations(ctx context.Context, req *pb
 }
 
 func (s *PaymentService) ListPaymentReconciliationActions(ctx context.Context, req *pb.ListReconciliationActionsRequest) (*pb.ListReconciliationActionsReply, error) {
-	claims, err := requireAdmin(ctx)
+	actor, err := requireAdmin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("RECONCILIATION_INVALID", "request is required")
 	}
-	rows, err := s.reconciliation.ListActions(ctx, biz.Actor{ID: claims.UserID, Admin: true}, req.Id, req.AfterId, req.PageSize)
+	rows, err := s.reconciliation.ListActions(ctx, actor, req.Id, req.AfterId, req.PageSize)
 	if err != nil {
 		return nil, err
 	}

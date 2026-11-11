@@ -32,14 +32,14 @@ func TestPostUsecaseOptionalImages(t *testing.T) {
 			// A text-only create/update must not call object storage.
 			u := NewPostUsecase(r, nil, MediaPolicy{})
 			input := PostInput{Title: " 标题 ", Content: " 正文 ", ImageIDs: tc.ids}
-			p, err := u.Create(context.Background(), Actor{ID: 1}, input)
+			p, err := u.Create(context.Background(), Actor{ID: 1, Role: RoleUser}, input)
 			require.NoError(t, err)
 			require.Empty(t, p.Images)
 			require.Equal(t, tc.ids, r.input.ImageIDs)
 			require.Equal(t, "标题", r.input.Title)
 
 			input.ExpectedVersion = p.Version
-			p, err = u.Update(context.Background(), Actor{ID: 1}, p.ID, input)
+			p, err = u.Update(context.Background(), Actor{ID: 1, Role: RoleUser}, p.ID, input)
 			require.NoError(t, err)
 			require.Empty(t, p.Images)
 			require.Equal(t, tc.ids, r.input.ImageIDs)

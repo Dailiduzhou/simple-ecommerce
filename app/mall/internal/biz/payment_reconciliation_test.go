@@ -46,10 +46,10 @@ func TestReconciliationResolutionRequiresConsistentSettledFacts(t *testing.T) {
 func TestReconciliationCommandAuthorizationAndEvidence(t *testing.T) {
 	in := ReconciliationInput{PaymentID: 1, ExpectedVersion: 1, Action: ReconciliationActionResolve, IdempotencyKey: "resolve-001", Reason: "verified", Evidence: "provider statement 123"}
 	require.EqualValues(t, 401, errors.FromError(in.Validate(Actor{})).Code)
-	require.EqualValues(t, 403, errors.FromError(in.Validate(Actor{ID: 42})).Code)
-	require.NoError(t, in.Validate(Actor{ID: 42, Admin: true}))
+	require.EqualValues(t, 403, errors.FromError(in.Validate(Actor{ID: 42, Role: RoleUser})).Code)
+	require.NoError(t, in.Validate(Actor{ID: 42, Role: RoleAdmin}))
 	in.Evidence = " "
-	require.EqualValues(t, 400, errors.FromError(in.Validate(Actor{ID: 42, Admin: true})).Code)
+	require.EqualValues(t, 400, errors.FromError(in.Validate(Actor{ID: 42, Role: RoleAdmin})).Code)
 }
 
 func TestProviderSideRefundRequiresSettledRefund(t *testing.T) {

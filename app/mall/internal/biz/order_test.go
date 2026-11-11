@@ -100,6 +100,16 @@ func (r *orderUsecaseRepo) ListOrdersByUser(context.Context, int64, int32, int32
 	return []Order{r.order}, nil
 }
 func (r *orderUsecaseRepo) CountOrdersByUser(context.Context, int64) (int64, error) { return 1, nil }
+func (r *orderUsecaseRepo) ListOrdersByMerchant(context.Context, int64, bool, int32, int32) ([]Order, error) {
+	return []Order{r.order}, nil
+}
+func (r *orderUsecaseRepo) CountOrdersByMerchant(context.Context, int64, bool) (int64, error) {
+	return 1, nil
+}
+func (r *orderUsecaseRepo) ListAllOrders(context.Context, bool, int32, int32) ([]Order, error) {
+	return []Order{r.order}, nil
+}
+func (r *orderUsecaseRepo) CountAllOrders(context.Context, bool) (int64, error) { return 1, nil }
 func (r *orderUsecaseRepo) CountOngoingOrdersByUser(context.Context, int64) (int64, error) {
 	return 1, nil
 }

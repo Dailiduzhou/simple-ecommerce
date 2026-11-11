@@ -240,7 +240,7 @@ func (r *PostRepo) Delete(ctx context.Context, a biz.Actor, id int64) error {
 		if e != nil {
 			return e
 		}
-		if _, e = q.SoftDeletePost(ctx, db.SoftDeletePostParams{ID: id, ActorID: communityID(a.ID), IsAdmin: a.Admin}); e != nil {
+		if _, e = q.SoftDeletePost(ctx, db.SoftDeletePostParams{ID: id, ActorID: communityID(a.ID), IsAdmin: a.IsAdmin()}); e != nil {
 			return e
 		}
 		if e = q.UnbindPostImages(ctx, id); e != nil {

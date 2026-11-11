@@ -45,6 +45,15 @@ SET role = $2,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1;
 
+-- name: LockUserRoleChanges :exec
+-- Serialize role assignment and account deletion before taking any user/content
+-- row locks. 1279476053 is reserved for account-role mutations (media I/O uses
+-- 1279476052); the lock is held until the surrounding transaction ends.
+SELECT pg_advisory_xact_lock(1279476053, 0);
+
+-- name: CountAdmins :one
+SELECT count(*) FROM users WHERE role = 'admin';
+
 -- name: DeleteUser :exec
 DELETE FROM users
 WHERE id = $1;

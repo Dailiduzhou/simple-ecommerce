@@ -11,12 +11,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAllOrders = `-- name: CountAllOrders :one
+SELECT count(*)
+FROM orders
+WHERE (NOT $1::boolean OR is_completed = FALSE)
+`
+
+func (q *Queries) CountAllOrders(ctx context.Context, ongoing bool) (int64, error) {
+	row := q.db.QueryRow(ctx, countAllOrders, ongoing)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOngoingOrdersByUser = `-- name: CountOngoingOrdersByUser :one
 SELECT count(*) FROM orders WHERE user_id=$1 AND is_completed=FALSE
 `
 
 func (q *Queries) CountOngoingOrdersByUser(ctx context.Context, userID int64) (int64, error) {
 	row := q.db.QueryRow(ctx, countOngoingOrdersByUser, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOrdersByMerchant = `-- name: CountOrdersByMerchant :one
+SELECT count(*)
+FROM orders
+WHERE merchant_id = $1
+  AND (NOT $2::boolean OR is_completed = FALSE)
+`
+
+type CountOrdersByMerchantParams struct {
+	MerchantID int64
+	Ongoing    bool
+}
+
+func (q *Queries) CountOrdersByMerchant(ctx context.Context, arg CountOrdersByMerchantParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrdersByMerchant, arg.MerchantID, arg.Ongoing)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -38,6 +70,7 @@ func (q *Queries) CountOrdersByUser(ctx context.Context, userID int64) (int64, e
 const createOrder = `-- name: CreateOrder :one
 INSERT INTO orders (
   user_id,
+  merchant_id,
   address_id,
   total_amount_minor,
   currency,
@@ -49,16 +82,17 @@ INSERT INTO orders (
   receiver_name, receiver_phone_encrypt, shipping_province, shipping_city,
   shipping_district, shipping_detail_address
 )
-VALUES ($1, $2, $3, $4,
-  'pending_payment', $5, $6, $7,
-  clock_timestamp() + make_interval(secs => $8::double precision),
-  $9, $10, $11,
-  $12, $13, $14)
-RETURNING id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+VALUES ($1, $2, $3, $4, $5,
+  'pending_payment', $6, $7, $8,
+  clock_timestamp() + make_interval(secs => $9::double precision),
+  $10, $11, $12,
+  $13, $14, $15)
+RETURNING id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 type CreateOrderParams struct {
 	UserID                int64
+	MerchantID            int64
 	AddressID             int64
 	TotalAmountMinor      int64
 	Currency              string
@@ -77,6 +111,7 @@ type CreateOrderParams struct {
 func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error) {
 	row := q.db.QueryRow(ctx, createOrder,
 		arg.UserID,
+		arg.MerchantID,
 		arg.AddressID,
 		arg.TotalAmountMinor,
 		arg.Currency,
@@ -95,6 +130,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -118,7 +154,7 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (Order
 }
 
 const getOrder = `-- name: GetOrder :one
-SELECT id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 FROM orders
 WHERE id = $1
 `
@@ -129,6 +165,7 @@ func (q *Queries) GetOrder(ctx context.Context, id int64) (Order, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -152,7 +189,7 @@ func (q *Queries) GetOrder(ctx context.Context, id int64) (Order, error) {
 }
 
 const getOrderByOrderNo = `-- name: GetOrderByOrderNo :one
-SELECT id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 FROM orders
 WHERE out_trade_no = $1
 `
@@ -165,6 +202,7 @@ func (q *Queries) GetOrderByOrderNo(ctx context.Context, outTradeNo string) (Ord
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -188,7 +226,7 @@ func (q *Queries) GetOrderByOrderNo(ctx context.Context, outTradeNo string) (Ord
 }
 
 const getOrderByUser = `-- name: GetOrderByUser :one
-SELECT id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 FROM orders
 WHERE id = $1
   AND user_id = $2
@@ -205,6 +243,7 @@ func (q *Queries) GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) 
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -228,7 +267,7 @@ func (q *Queries) GetOrderByUser(ctx context.Context, arg GetOrderByUserParams) 
 }
 
 const getOrderByUserForUpdate = `-- name: GetOrderByUserForUpdate :one
-SELECT id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 FROM orders
 WHERE id = $1
   AND user_id = $2
@@ -246,6 +285,7 @@ func (q *Queries) GetOrderByUserForUpdate(ctx context.Context, arg GetOrderByUse
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -269,7 +309,7 @@ func (q *Queries) GetOrderByUserForUpdate(ctx context.Context, arg GetOrderByUse
 }
 
 const getOrderByUserIdempotency = `-- name: GetOrderByUserIdempotency :one
-SELECT id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 FROM orders
 WHERE user_id = $1
   AND idempotency_key = $2
@@ -286,6 +326,7 @@ func (q *Queries) GetOrderByUserIdempotency(ctx context.Context, arg GetOrderByU
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -309,7 +350,7 @@ func (q *Queries) GetOrderByUserIdempotency(ctx context.Context, arg GetOrderByU
 }
 
 const getOrderForUpdate = `-- name: GetOrderForUpdate :one
-SELECT id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 FROM orders
 WHERE id = $1
 FOR UPDATE
@@ -321,6 +362,7 @@ func (q *Queries) GetOrderForUpdate(ctx context.Context, id int64) (Order, error
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -344,7 +386,7 @@ func (q *Queries) GetOrderForUpdate(ctx context.Context, id int64) (Order, error
 }
 
 const getOrderForUpdateByPaymentID = `-- name: GetOrderForUpdateByPaymentID :one
-SELECT o.id, o.user_id, o.address_id, o.receiver_name, o.receiver_phone_encrypt, o.shipping_province, o.shipping_city, o.shipping_district, o.shipping_detail_address, o.paid_payment_id, o.total_amount_minor, o.currency, o.status, o.is_completed, o.out_trade_no, o.idempotency_key, o.request_hash, o.expires_at, o.created_at, o.updated_at
+SELECT o.id, o.user_id, o.merchant_id, o.address_id, o.receiver_name, o.receiver_phone_encrypt, o.shipping_province, o.shipping_city, o.shipping_district, o.shipping_detail_address, o.paid_payment_id, o.total_amount_minor, o.currency, o.status, o.is_completed, o.out_trade_no, o.idempotency_key, o.request_hash, o.expires_at, o.created_at, o.updated_at
 FROM orders o
 JOIN payments p ON p.id = $1 AND o.id = p.order_id
 FOR UPDATE OF o
@@ -359,6 +401,7 @@ func (q *Queries) GetOrderForUpdateByPaymentID(ctx context.Context, id int64) (O
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -397,8 +440,64 @@ func (q *Queries) HasOngoingOrders(ctx context.Context, userID int64) (bool, err
 	return has_ongoing, err
 }
 
+const listAllOrders = `-- name: ListAllOrders :many
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE (NOT $1::boolean OR is_completed = FALSE)
+ORDER BY id DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListAllOrdersParams struct {
+	Ongoing    bool
+	OffsetRows int32
+	LimitRows  int32
+}
+
+func (q *Queries) ListAllOrders(ctx context.Context, arg ListAllOrdersParams) ([]Order, error) {
+	rows, err := q.db.Query(ctx, listAllOrders, arg.Ongoing, arg.OffsetRows, arg.LimitRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.MerchantID,
+			&i.AddressID,
+			&i.ReceiverName,
+			&i.ReceiverPhoneEncrypt,
+			&i.ShippingProvince,
+			&i.ShippingCity,
+			&i.ShippingDistrict,
+			&i.ShippingDetailAddress,
+			&i.PaidPaymentID,
+			&i.TotalAmountMinor,
+			&i.Currency,
+			&i.Status,
+			&i.IsCompleted,
+			&i.OutTradeNo,
+			&i.IdempotencyKey,
+			&i.RequestHash,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOngoingOrdersByUser = `-- name: ListOngoingOrdersByUser :many
-SELECT id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 FROM orders
 WHERE user_id = $1
   AND is_completed = FALSE
@@ -424,6 +523,70 @@ func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, arg ListOngoingOr
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
+			&i.MerchantID,
+			&i.AddressID,
+			&i.ReceiverName,
+			&i.ReceiverPhoneEncrypt,
+			&i.ShippingProvince,
+			&i.ShippingCity,
+			&i.ShippingDistrict,
+			&i.ShippingDetailAddress,
+			&i.PaidPaymentID,
+			&i.TotalAmountMinor,
+			&i.Currency,
+			&i.Status,
+			&i.IsCompleted,
+			&i.OutTradeNo,
+			&i.IdempotencyKey,
+			&i.RequestHash,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrdersByMerchant = `-- name: ListOrdersByMerchant :many
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+FROM orders
+WHERE merchant_id = $1
+  AND (NOT $2::boolean OR is_completed = FALSE)
+ORDER BY id DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListOrdersByMerchantParams struct {
+	MerchantID int64
+	Ongoing    bool
+	OffsetRows int32
+	LimitRows  int32
+}
+
+func (q *Queries) ListOrdersByMerchant(ctx context.Context, arg ListOrdersByMerchantParams) ([]Order, error) {
+	rows, err := q.db.Query(ctx, listOrdersByMerchant,
+		arg.MerchantID,
+		arg.Ongoing,
+		arg.OffsetRows,
+		arg.LimitRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Order
+	for rows.Next() {
+		var i Order
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.MerchantID,
 			&i.AddressID,
 			&i.ReceiverName,
 			&i.ReceiverPhoneEncrypt,
@@ -454,7 +617,7 @@ func (q *Queries) ListOngoingOrdersByUser(ctx context.Context, arg ListOngoingOr
 }
 
 const listOrdersByUser = `-- name: ListOrdersByUser :many
-SELECT id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+SELECT id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 FROM orders
 WHERE user_id = $1
 ORDER BY id DESC
@@ -479,6 +642,7 @@ func (q *Queries) ListOrdersByUser(ctx context.Context, arg ListOrdersByUserPara
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
+			&i.MerchantID,
 			&i.AddressID,
 			&i.ReceiverName,
 			&i.ReceiverPhoneEncrypt,
@@ -569,7 +733,7 @@ SET is_completed = TRUE,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status = 'cancelling'
-RETURNING id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+RETURNING id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 func (q *Queries) MarkOrderCancelled(ctx context.Context, id int64) (Order, error) {
@@ -578,6 +742,7 @@ func (q *Queries) MarkOrderCancelled(ctx context.Context, id int64) (Order, erro
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -606,7 +771,7 @@ SET status = 'cancelling',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status = 'pending_payment'
-RETURNING id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+RETURNING id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 func (q *Queries) MarkOrderCancelling(ctx context.Context, id int64) (Order, error) {
@@ -615,6 +780,7 @@ func (q *Queries) MarkOrderCancelling(ctx context.Context, id int64) (Order, err
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -644,7 +810,7 @@ SET status = 'paid',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status = 'pending_payment'
-RETURNING id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+RETURNING id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 type MarkOrderPaidParams struct {
@@ -658,6 +824,7 @@ func (q *Queries) MarkOrderPaid(ctx context.Context, arg MarkOrderPaidParams) (O
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -687,7 +854,7 @@ SET is_completed = TRUE,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
   AND status = 'paid'
-RETURNING id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+RETURNING id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 // A fully refunded paid order reaches its terminal state. The CAS guard keeps
@@ -699,6 +866,7 @@ func (q *Queries) MarkOrderRefunded(ctx context.Context, id int64) (Order, error
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,

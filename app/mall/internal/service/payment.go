@@ -31,7 +31,7 @@ func NewPaymentService(paymentUc biz.PaymentUsecase, paymentJobs biz.PaymentJobU
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymentReq) (*pb.CreatePaymentReply, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymen
 	// client_ip is taken from the connection (see the trusted-proxy policy in
 	// server.http.trusted_proxies), never from the request body: a spoofed
 	// value would end up in the channel's risk-control fields.
-	result, err := s.paymentUc.PrepayForOrder(ctx, biz.PrepayForOrderArgs{OrderNo: req.OrderNo, UserID: claims.UserID, Method: method, ClientIP: custommid.ClientIPFromContext(ctx), Extension: req.ExtraParams, Description: req.Description})
+	result, err := s.paymentUc.PrepayForOrder(ctx, biz.PrepayForOrderArgs{OrderNo: req.OrderNo, UserID: actor.ID, Method: method, ClientIP: custommid.ClientIPFromContext(ctx), Extension: req.ExtraParams, Description: req.Description})
 	if err != nil {
 		return nil, err
 	}
@@ -59,14 +59,14 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req *pb.CreatePaymen
 }
 
 func (s *PaymentService) QueryPayment(ctx context.Context, req *pb.QueryPaymentReq) (*pb.QueryPaymentReply, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil || req.OutTradeNo == "" {
 		return nil, errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
 	}
-	result, err := s.paymentUc.QueryPayment(ctx, req.OutTradeNo, claims.UserID)
+	result, err := s.paymentUc.QueryPayment(ctx, actor, req.OutTradeNo)
 	if err != nil {
 		return nil, err
 	}
@@ -74,14 +74,14 @@ func (s *PaymentService) QueryPayment(ctx context.Context, req *pb.QueryPaymentR
 }
 
 func (s *PaymentService) ClosePayment(ctx context.Context, req *pb.ClosePaymentReq) (*pb.ClosePaymentReply, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil || req.OutTradeNo == "" {
 		return nil, errors.BadRequest("OUT_TRADE_NO_REQUIRED", "out_trade_no is required")
 	}
-	result, err := s.paymentUc.ClosePayment(ctx, req.OutTradeNo, claims.UserID)
+	result, err := s.paymentUc.ClosePayment(ctx, actor, req.OutTradeNo)
 	if err != nil {
 		return nil, err
 	}
@@ -89,14 +89,14 @@ func (s *PaymentService) ClosePayment(ctx context.Context, req *pb.ClosePaymentR
 }
 
 func (s *PaymentService) GetPayment(ctx context.Context, req *pb.GetPaymentRequest) (*pb.PaymentInfo, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("PAYMENT_REQUEST_REQUIRED", "request is required")
 	}
-	payment, err := s.paymentUc.GetPayment(ctx, req.Id, claims.UserID)
+	payment, err := s.paymentUc.GetPayment(ctx, actor, req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -104,14 +104,14 @@ func (s *PaymentService) GetPayment(ctx context.Context, req *pb.GetPaymentReque
 }
 
 func (s *PaymentService) GetPaymentByOrder(ctx context.Context, req *pb.GetPaymentByOrderRequest) (*pb.PaymentInfo, error) {
-	claims, err := authenticatedClaims(ctx)
+	actor, err := authenticatedActor(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req == nil {
 		return nil, errors.BadRequest("PAYMENT_REQUEST_REQUIRED", "request is required")
 	}
-	payment, err := s.paymentUc.GetPaymentByOrder(ctx, req.OrderId, claims.UserID)
+	payment, err := s.paymentUc.GetPaymentByOrder(ctx, actor, req.OrderId)
 	if err != nil {
 		return nil, err
 	}
@@ -119,13 +119,14 @@ func (s *PaymentService) GetPaymentByOrder(ctx context.Context, req *pb.GetPayme
 }
 
 func (s *PaymentService) RefundPayment(ctx context.Context, req *pb.RefundPaymentRequest) (*pb.RefundPaymentReply, error) {
-	if _, err := requireAdmin(ctx); err != nil {
+	actor, err := requireCapability(ctx, biz.CapRefundPayment)
+	if err != nil {
 		return nil, err
 	}
 	if req == nil || req.Id <= 0 {
 		return nil, errors.BadRequest("PAYMENT_REQUEST_REQUIRED", "request is required")
 	}
-	if _, err := s.paymentUc.RefundPayment(ctx, req.Id); err != nil {
+	if _, err := s.paymentUc.RefundPayment(ctx, actor, req.Id); err != nil {
 		return nil, err
 	}
 	return &pb.RefundPaymentReply{}, nil

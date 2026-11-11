@@ -125,11 +125,11 @@ func TestReviewCatalogConstraintsIntegration(t *testing.T) {
 func TestReviewOngoingPageBoundsIntegration(t *testing.T) {
 	f := newCorrectnessFixture(t)
 	_, err := f.pool.Exec(f.ctx, `
-		INSERT INTO orders(user_id,address_id,total_amount_minor,out_trade_no,idempotency_key,request_hash,expires_at,
+		INSERT INTO orders(user_id,merchant_id,address_id,total_amount_minor,out_trade_no,idempotency_key,request_hash,expires_at,
 			receiver_name,receiver_phone_encrypt,shipping_province,shipping_city,shipping_district,shipping_detail_address)
-		SELECT $1,$2,12345,$3||n::text,$3||n::text,'hash',now()+interval '1 hour',
+		SELECT $1,$4,$2,12345,$3||n::text,$3||n::text,'hash',now()+interval '1 hour',
 			a.receiver_name,a.receiver_phone_encrypt,a.province,a.city,a.district,a.detail_address
-		FROM generate_series(1,205) n CROSS JOIN shipping_addresses a WHERE a.id=$2`, f.userID, f.addressID, f.prefix)
+		FROM generate_series(1,205) n CROSS JOIN shipping_addresses a WHERE a.id=$2`, f.userID, f.addressID, f.prefix, f.merchantID)
 	require.NoError(t, err)
 	_, err = f.pool.Exec(f.ctx, `INSERT INTO order_items(order_id,product_id,quantity,unit_price_minor,product_name_snapshot)
 		SELECT id,$2,1,12345,'snapshot' FROM orders WHERE user_id=$1`, f.userID, f.productID)
@@ -165,7 +165,7 @@ func TestStockAdjustmentLeavesRoomForCancelAndRefundIntegration(t *testing.T) {
 			payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
 			var paymentID, refundID int64
 			if operation == "refund" {
-				payment, err := payments.CreatePayment(f.ctx, biz.CreatePaymentArgs{OrderID: order.ID, UserID: f.userID, Amount: 12345, Currency: "CNY", Method: "wechat:native", OutTradeNo: f.prefix + "_pay"})
+				payment, err := payments.CreatePayment(f.ctx, biz.CreatePaymentArgs{OrderID: order.ID, UserID: f.userID, MerchantID: order.MerchantID, Amount: 12345, Currency: "CNY", Method: "wechat:native", OutTradeNo: f.prefix + "_pay"})
 				require.NoError(t, err)
 				paymentID = payment.ID
 				require.NoError(t, payments.ApplyPayQuery(f.ctx, biz.CheckPayArgs{PaymentID: paymentID, Provider: "wechat"}, &biz.PaymentQueryResult{Method: biz.PaymentMethod{Provider: "wechat", Product: "native"}, OutTradeNo: payment.OutTradeNo, TransactionID: f.prefix + "_tx", Amount: 12345, Currency: "CNY", TradeState: biz.TradeStateSuccess}))
@@ -214,7 +214,7 @@ func TestRestorableStockIncludesOnlyUnfulfilledOrdersIntegration(t *testing.T) {
 		orderID, paymentID := fulfillmentOrder(t, f)
 		_, err := f.pool.Exec(f.ctx, `UPDATE orders SET status=$2::text, is_completed=($2::text IN ('completed','cancelled','refunded')) WHERE id=$1`, orderID, status)
 		require.NoError(t, err)
-		_, err = f.pool.Exec(f.ctx, `INSERT INTO payments(order_id,user_id,merchant_id,amount_minor,status,pay_channel,out_trade_no,currency) VALUES($1,$2,0,12345,'failed','wechat:native',$3,'CNY')`, orderID, f.userID, fmt.Sprintf("%s_duplicate_%d", f.prefix, paymentID))
+		_, err = f.pool.Exec(f.ctx, `INSERT INTO payments(order_id,user_id,merchant_id,amount_minor,status,pay_channel,out_trade_no,currency) VALUES($1,$2,$4,12345,'failed','wechat:native',$3,'CNY')`, orderID, f.userID, fmt.Sprintf("%s_duplicate_%d", f.prefix, paymentID), f.merchantID)
 		require.NoError(t, err)
 	}
 	reserved, err := f.data.q.GetRestorableProductStock(f.ctx, f.productID)

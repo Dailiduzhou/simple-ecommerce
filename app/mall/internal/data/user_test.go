@@ -299,16 +299,18 @@ func TestUserRepo_DeleteUser_ClearsCaches(t *testing.T) {
 
 	d := newTestData(t, mockQ, mr)
 	repo := NewUserRepo(d, log.DefaultLogger)
+	repo.tx = testTxManager{q: mockQ}
 	repo.setCache(context.Background(), redisKey("user", 6, "g", 0), &biz.UserProfile{
 		ID:       6,
 		Nickname: "delete_me",
 		Role:     "user",
 	})
 
-	mockQ.EXPECT().
-		DeleteUser(gomock.Any(), int64(6)).
-		Times(1).
-		Return(nil)
+	gomock.InOrder(
+		mockQ.EXPECT().LockUserRoleChanges(gomock.Any()).Return(nil),
+		mockQ.EXPECT().GetUserByID(gomock.Any(), int64(6)).Return(db.User{ID: 6, Role: "user"}, nil),
+		mockQ.EXPECT().DeleteUser(gomock.Any(), int64(6)).Return(nil),
+	)
 
 	err := repo.DeleteUser(context.Background(), 6)
 	require.NoError(t, err)

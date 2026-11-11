@@ -10,7 +10,10 @@ import (
 	"github.com/Dailiduzhou/simple-ecommerce/app/mall/internal/observability"
 )
 
-func (uc *paymentUsecase) RefundPayment(ctx context.Context, paymentID int64) (*PaymentRefundResult, error) {
+func (uc *paymentUsecase) RefundPayment(ctx context.Context, actor Actor, paymentID int64) (*PaymentRefundResult, error) {
+	if err := actor.Require(CapRefundPayment); err != nil {
+		return nil, err
+	}
 	if paymentID <= 0 {
 		return nil, errors.BadRequest("PAYMENT_ID_REQUIRED", "payment_id is required")
 	}
@@ -20,6 +23,11 @@ func (uc *paymentUsecase) RefundPayment(ctx context.Context, paymentID int64) (*
 	payment, err := uc.paymentRepo.GetPayment(ctx, paymentID)
 	if err != nil {
 		return nil, err
+	}
+	// Money returns to the collecting merchant's channel: only that merchant
+	// (or an administrator) may initiate it.
+	if !actor.CanManageMerchant(payment.MerchantID) {
+		return nil, errors.Forbidden("FORBIDDEN", "payment belongs to another merchant")
 	}
 	method, err := ParsePaymentMethod(payment.Method)
 	if err != nil {

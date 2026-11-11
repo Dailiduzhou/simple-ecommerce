@@ -25,7 +25,7 @@ func (u *wellnessStub) GetTodayWellness(ctx context.Context) (*biz.TodayWellness
 }
 
 func TestGetTodayWellnessRequiresLogin(t *testing.T) {
-	for _, claims := range []*biz.EcommerceClaims{nil, {}, {UserID: -1}} {
+	for _, claims := range []*biz.EcommerceClaims{nil, {}, {UserID: -1, Role: biz.RoleUser}} {
 		uc := &wellnessStub{}
 		svc := NewMallService(nil, nil, nil, uc, log.DefaultLogger)
 		card, err := svc.GetTodayWellness(biz.WithClaims(context.Background(), claims), &pb.GetTodayWellnessRequest{})
@@ -38,7 +38,7 @@ func TestGetTodayWellnessRequiresLogin(t *testing.T) {
 func TestGetTodayWellnessMapsSameCardForAllUsers(t *testing.T) {
 	uc := &wellnessStub{card: &biz.TodayWellness{Date: "2026-04-08", SolarTerm: "清明", Advice: "通用生活建议"}}
 	svc := NewMallService(nil, nil, nil, uc, log.DefaultLogger)
-	for _, claims := range []*biz.EcommerceClaims{{UserID: 1, Role: "user"}, {UserID: 2, Role: "admin"}} {
+	for _, claims := range []*biz.EcommerceClaims{{UserID: 1, Role: biz.RoleUser}, {UserID: 2, Role: biz.RoleAdmin}} {
 		ctx := biz.WithClaims(context.Background(), claims)
 		card, err := svc.GetTodayWellness(ctx, &pb.GetTodayWellnessRequest{})
 		require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestGetTodayWellnessPropagatesError(t *testing.T) {
 	wantErr := errors.InternalServer("WELLNESS_UNAVAILABLE", "unavailable")
 	uc := &wellnessStub{err: wantErr}
 	svc := NewMallService(nil, nil, nil, uc, log.DefaultLogger)
-	ctx := biz.WithClaims(context.Background(), &biz.EcommerceClaims{UserID: 1})
+	ctx := biz.WithClaims(context.Background(), &biz.EcommerceClaims{UserID: 1, Role: biz.RoleUser})
 	card, err := svc.GetTodayWellness(ctx, &pb.GetTodayWellnessRequest{})
 	require.ErrorIs(t, err, wantErr)
 	require.Nil(t, card)

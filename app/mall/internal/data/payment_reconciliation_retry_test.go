@@ -61,7 +61,7 @@ func TestReconciliationRetryResumesClosePendingOperation(t *testing.T) {
 			})
 			jobs := &reconciliationRetryJobs{t: t}
 			repo := NewPaymentReconciliationRepo(&Data{q: q}, testTxManager{q: q}, jobs, log.DefaultLogger)
-			action, err := repo.ApplyReconciliation(context.Background(), biz.Actor{ID: 99, Admin: true}, biz.ReconciliationInput{
+			action, err := repo.ApplyReconciliation(context.Background(), biz.Actor{ID: 99, Role: biz.RoleAdmin}, biz.ReconciliationInput{
 				PaymentID: payment.ID, ExpectedVersion: 1, Action: biz.ReconciliationActionRetry,
 				IdempotencyKey: "retry-operation", Reason: "provider recovered",
 			})

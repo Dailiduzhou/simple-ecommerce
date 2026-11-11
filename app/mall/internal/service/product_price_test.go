@@ -19,14 +19,14 @@ func TestProductPriceOverflowReturnsBadRequest(t *testing.T) {
 	uc := biz.NewProductUsecase(nil, log.DefaultLogger)
 	srv := http.NewServer(http.Middleware(func(next middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req any) (any, error) {
-			return next(biz.WithClaims(ctx, &biz.EcommerceClaims{UserID: 1, Role: "admin"}), req)
+			return next(biz.WithClaims(ctx, &biz.EcommerceClaims{UserID: 1, Role: biz.RoleAdmin}), req)
 		}
 	}))
 	pb.RegisterMallHTTPServer(srv, NewMallService(uc, nil, nil, nil, log.DefaultLogger))
 	for _, price := range []string{"92233720368547758.08", "184467440737095516.17", "-0.01", "0.001"} {
 		for _, route := range []struct{ method, path string }{{"POST", "/v1/products"}, {"PUT", "/v1/products/1"}} {
 			t.Run(route.method+"/"+price, func(t *testing.T) {
-				r := httptest.NewRequest(route.method, route.path, strings.NewReader(`{"price":"`+price+`","discount":"1"}`))
+				r := httptest.NewRequest(route.method, route.path, strings.NewReader(`{"merchant_id":1,"price":"`+price+`","discount":"1"}`))
 				r.Header.Set("Content-Type", "application/json")
 				w := httptest.NewRecorder()
 				srv.ServeHTTP(w, r)

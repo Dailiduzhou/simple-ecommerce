@@ -63,8 +63,8 @@ func TestPostAndCommentUnicodeValidation(t *testing.T) {
 	require.NoError(t, e)
 	_, e = ValidText(strings.Repeat("字", 1001), 1000)
 	require.Error(t, e)
-	require.NoError(t, (Actor{ID: 2, Admin: true}).Owns(1, true))
-	require.Error(t, (Actor{ID: 2, Admin: true}).Owns(1, false))
+	require.NoError(t, (Actor{ID: 2, Role: RoleAdmin}).Owns(1, true))
+	require.Error(t, (Actor{ID: 2, Role: RoleAdmin}).Owns(1, false))
 	require.Error(t, (Actor{}).Validate())
 }
 

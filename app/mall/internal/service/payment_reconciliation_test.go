@@ -39,7 +39,7 @@ func TestReconciliationServiceAuthorizationAndActorBinding(t *testing.T) {
 	require.Zero(t, r.calls)
 	_, err := s.RetryPaymentReconciliation(authenticatedPaymentContext(42, "admin"), request)
 	require.NoError(t, err)
-	require.Equal(t, biz.Actor{ID: 42, Admin: true}, r.actor)
+	require.Equal(t, biz.Actor{ID: 42, Role: biz.RoleAdmin}, r.actor)
 	require.Equal(t, biz.ReconciliationActionRetry, r.input.Action)
 	request.Evidence = "verified provider statement"
 	_, err = s.ResolvePaymentReconciliation(authenticatedPaymentContext(42, "admin"), request)

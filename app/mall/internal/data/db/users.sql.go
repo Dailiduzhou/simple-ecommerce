@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countAdmins = `-- name: CountAdmins :one
+SELECT count(*) FROM users WHERE role = 'admin'
+`
+
+func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (nickname, real_name, phone_hash, phone_encrypt, password_hash, role)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -132,6 +143,18 @@ func (q *Queries) LockUserForReference(ctx context.Context, id int64) (int64, er
 	var id_2 int64
 	err := row.Scan(&id_2)
 	return id_2, err
+}
+
+const lockUserRoleChanges = `-- name: LockUserRoleChanges :exec
+SELECT pg_advisory_xact_lock(1279476053, 0)
+`
+
+// Serialize role assignment and account deletion before taking any user/content
+// row locks. 1279476053 is reserved for account-role mutations (media I/O uses
+// 1279476052); the lock is held until the surrounding transaction ends.
+func (q *Queries) LockUserRoleChanges(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockUserRoleChanges)
+	return err
 }
 
 const updateUser = `-- name: UpdateUser :one

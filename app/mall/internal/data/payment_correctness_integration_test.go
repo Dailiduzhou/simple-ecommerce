@@ -114,7 +114,7 @@ func TestFailedRefundRetryCrashCompensationIntegration(t *testing.T) {
 	require.NoError(t, repo.RecordPaymentRefundError(f.ctx, refund.ID, "definitive rejection", true))
 	gateway := &integrationRefundGateway{f: f, t: t}
 	uc := biz.NewPaymentUsecase(gateway, crashRefundRepo{repo}, nil, nil, nil, f.tx, integrationRefundIDs{}, log.DefaultLogger)
-	_, err = uc.RefundPayment(f.ctx, paymentID)
+	_, err = uc.RefundPayment(f.ctx, biz.Actor{ID: f.userID, Role: biz.RoleAdmin}, paymentID)
 	require.ErrorIs(t, err, simulatedRefundCrash)
 	require.Equal(t, refund.OutRefundNo, gateway.number)
 	_, err = f.pool.Exec(f.ctx, `UPDATE order_refunds SET updated_at=now()-interval '1 hour' WHERE id=$1`, refund.ID)
@@ -278,7 +278,7 @@ func TestUndispatchedUnsupportedPaymentRecoveryIntegration(t *testing.T) {
 			switch action {
 			case "pay":
 				payment, err := NewPaymentRepo(f.data, f.tx, log.DefaultLogger).CreatePayment(f.ctx, biz.CreatePaymentArgs{
-					OrderID: orderID, UserID: f.userID, Amount: 12345, Currency: "CNY", Method: "alipay:wap", OutTradeNo: f.prefix + "_replacement"})
+					OrderID: orderID, UserID: f.userID, MerchantID: f.merchantID, Amount: 12345, Currency: "CNY", Method: "alipay:wap", OutTradeNo: f.prefix + "_replacement"})
 				require.NoError(t, err)
 				require.NotEqual(t, paymentID, payment.ID)
 			case "cancel":

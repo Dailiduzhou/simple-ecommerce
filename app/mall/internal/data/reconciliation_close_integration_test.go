@@ -29,7 +29,7 @@ func TestReconciliationRetryAbsentAlipayCloseIntegration(t *testing.T) {
 	payments := NewPaymentRepoWithJobs(f.data, f.tx, mq, log.DefaultLogger)
 	require.NoError(t, payments.MarkReconciliationRequired(f.ctx, biz.ReconciliationFailure{PaymentID: paymentID, Provider: "alipay", Reason: "job_exhausted", LastError: "provider unavailable during close"}))
 	repo := NewPaymentReconciliationRepo(f.data, f.tx, mq, log.DefaultLogger)
-	admin := biz.Actor{ID: f.userID, Admin: true}
+	admin := biz.Actor{ID: f.userID, Role: biz.RoleAdmin}
 	input := reconciliationInput(paymentID, 1, biz.ReconciliationActionRetry, "retry-absent-close")
 	action, err := repo.ApplyReconciliation(f.ctx, admin, input)
 	require.NoError(t, err)

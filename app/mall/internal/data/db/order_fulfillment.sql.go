@@ -124,7 +124,7 @@ func (q *Queries) ListOrderFulfillmentActions(ctx context.Context, orderID int64
 const markOrderCompleted = `-- name: MarkOrderCompleted :one
 UPDATE orders SET status='completed', is_completed=TRUE, updated_at=clock_timestamp()
 WHERE id=$1 AND status='shipped'
-RETURNING id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+RETURNING id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 func (q *Queries) MarkOrderCompleted(ctx context.Context, id int64) (Order, error) {
@@ -133,6 +133,7 @@ func (q *Queries) MarkOrderCompleted(ctx context.Context, id int64) (Order, erro
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,
@@ -158,7 +159,7 @@ func (q *Queries) MarkOrderCompleted(ctx context.Context, id int64) (Order, erro
 const markOrderShipped = `-- name: MarkOrderShipped :one
 UPDATE orders SET status='shipped', updated_at=clock_timestamp()
 WHERE id=$1 AND status='paid' AND paid_payment_id IS NOT NULL
-RETURNING id, user_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
+RETURNING id, user_id, merchant_id, address_id, receiver_name, receiver_phone_encrypt, shipping_province, shipping_city, shipping_district, shipping_detail_address, paid_payment_id, total_amount_minor, currency, status, is_completed, out_trade_no, idempotency_key, request_hash, expires_at, created_at, updated_at
 `
 
 func (q *Queries) MarkOrderShipped(ctx context.Context, id int64) (Order, error) {
@@ -167,6 +168,7 @@ func (q *Queries) MarkOrderShipped(ctx context.Context, id int64) (Order, error)
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.MerchantID,
 		&i.AddressID,
 		&i.ReceiverName,
 		&i.ReceiverPhoneEncrypt,

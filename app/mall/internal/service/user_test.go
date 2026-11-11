@@ -23,6 +23,7 @@ type fakeUserRepo struct {
 	getUserByPhoneHash func(ctx context.Context, phoneHash string) (*biz.User, error)
 	updateUser         func(ctx context.Context, id int64, nickname, realName string) (*biz.User, error)
 	updateUserPassword func(ctx context.Context, id int64, passwordHash string) error
+	updateUserRole     func(ctx context.Context, id int64, role biz.Role) error
 	deleteUser         func(ctx context.Context, id int64) error
 }
 
@@ -56,6 +57,15 @@ func (r *fakeUserRepo) UpdateUserPassword(ctx context.Context, id, expectedVersi
 	}
 	return r.updateUserPassword(ctx, id, passwordHash)
 }
+
+func (r *fakeUserRepo) UpdateUserRole(ctx context.Context, id int64, role biz.Role) error {
+	if r.updateUserRole == nil {
+		return nil
+	}
+	return r.updateUserRole(ctx, id, role)
+}
+
+func (r *fakeUserRepo) CountAdmins(context.Context) (int64, error) { return 1, nil }
 
 func (r *fakeUserRepo) DeleteUser(ctx context.Context, id int64) error {
 	return r.deleteUser(ctx, id)
@@ -121,7 +131,7 @@ func TestUserService_Login(t *testing.T) {
 	claims, err := s.authUc.ParseAccessToken(got.Token)
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), claims.UserID)
-	assert.Equal(t, "admin", claims.Role)
+	assert.Equal(t, biz.RoleAdmin, claims.Role)
 }
 
 func TestUserService_GetUser_NotFound(t *testing.T) {

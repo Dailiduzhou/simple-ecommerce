@@ -47,13 +47,9 @@ func (r *PaymentRepo) invalidateOrder(ctx context.Context, orderID int64) {
 	if err != nil {
 		return
 	}
-	deletes := []string{redisKey("order", orderID), redisKey("order", "user", orderID, order.UserID)}
-	if order.OutTradeNo != "" {
-		deletes = append(deletes, redisKey("order", "no", order.OutTradeNo))
-	}
-	scheduleCacheInvalidation(ctx, r.data.rdb, r.log, []string{
-		redisKey("order", "user", order.UserID, "gen"), redisKey("order", "user", "ongoing", order.UserID, "gen"),
-	}, deletes)
+	// Use the same invalidation path as checkout, fulfillment and refunds so
+	// payment transitions also advance merchant and platform list generations.
+	(&OrderRepo{data: r.data, log: r.log}).invalidateOrder(ctx, toBizOrder(order))
 }
 
 func (r *PaymentRepo) deleteCache(ctx context.Context, key string) {

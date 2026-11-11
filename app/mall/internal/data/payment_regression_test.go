@@ -46,7 +46,7 @@ func TestReviewPaymentMutationDoesNotPublishOldSnapshot(t *testing.T) {
 		// transaction records success and invalidates all payment cache keys.
 		r.invalidatePayment(ctx, statePayment(biz.PaymentStatusSuccess))
 	}}, log.DefaultLogger)
-	old, e := r.CreatePayment(ctx, biz.CreatePaymentArgs{OrderID: pending.OrderID, UserID: pending.UserID, Amount: pending.AmountMinor, Currency: pending.Currency, Method: pending.PayChannel})
+	old, e := r.CreatePayment(ctx, biz.CreatePaymentArgs{OrderID: pending.OrderID, UserID: pending.UserID, MerchantID: pending.MerchantID, Amount: pending.AmountMinor, Currency: pending.Currency, Method: pending.PayChannel})
 	require.NoError(t, e)
 	require.Equal(t, biz.PaymentStatusPending, old.Status)
 	q.EXPECT().GetPayment(gomock.Any(), pending.ID).Return(statePayment(biz.PaymentStatusSuccess), nil)

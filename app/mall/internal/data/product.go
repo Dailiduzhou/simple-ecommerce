@@ -26,7 +26,14 @@ func NewProductRepo(data *Data, tx biz.TxManager, logger log.Logger) *ProductRep
 	return &ProductRepo{data: data, tx: tx, log: log.NewHelper(logger)}
 }
 
-func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
+func optionalMerchantID(merchantID int64) pgtype.Int8 {
+	if merchantID <= 0 {
+		return pgtype.Int8{}
+	}
+	return pgtype.Int8{Int64: merchantID, Valid: true}
+}
+
+func (r *ProductRepo) CreateProduct(ctx context.Context, merchantID, categoryID int64, name string, price decimal.Decimal, discount decimal.Decimal, stock int32, status int16, coverImage []biz.MediaInfo, mediaAssets []biz.MediaInfo, descrption string) (*biz.Product, error) {
 	if err := biz.ProductDiscount(discount); err != nil {
 		return nil, err
 	}
@@ -46,6 +53,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 		return nil, err
 	}
 	p, err := querierFromContext(ctx, r.data.q).CreateProduct(ctx, db.CreateProductParams{
+		MerchantID:  merchantID,
 		CategoryID:  categoryID,
 		Name:        name,
 		PriceMinor:  minor,
@@ -60,7 +68,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, categoryID int64, name 
 		return nil, err
 	}
 	bizProduct := toBizProduct(p)
-	r.invalidateProduct(ctx, bizProduct.ID, categoryID)
+	r.invalidateProduct(ctx, bizProduct.ID, bizProduct.MerchantID, categoryID)
 	return &bizProduct, nil
 }
 
@@ -77,7 +85,7 @@ func (r *ProductRepo) DecrProductStock(ctx context.Context, ID int64, amount int
 	if err != nil {
 		return 0, err
 	}
-	r.invalidateProduct(ctx, ID, product.CategoryID)
+	r.invalidateProduct(ctx, ID, product.MerchantID, product.CategoryID)
 	return stock, nil
 }
 
@@ -97,11 +105,11 @@ func (r *ProductRepo) GetProduct(ctx context.Context, id int64) (*biz.Product, e
 	})
 }
 
-func (r *ProductRepo) ListProducts(ctx context.Context, limit int32, offset int32) ([]biz.Product, error) {
+func (r *ProductRepo) ListProducts(ctx context.Context, merchantID int64, limit int32, offset int32) ([]biz.Product, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, "product:list:gen")
-	key := generationCacheKey(generation, redisKey("product", "list", generation, limit, offset))
+	key := generationCacheKey(generation, redisKey("product", "list", generation, merchantID, limit, offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
-		rows, err := r.data.DB(ctx).ListProducts(ctx, db.ListProductsParams{Limit: limit, Offset: offset})
+		rows, err := r.data.DB(ctx).ListProducts(ctx, db.ListProductsParams{MerchantID: optionalMerchantID(merchantID), LimitRows: limit, OffsetRows: offset})
 		if err != nil {
 			return nil, err
 		}
@@ -109,16 +117,29 @@ func (r *ProductRepo) ListProducts(ctx context.Context, limit int32, offset int3
 	})
 }
 
-func (r *ProductRepo) ListProductsByCategory(ctx context.Context, categoryID int64, limit int32, offset int32) ([]biz.Product, error) {
+func (r *ProductRepo) ListProductsByCategory(ctx context.Context, merchantID, categoryID int64, limit int32, offset int32) ([]biz.Product, error) {
 	generation := readCacheGeneration(ctx, r.data.rdb, r.log, redisKey("product", "category", categoryID, "gen"))
-	key := generationCacheKey(generation, redisKey("product", "category", categoryID, generation, limit, offset))
+	key := generationCacheKey(generation, redisKey("product", "category", categoryID, generation, merchantID, limit, offset))
 	return cacheAside(ctx, r.data, r.log, key, r.getListCache, r.setListCache, func() ([]biz.Product, error) {
-		rows, err := r.data.DB(ctx).ListProductsByCategory(ctx, db.ListProductsByCategoryParams{CategoryID: categoryID, Limit: limit, Offset: offset})
+		rows, err := r.data.DB(ctx).ListProductsByCategory(ctx, db.ListProductsByCategoryParams{CategoryID: categoryID, MerchantID: optionalMerchantID(merchantID), LimitRows: limit, OffsetRows: offset})
 		if err != nil {
 			return nil, err
 		}
 		return toBizProducts(rows), nil
 	})
+}
+
+func (r *ProductRepo) GetProductForManagement(ctx context.Context, id int64) (*biz.Product, error) {
+	q := querierFromContext(ctx, r.data.q)
+	row, err := q.GetProduct(ctx, id)
+	if stderrors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	value := toBizProduct(row)
+	return &value, nil
 }
 
 func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
@@ -131,7 +152,7 @@ func (r *ProductRepo) SoftDeleteProduct(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	r.invalidateProduct(ctx, id, existing.CategoryID)
+	r.invalidateProduct(ctx, id, existing.MerchantID, existing.CategoryID)
 	return nil
 }
 
@@ -170,7 +191,7 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		return nil, err
 	}
 	bizProduct := toBizProduct(p)
-	r.invalidateProduct(ctx, id, existing.CategoryID, categoryID)
+	r.invalidateProduct(ctx, id, bizProduct.MerchantID, existing.CategoryID, categoryID)
 	return &bizProduct, nil
 }
 
@@ -196,7 +217,7 @@ func (r *ProductRepo) UpdateProductStatus(ctx context.Context, ID int64, status 
 		}
 		return err
 	}
-	r.invalidateProduct(ctx, ID, existing.CategoryID)
+	r.invalidateProduct(ctx, ID, existing.MerchantID, existing.CategoryID)
 	return nil
 }
 
@@ -220,7 +241,7 @@ func (r *ProductRepo) deleteCache(ctx context.Context, key string) {
 	deleteJSONCache(ctx, r.data, r.log, key)
 }
 
-func (r *ProductRepo) invalidateProductLists(ctx context.Context, categoryIDs ...int64) {
+func (r *ProductRepo) invalidateProductLists(ctx context.Context, merchantID int64, categoryIDs ...int64) {
 	keys := []string{"product:list:gen"}
 	seen := make(map[int64]struct{}, len(categoryIDs))
 	for _, categoryID := range categoryIDs {
@@ -233,10 +254,13 @@ func (r *ProductRepo) invalidateProductLists(ctx context.Context, categoryIDs ..
 		seen[categoryID] = struct{}{}
 		keys = append(keys, redisKey("product", "category", categoryID, "gen"))
 	}
+	if merchantID > 0 {
+		keys = append(keys, redisKey("product", "merchant", merchantID, "gen"))
+	}
 	scheduleCacheInvalidation(ctx, r.data.rdb, r.log, keys, nil)
 }
 
-func (r *ProductRepo) invalidateProduct(ctx context.Context, productID int64, categoryIDs ...int64) {
+func (r *ProductRepo) invalidateProduct(ctx context.Context, productID, merchantID int64, categoryIDs ...int64) {
 	generations := []string{redisKey("product", productID, "gen"), "product:list:gen"}
 	seen := make(map[int64]struct{}, len(categoryIDs))
 	for _, id := range categoryIDs {
@@ -249,12 +273,16 @@ func (r *ProductRepo) invalidateProduct(ctx context.Context, productID int64, ca
 		seen[id] = struct{}{}
 		generations = append(generations, redisKey("product", "category", id, "gen"))
 	}
+	if merchantID > 0 {
+		generations = append(generations, redisKey("product", "merchant", merchantID, "gen"))
+	}
 	scheduleCacheInvalidation(ctx, r.data.rdb, r.log, generations, []string{redisKey("product", productID)})
 }
 
 func toBizProduct(p db.Product) biz.Product {
 	return biz.Product{
 		ID:          p.ID,
+		MerchantID:  p.MerchantID,
 		CategoryID:  p.CategoryID,
 		Name:        p.Name,
 		Price:       decimal.NewFromInt(p.PriceMinor).Shift(-2),
@@ -296,9 +324,9 @@ func parseMediaInfoJSON(data []byte) []biz.MediaInfo {
 	return result
 }
 
-func (r *ProductRepo) CountProducts(ctx context.Context, categoryID int64) (int64, error) {
+func (r *ProductRepo) CountProducts(ctx context.Context, merchantID, categoryID int64) (int64, error) {
 	if categoryID > 0 {
-		return r.data.DB(ctx).CountProductsByCategory(ctx, categoryID)
+		return r.data.DB(ctx).CountProductsByCategory(ctx, db.CountProductsByCategoryParams{CategoryID: categoryID, MerchantID: optionalMerchantID(merchantID)})
 	}
-	return r.data.DB(ctx).CountProducts(ctx)
+	return r.data.DB(ctx).CountProducts(ctx, optionalMerchantID(merchantID))
 }

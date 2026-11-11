@@ -37,11 +37,16 @@ var kratosErrorStatus = map[string]int{
 
 // authzHelpers are the local helpers that reject callers for authorization
 // reasons. Their bodies live in the same package, so a method calling one of
-// them can return the statuses they produce.
-var authzHelpers = map[string]int{
-	"requireAdmin":         403,
-	"requireResourceOwner": 403,
-	"authenticatedClaims":  401,
+// them can return the statuses they produce. applyReconciliation is included
+// because Retry/ResolvePaymentReconciliation delegate their administrator check
+// to it instead of calling requireAdmin in the RPC method body.
+var authzHelpers = map[string][]int{
+	"requireAdmin":         {403},
+	"requireCapability":    {403},
+	"requireResourceOwner": {403},
+	"requireSelfOrAdmin":   {403},
+	"authenticatedActor":   {401},
+	"applyReconciliation":  {403},
 }
 
 // loadServiceStatuses returns, per operation ID, the extra HTTP status codes
@@ -160,8 +165,8 @@ func collectStatuses(imports map[string]string, body *ast.BlockStmt) []int {
 		}
 		switch fun := call.Fun.(type) {
 		case *ast.Ident:
-			if code, ok := authzHelpers[fun.Name]; ok {
-				codes = append(codes, code)
+			if helpers, ok := authzHelpers[fun.Name]; ok {
+				codes = append(codes, helpers...)
 			}
 		case *ast.SelectorExpr:
 			ident, ok := fun.X.(*ast.Ident)

@@ -26,13 +26,16 @@ type Querier interface {
 	ClearBrowsingHistory(ctx context.Context, userID int64) error
 	ClearDefaultShippingAddress(ctx context.Context, userID int64) error
 	ConfirmPaymentRefunded(ctx context.Context, id int64) (Payment, error)
+	CountAdmins(ctx context.Context) (int64, error)
+	CountAllOrders(ctx context.Context, ongoing bool) (int64, error)
 	// Any product row still owns a foreign key to the category; soft-deleted rows
 	// count too, because the FK is not conditional on deleted_at.
 	CountCategoryProductReferences(ctx context.Context, categoryID int64) (int64, error)
 	CountOngoingOrdersByUser(ctx context.Context, userID int64) (int64, error)
+	CountOrdersByMerchant(ctx context.Context, arg CountOrdersByMerchantParams) (int64, error)
 	CountOrdersByUser(ctx context.Context, userID int64) (int64, error)
-	CountProducts(ctx context.Context) (int64, error)
-	CountProductsByCategory(ctx context.Context, categoryID int64) (int64, error)
+	CountProducts(ctx context.Context, merchantID pgtype.Int8) (int64, error)
+	CountProductsByCategory(ctx context.Context, arg CountProductsByCategoryParams) (int64, error)
 	CountSubCategories(ctx context.Context, parentID pgtype.Int8) (int64, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateComment(ctx context.Context, arg CreateCommentParams) (PostComment, error)
@@ -122,6 +125,7 @@ type Querier interface {
 	HideUserPosts(ctx context.Context, authorID pgtype.Int8) error
 	IncrementProductStock(ctx context.Context, arg IncrementProductStockParams) error
 	LikePost(ctx context.Context, arg LikePostParams) error
+	ListAllOrders(ctx context.Context, arg ListAllOrdersParams) ([]Order, error)
 	ListBrowsingHistory(ctx context.Context, arg ListBrowsingHistoryParams) ([]ListBrowsingHistoryRow, error)
 	ListCommentReplies(ctx context.Context, arg ListCommentRepliesParams) ([]ListCommentRepliesRow, error)
 	ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error)
@@ -132,6 +136,7 @@ type Querier interface {
 	ListOrderItems(ctx context.Context, orderID int64) ([]OrderItem, error)
 	ListOrderItemsByOrderIDs(ctx context.Context, dollar_1 []int64) ([]OrderItem, error)
 	ListOrderProductCacheTargets(ctx context.Context, orderID int64) ([]ListOrderProductCacheTargetsRow, error)
+	ListOrdersByMerchant(ctx context.Context, arg ListOrdersByMerchantParams) ([]Order, error)
 	ListOrdersByUser(ctx context.Context, arg ListOrdersByUserParams) ([]Order, error)
 	// Backstop for expire_order jobs that were discarded after exhausting retries;
 	// the partial index idx_orders_pending_expiry keeps this scan cheap.
@@ -175,6 +180,10 @@ type Querier interface {
 	// lock order while allowing non-key user updates and default-address switches.
 	LockUserForReference(ctx context.Context, id int64) (int64, error)
 	LockUserMedia(ctx context.Context, ownerID pgtype.Int8) ([]MediaAsset, error)
+	// Serialize role assignment and account deletion before taking any user/content
+	// row locks. 1279476053 is reserved for account-role mutations (media I/O uses
+	// 1279476052); the lock is held until the surrounding transaction ends.
+	LockUserRoleChanges(ctx context.Context) error
 	MarkMediaDeleted(ctx context.Context, id int64) error
 	MarkMediaDeleting(ctx context.Context, id int64) (int64, error)
 	MarkMediaStagingCleaned(ctx context.Context, id int64) error

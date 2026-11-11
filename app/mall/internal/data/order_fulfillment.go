@@ -34,7 +34,14 @@ func (r *OrderRepo) ApplyFulfillment(ctx context.Context, actor biz.Actor, input
 		if err != nil {
 			return err
 		}
-		if !actor.Admin && actor.ID != order.UserID {
+		// Dispatch belongs to the collecting merchant; receipt belongs to the
+		// buyer. Administrators may act for either. A mismatch is reported as
+		// not-found so order IDs cannot be probed across accounts.
+		if input.Action == biz.OrderActionShip {
+			if !actor.CanManageMerchant(order.MerchantID) {
+				return biz.ErrOrderNotFound
+			}
+		} else if !actor.IsAdmin() && actor.ID != order.UserID {
 			return biz.ErrOrderNotFound
 		}
 		result, err = q.GetOrderFulfillmentAction(ctx, db.GetOrderFulfillmentActionParams{OrderID: order.ID, IdempotencyKey: input.IdempotencyKey})
@@ -108,7 +115,7 @@ func (r *OrderRepo) ListFulfillmentActions(ctx context.Context, actor biz.Actor,
 	if err != nil {
 		return nil, err
 	}
-	if !actor.Admin && actor.ID != order.UserID {
+	if !actor.CanManageMerchant(order.MerchantID) && actor.ID != order.UserID {
 		return nil, biz.ErrOrderNotFound
 	}
 	rows, err := r.data.DB(ctx).ListOrderFulfillmentActions(ctx, orderID)

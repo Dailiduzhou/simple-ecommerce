@@ -1,6 +1,7 @@
 -- name: CreateOrder :one
 INSERT INTO orders (
   user_id,
+  merchant_id,
   address_id,
   total_amount_minor,
   currency,
@@ -12,7 +13,7 @@ INSERT INTO orders (
   receiver_name, receiver_phone_encrypt, shipping_province, shipping_city,
   shipping_district, shipping_detail_address
 )
-VALUES (sqlc.arg(user_id), sqlc.arg(address_id), sqlc.arg(total_amount_minor), sqlc.arg(currency),
+VALUES (sqlc.arg(user_id), sqlc.arg(merchant_id), sqlc.arg(address_id), sqlc.arg(total_amount_minor), sqlc.arg(currency),
   'pending_payment', sqlc.arg(out_trade_no), sqlc.arg(idempotency_key), sqlc.arg(request_hash),
   clock_timestamp() + make_interval(secs => sqlc.arg(payment_timeout_seconds)::double precision),
   sqlc.arg(receiver_name), sqlc.arg(receiver_phone_encrypt), sqlc.arg(shipping_province),
@@ -62,6 +63,32 @@ FROM orders
 WHERE user_id = $1
 ORDER BY id DESC
 LIMIT $2 OFFSET $3;
+
+-- name: ListOrdersByMerchant :many
+SELECT *
+FROM orders
+WHERE merchant_id = sqlc.arg(merchant_id)
+  AND (NOT sqlc.arg(ongoing)::boolean OR is_completed = FALSE)
+ORDER BY id DESC
+LIMIT sqlc.arg(limit_rows) OFFSET sqlc.arg(offset_rows);
+
+-- name: CountOrdersByMerchant :one
+SELECT count(*)
+FROM orders
+WHERE merchant_id = sqlc.arg(merchant_id)
+  AND (NOT sqlc.arg(ongoing)::boolean OR is_completed = FALSE);
+
+-- name: ListAllOrders :many
+SELECT *
+FROM orders
+WHERE (NOT sqlc.arg(ongoing)::boolean OR is_completed = FALSE)
+ORDER BY id DESC
+LIMIT sqlc.arg(limit_rows) OFFSET sqlc.arg(offset_rows);
+
+-- name: CountAllOrders :one
+SELECT count(*)
+FROM orders
+WHERE (NOT sqlc.arg(ongoing)::boolean OR is_completed = FALSE);
 
 -- name: ListOngoingOrdersByUser :many
 SELECT *

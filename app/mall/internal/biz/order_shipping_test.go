@@ -25,6 +25,18 @@ func (r *sharedOrderPageRepo) ListOrdersByUser(context.Context, int64, int32, in
 func (r *sharedOrderPageRepo) ListOngoingOrdersByUser(context.Context, int64, int32, int32) ([]Order, error) {
 	return r.orders, nil
 }
+func (r *sharedOrderPageRepo) ListOrdersByMerchant(context.Context, int64, bool, int32, int32) ([]Order, error) {
+	return r.orders, nil
+}
+func (r *sharedOrderPageRepo) CountOrdersByMerchant(context.Context, int64, bool) (int64, error) {
+	return int64(len(r.orders)), nil
+}
+func (r *sharedOrderPageRepo) ListAllOrders(context.Context, bool, int32, int32) ([]Order, error) {
+	return r.orders, nil
+}
+func (r *sharedOrderPageRepo) CountAllOrders(context.Context, bool) (int64, error) {
+	return int64(len(r.orders)), nil
+}
 
 func TestOrderUsecase_ListOrdersOwnsShippingPage(t *testing.T) {
 	const secret = "0123456789abcdef0123456789abcdef"
@@ -50,7 +62,7 @@ func TestOrderUsecase_ListOrdersOwnsShippingPage(t *testing.T) {
 				go func() {
 					defer wg.Done()
 					<-start
-					pages[i], totals[i], errs[i] = uc.ListOrders(context.Background(), Actor{ID: 7}, req)
+					pages[i], totals[i], errs[i] = uc.ListOrders(context.Background(), Actor{ID: 7, Role: RoleUser}, req)
 				}()
 			}
 			close(start)

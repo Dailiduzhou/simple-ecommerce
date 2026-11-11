@@ -61,6 +61,7 @@ type MediaAsset struct {
 type Order struct {
 	ID                    int64
 	UserID                int64
+	MerchantID            int64
 	AddressID             int64
 	ReceiverName          string
 	ReceiverPhoneEncrypt  string
@@ -228,6 +229,7 @@ type PostLike struct {
 
 type Product struct {
 	ID         int64
+	MerchantID int64
 	CategoryID int64
 	Name       string
 	PriceMinor int64
@@ -291,7 +293,8 @@ type User struct {
 	PasswordHash string
 	// 凭证版本；改密原子递增，令牌必须携带验证密码时读取的同一版本
 	AuthVersion int64
-	Role        string
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
+	// 平台角色：user/merchant/admin；每次请求以数据库为准，不信任令牌内的旧角色
+	Role      string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }

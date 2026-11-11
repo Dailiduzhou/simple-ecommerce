@@ -49,8 +49,8 @@ func (uc *paymentUsecase) PrepayForOrder(ctx context.Context, args PrepayForOrde
 		return nil, err
 	}
 	payment, err := uc.paymentRepo.CreatePayment(ctx, CreatePaymentArgs{
-		OrderID: order.ID, UserID: order.UserID, Amount: order.TotalAmount,
-		Currency: order.Currency, Method: methodKey, OutTradeNo: outTradeNo,
+		OrderID: order.ID, UserID: order.UserID, MerchantID: order.MerchantID,
+		Amount: order.TotalAmount, Currency: order.Currency, Method: methodKey, OutTradeNo: outTradeNo,
 	})
 	if err != nil {
 		return nil, err

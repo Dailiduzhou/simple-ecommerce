@@ -31,7 +31,7 @@ func TestReviewPaymentWindowUsesDatabaseClockIntegration(t *testing.T) {
 	require.True(t, scheduled.Equal(order.ExpiresAt))
 
 	payments := NewPaymentRepo(f.data, f.tx, log.DefaultLogger)
-	args := biz.CreatePaymentArgs{OrderID: order.ID, UserID: order.UserID, Amount: order.TotalAmount, Currency: order.Currency, Method: "alipay:wap", OutTradeNo: f.prefix + "_payment"}
+	args := biz.CreatePaymentArgs{OrderID: order.ID, UserID: order.UserID, MerchantID: order.MerchantID, Amount: order.TotalAmount, Currency: order.Currency, Method: "alipay:wap", OutTradeNo: f.prefix + "_payment"}
 	_, err = payments.CreatePayment(f.ctx, args)
 	require.NoError(t, err)
 	_, err = f.pool.Exec(f.ctx, `UPDATE orders SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1`, order.ID)

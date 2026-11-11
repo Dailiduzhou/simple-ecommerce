@@ -25,7 +25,7 @@ func requireReconciliationAdmin(actor Actor) error {
 	if err := actor.Validate(); err != nil {
 		return err
 	}
-	if !actor.Admin {
+	if !actor.Allows(CapReconcilePayment) {
 		return errors.Forbidden("FORBIDDEN", "reconciliation requires an administrator")
 	}
 	return nil

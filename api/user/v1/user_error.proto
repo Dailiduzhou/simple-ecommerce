@@ -21,4 +21,7 @@ enum ErrorReason {
   INVALID_TIME_RANGE = 7 [(errors.code) = 400];
   INVALID_CREDENTIALS = 8 [(errors.code) = 401];
   USER_LOGIN_LOCKED = 9 [(errors.code) = 429];
+  ROLE_CHANGE_SELF = 10 [(errors.code) = 409];
+  LAST_ADMIN_REQUIRED = 11 [(errors.code) = 409];
+  ROLE_INVALID = 12 [(errors.code) = 400];
 }
