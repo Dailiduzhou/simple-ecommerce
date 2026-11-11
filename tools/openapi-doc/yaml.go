@@ -63,6 +63,21 @@ func jsonResponse(schema *yaml.Node) *yaml.Node {
 	)
 }
 
+// plainTextResponse mirrors a response written with http.Error, which the body
+// limit filter uses before the kratos codec is involved.
+func plainTextResponse(example string) *yaml.Node {
+	return mapNode(
+		keyNode("content"), mapNode(
+			keyNode("text/plain"), mapNode(
+				keyNode("schema"), mapNode(
+					keyNode("type"), strNode("string"),
+					keyNode("example"), strNode(example),
+				),
+			),
+		),
+	)
+}
+
 func documentRoot(doc *yaml.Node) *yaml.Node {
 	if doc.Kind == yaml.DocumentNode && len(doc.Content) == 1 {
 		return doc.Content[0]

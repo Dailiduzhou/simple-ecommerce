@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -56,6 +57,21 @@ func operationOf(t *testing.T, document map[string]any, path, method string) map
 		t.Fatalf("%s has no %s operation", path, method)
 	}
 	return op
+}
+
+func operationsByID(t *testing.T, document map[string]any) map[string]map[string]any {
+	t.Helper()
+	out := map[string]map[string]any{}
+	for _, item := range pathsOf(t, document) {
+		for method, raw := range item {
+			if method == "parameters" {
+				continue
+			}
+			op := raw.(map[string]any)
+			out[op["operationId"].(string)] = op
+		}
+	}
+	return out
 }
 
 func responseCodes(t *testing.T, op map[string]any) map[string]bool {
@@ -426,6 +442,124 @@ func TestInfoAndTagsAreFilledIn(t *testing.T) {
 		if tag["description"] == nil || tag["description"] == "" {
 			t.Errorf("tag %v has no description", tag["name"])
 		}
+	}
+}
+
+// TestWriteLimiterOperationsDocument429 follows biz.RateLimitCategory: the
+// limiter runs as middleware before the service method, so its 429/503 can
+// never show up in the service-layer scan.
+func TestWriteLimiterOperationsDocument429(t *testing.T) {
+	root := moduleRoot(t)
+	document := loadDocument(t, filepath.Join(root, "openapi.yaml"))
+	model, err := loadProtoModel()
+	if err != nil {
+		t.Fatalf("load protos: %v", err)
+	}
+	limited, err := loadRateLimitedOperations(filepath.Join(root, "app/mall/internal/biz/rate_limit.go"), model)
+	if err != nil {
+		t.Fatalf("read write limiter: %v", err)
+	}
+	if len(limited) == 0 {
+		t.Fatal("no rate-limited operations found; the parser is broken")
+	}
+	ops := operationsByID(t, document)
+	for id := range limited {
+		op, ok := ops[id]
+		if !ok {
+			t.Errorf("%s has a write quota but is not documented", id)
+			continue
+		}
+		codes := responseCodes(t, op)
+		for _, code := range []string{"429", "503"} {
+			if !codes[code] {
+				t.Errorf("%s has a write quota but does not document %s", id, code)
+			}
+		}
+	}
+	// Spot checks so a regexp that matches nothing cannot pass as correct.
+	for _, id := range []string{"Order_CreateOrder", "Community_CreatePost", "Community_CreateComment", "Media_CreateImageUpload", "User_Login"} {
+		if !limited[id] {
+			t.Errorf("%s should have a write quota", id)
+		}
+	}
+	for _, id := range []string{"Mall_ListProducts", "Mall_GetProduct", "Community_ListPosts"} {
+		if limited[id] {
+			t.Errorf("%s must not have a write quota", id)
+		}
+		if codes := responseCodes(t, ops[id]); codes["429"] {
+			t.Errorf("%s documents 429 but reads never touch the limiter", id)
+		}
+	}
+}
+
+// TestBodyLimitDocumented keeps 413 attached to the routes with a request body
+// and pins the plain text body the filter writes before kratos handles it.
+func TestBodyLimitDocumented(t *testing.T) {
+	document := loadDocument(t, filepath.Join(moduleRoot(t), "openapi.yaml"))
+	model, err := loadProtoModel()
+	if err != nil {
+		t.Fatalf("load protos: %v", err)
+	}
+	ops := operationsByID(t, document)
+	for _, operation := range model.operations {
+		op := ops[operation.ID]
+		if op == nil {
+			continue
+		}
+		codes := responseCodes(t, op)
+		if !operation.HasBody {
+			if codes["413"] {
+				t.Errorf("%s has no request body but documents 413", operation.ID)
+			}
+			continue
+		}
+		if !codes["413"] {
+			t.Errorf("%s accepts a body but does not document 413", operation.ID)
+			continue
+		}
+		responses := op["responses"].(map[string]any)
+		content, ok := responses["413"].(map[string]any)["content"].(map[string]any)
+		if !ok {
+			t.Errorf("%s: 413 has no content", operation.ID)
+			continue
+		}
+		if _, ok := content["text/plain"]; !ok {
+			t.Errorf("%s: 413 must be text/plain, not the kratos error body", operation.ID)
+		}
+	}
+	notify := operationOf(t, document, "/v1/payments/{provider}/notify", "post")
+	if !responseCodes(t, notify)["413"] {
+		t.Error("payment callback must document its independent 1 MiB body limit")
+	}
+}
+
+// TestSummariesAreShortLabels keeps summary stable when a proto comment is
+// prose or a section heading; the comment stays in description.
+func TestSummariesAreShortLabels(t *testing.T) {
+	document := loadDocument(t, filepath.Join(moduleRoot(t), "openapi.yaml"))
+	for _, item := range pathsOf(t, document) {
+		for method, raw := range item {
+			if method == "parameters" {
+				continue
+			}
+			op := raw.(map[string]any)
+			id := op["operationId"].(string)
+			if id == "Payment_NotifyCallback" {
+				continue // hand written summary
+			}
+			_, rpc, _ := strings.Cut(id, "_")
+			if want := humanize(rpc); op["summary"] != want {
+				t.Errorf("%s summary = %v, want %q", id, op["summary"], want)
+			}
+			summary := op["summary"].(string)
+			if strings.HasSuffix(summary, ",") || len(summary) > 80 {
+				t.Errorf("%s summary %q is not a short label", id, summary)
+			}
+		}
+	}
+	login := operationOf(t, document, "/v1/users/login", "post")
+	if login["description"] == nil || login["description"] == "" {
+		t.Error("Login must keep the proto comment as its description")
 	}
 }
 

@@ -8,6 +8,7 @@
 //
 //   - info/servers/securitySchemes and the per-operation security overrides,
 //   - the error responses of every operation (kratos error body schema),
+//   - the request body cap and the write rate limits enforced by middleware,
 //   - required fields and validation keywords derived from buf.validate,
 //   - path templates renamed to the snake_case routes kratos registers,
 //   - the manually registered routes (payment channel callbacks).
@@ -61,6 +62,10 @@ func rewrite(root, spec string) error {
 	if err != nil {
 		return err
 	}
+	rateLimited, err := loadRateLimitedOperations(filepath.Join(root, "app/mall/internal/biz/rate_limit.go"), model)
+	if err != nil {
+		return err
+	}
 	documented, err := manualRoutes(serverFile)
 	if err != nil {
 		return err
@@ -85,6 +90,7 @@ func rewrite(root, spec string) error {
 		model:         model,
 		public:        public,
 		serviceStatus: serviceStatus,
+		rateLimited:   rateLimited,
 		manual:        manual,
 	}); err != nil {
 		return err

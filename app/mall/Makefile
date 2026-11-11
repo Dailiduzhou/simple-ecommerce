@@ -28,7 +28,8 @@ api: check-protoc
 		--go-grpc_out=paths=source_relative:. --go-errors_out=paths=source_relative:. \
 		--openapi_out=fq_schema_naming=true,default_response=false:$(ROOT_DIR) $(API_PROTO_FILES)
 	# protoc-gen-openapi only sees the protos; openapi-doc adds what the surrounding
-	# Go code defines (JWT whitelist, error contract, authorization, validation).
+	# Go code defines (JWT whitelist, error contract, authorization, validation,
+	# request body cap and write rate limits).
 	cd $(ROOT_DIR) && go run ./tools/openapi-doc -root $(ROOT_DIR) -spec $(ROOT_DIR)/openapi.yaml
 	cp $(ROOT_DIR)/openapi.yaml $(APP_DIR)/openapi.yaml
 

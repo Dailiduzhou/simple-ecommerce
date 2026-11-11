@@ -80,6 +80,14 @@ func manualRouteDocs() []manualRouteDoc {
 							),
 						),
 					),
+					quotedKeyNode("413"), mapNode(
+						keyNode("description"), strNode("请求体过大：支付回调上限 1 MiB，由请求体限制中间件在路由前返回"),
+						keyNode("content"), mapNode(
+							keyNode("text/plain"), mapNode(
+								keyNode("schema"), mapNode(keyNode("type"), strNode("string"), keyNode("example"), strNode("request body too large")),
+							),
+						),
+					),
 					quotedKeyNode("500"), mapNode(
 						keyNode("description"), strNode("服务内部错误（panic 由 recovery 中间件转成统一错误体）"),
 						keyNode("content"), mapNode(

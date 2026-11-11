@@ -23,8 +23,9 @@ const (
 	apiDescription = `用户、分类/商品/限时活动、下单与支付、图文社区、图片上传的统一 HTTP API。
 
 本文件由 protoc-gen-openapi 从 api/**/*.proto 生成，再由 tools/openapi-doc 补全
-（认证、错误响应、buf.validate 约束、手工注册的回调路由与 info 元数据），
-因此与生成器的原始输出不同：请通过 make -C app/mall api 重新生成，不要手工编辑。
+（认证、错误响应、buf.validate 约束、请求体上限、写入限流、手工注册的回调路由与
+info 元数据），因此与生成器的原始输出不同：请通过 make -C app/mall api 重新生成，
+不要手工编辑。
 
 ## 认证
 注册、登录、刷新令牌和支付渠道回调不需要令牌；其余接口都必须携带
@@ -37,6 +38,18 @@ Authorization: Bearer <access_token>（HS256 JWT）。需要管理员角色的�
 {"code":404,"reason":"PRODUCT_NOT_FOUND","message":"...","metadata":{}}，
 结构见 components.schemas.errors.Status。接口声明的 4xx/5xx 来自该服务
 *_error.proto 的错误码集合，以及服务层中实际存在的鉴权分支，属于服务级上界。
+例外：请求体过大（413）由中间件在路由前返回 text/plain；支付回调的响应体是
+渠道约定的确认串，见 Payment_NotifyCallback。
+
+## 请求体上限
+普通接口的请求体上限为 64 KiB，支付渠道回调为 1 MiB。超限时返回
+413 和 text/plain 的 request body too large，不会进入业务逻辑。
+
+## 写入限流
+下单、发帖/改帖、评论、上传、点赞、删除帖子和浏览记录等写操作，以及
+登录/注册/刷新令牌/改密，按 Redis 固定窗口限流；超限返回 429 RATE_LIMITED。
+限流存储不可用时，认证与下单始终返回 503 RATE_LIMIT_UNAVAILABLE，
+其余写操作按 rate_limit_fail_open 配置决定是否放行。读取接口不经过限流。
 
 ## 64 位整数
 protojson 把 int64/uint64 编码成 JSON 字符串，所以这类字段是 type: string
@@ -51,10 +64,11 @@ var errorDescriptions = map[int]string{
 	404: "目标资源不存在或已被删除",
 	408: "请求或资源已超时",
 	409: "状态冲突：并发更新、重复提交、库存或支付状态不一致",
+	413: "请求体过大：普通接口上限 64 KiB，支付回调上限 1 MiB",
 	429: "触发限流：操作过于频繁或登录失败次数过多",
 	500: "服务内部错误",
 	502: "上游渠道（支付网关）返回失败",
-	503: "依赖不可用：对象存储、消息队列或第三方支付未配置",
+	503: "依赖不可用：对象存储、消息队列、限流存储或第三方支付不可用",
 	504: "上游渠道响应超时",
 }
 
@@ -71,6 +85,7 @@ type patchInput struct {
 	model         *protoModel
 	public        map[string]bool
 	serviceStatus map[string][]int
+	rateLimited   map[string]bool
 	manual        []manualRouteDoc
 }
 
@@ -277,7 +292,7 @@ func patchPathItem(item *yaml.Node, renames map[string]string, in patchInput) er
 		if err := patchParameters(op, operation.Request); err != nil {
 			return err
 		}
-		setAfter(op, "tags", "summary", strNode(summaryFor(op, id.Value)))
+		setAfter(op, "tags", "summary", strNode(summaryFor(id.Value)))
 		isPublic := in.public[id.Value]
 		mergeResponses(op, errorStatuses(operation, in), isPublic)
 		if isPublic {
@@ -346,12 +361,21 @@ func requestField(md protoreflect.MessageDescriptor, name string) protoreflect.F
 
 // errorStatuses is the set of failure codes an operation can answer with: 400
 // and 500 always (codec/validation failures, internal errors), 401 whenever the
-// route sits behind the JWT middleware, plus the codes the service declares in
-// its *_error.proto and the ones its handlers raise themselves.
+// route sits behind the JWT middleware, 413 when the request has a body that the
+// transport-level cap applies to, 429/503 when the write limiter guards the
+// route, plus the codes the service declares in its *_error.proto and the ones
+// its handlers raise themselves.
 func errorStatuses(op operation, in patchInput) []int {
 	codes := map[int]bool{400: true, 500: true}
 	if !in.public[op.ID] {
 		codes[401] = true
+	}
+	if op.HasBody {
+		codes[413] = true
+	}
+	if in.rateLimited[op.ID] {
+		codes[429] = true
+		codes[503] = true
 	}
 	for _, code := range in.model.errorCodes[op.Package] {
 		codes[code] = true
@@ -404,6 +428,11 @@ func errorResponse(code int, public bool) *yaml.Node {
 		description = "凭证校验失败：账号/密码不正确或令牌无效"
 	}
 	node := mapNode(keyNode("description"), strNode(description))
+	if code == 413 {
+		// The body limit filter writes http.Error before kratos sees the request.
+		node.Content = append(node.Content, plainTextResponse("request body too large").Content...)
+		return node
+	}
 	node.Content = append(node.Content, jsonResponse(schemasRef(errorSchemaName)).Content...)
 	return node
 }
@@ -524,33 +553,15 @@ func errorSchema() *yaml.Node {
 	)
 }
 
-// summaryFor prefers the proto comment the generator already copied into
-// description, and falls back to the RPC name.
-func summaryFor(op *yaml.Node, operationID string) string {
-	if description := get(op, "description"); description != nil && description.Kind == yaml.ScalarNode {
-		if summary := firstSentence(description.Value); summary != "" {
-			return summary
-		}
-	}
+// summaryFor is the RPC name in words. Proto comments are prose (often several
+// sentences or section headings), so they stay in description and the summary
+// stays a short, predictable label for clients and generated SDKs.
+func summaryFor(operationID string) string {
 	_, method, found := strings.Cut(operationID, "_")
 	if !found {
 		method = operationID
 	}
 	return humanize(method)
-}
-
-func firstSentence(text string) string {
-	text = strings.TrimSpace(text)
-	if line, _, found := strings.Cut(text, "\n"); found {
-		text = strings.TrimSpace(line)
-	}
-	if end := strings.Index(text, "。"); end >= 0 {
-		text = text[:end+len("。")]
-	}
-	if len(text) > 160 {
-		text = strings.TrimSpace(text[:160]) + "…"
-	}
-	return text
 }
 
 // humanize turns an RPC name such as ListCommentReplies into "List comment
