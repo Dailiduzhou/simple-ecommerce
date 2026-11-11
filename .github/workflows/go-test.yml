@@ -111,14 +111,23 @@ jobs:
       MINIO_ROOT_PASSWORD: ci-config-admin-not-a-runtime-secret
       STORAGE_ACCESS_KEY: ci-config-app
       STORAGE_SECRET_KEY: ci-config-app-not-a-runtime-secret
+      # The deploy workflow derives this from ACR_REGISTRY/ACR_NAMESPACE; CI only
+      # needs a syntactically valid value to validate the overlay.
+      DEPENDENCY_REGISTRY: registry.example.com/example
     steps:
       - uses: actions/checkout@v4
       - name: Validate scripts and merged Compose (no runtime secrets)
         run: |
-          bash -n .github/scripts/deploy-test.sh .github/scripts/image-metadata.sh deploy/deploy-test.sh
+          bash -n .github/scripts/deploy-test.sh .github/scripts/image-metadata.sh \
+            .github/scripts/mirror-images.sh deploy/deploy-test.sh
           docker compose --env-file deploy/test.env.example \
             -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.caddy.yml \
             config --quiet
+      - name: Validate the ACR dependency overlay
+        run: |
+          docker compose --env-file deploy/test.env.example \
+            -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.caddy.yml \
+            -f docker-compose.registry.yml config --quiet
       - name: Validate Caddy using the deployed image
         run: |
           docker compose --env-file deploy/test.env.example \
@@ -182,6 +191,13 @@ jobs:
           registry: ${{ steps.image.outputs.registry }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
+      # The test server cannot reach Docker Hub. Copy the pinned third-party
+      # images into ACR once; later releases skip existing mirrors, so this step
+      # does not depend on Docker Hub availability after the first deploy.
+      - name: Mirror third-party images into ACR
+        env:
+          DEPENDENCY_REGISTRY: ${{ steps.image.outputs.dependency_registry }}
+        run: bash .github/scripts/mirror-images.sh
       - name: Build and publish mall
         id: build
         uses: docker/build-push-action@v6
@@ -216,6 +232,7 @@ jobs:
         env:
           MALL_IMAGE: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
           MINIO_IMAGE: ${{ steps.image.outputs.name }}@${{ steps.minio.outputs.digest }}
+          DEPENDENCY_REGISTRY: ${{ steps.image.outputs.dependency_registry }}
           TEST_SSH_HOST: ${{ secrets.TEST_SSH_HOST }}
           TEST_SSH_USER: ${{ secrets.TEST_SSH_USER }}
           TEST_SSH_PRIVATE_KEY: ${{ secrets.TEST_SSH_PRIVATE_KEY }}

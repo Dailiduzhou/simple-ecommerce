@@ -358,3 +358,166 @@ func TestTestEnvironmentCompose(t *testing.T) {
 		})
 	}
 }
+
+// The test server cannot reach Docker Hub. Every literal third-party image in
+// the deployed Compose files must therefore be listed in deploy/mirror-images.txt
+// and overridden by docker-compose.registry.yml with that entry's ACR mirror.
+// Keep this test honest when adding a service or bumping an image tag.
+func TestDependencyMirrorsMatchCompose(t *testing.T) {
+	mirrors := readMirrorList(t)
+	overlay := readServiceImages(t, "../docker-compose.registry.yml")
+
+	literal := map[string]string{}
+	for _, file := range []string{"../docker-compose.yml", "../docker-compose.test.yml", "../docker-compose.caddy.yml"} {
+		for service, image := range readServiceImages(t, file) {
+			if strings.HasPrefix(image, "$") {
+				continue
+			}
+			require.NotContains(t, literal, service, "%s declares a second literal image", service)
+			literal[service] = image
+		}
+	}
+	require.NotEmpty(t, literal)
+
+	const overlayPrefix = "${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/"
+	used := map[string]bool{}
+	targets := map[string]bool{}
+	for _, entry := range mirrors {
+		targets[entry.target] = true
+	}
+	for service, image := range literal {
+		entry, ok := mirrors[normalizeDockerHubReference(image)]
+		require.True(t, ok, "%s image %q has no ACR mirror in deploy/mirror-images.txt", service, image)
+		used[entry.source] = true
+		require.Equal(t, overlayPrefix+entry.target, overlay[service],
+			"docker-compose.registry.yml must mirror %s to ACR", service)
+	}
+	for source := range mirrors {
+		require.True(t, used[source], "deploy/mirror-images.txt mirrors %s but no Compose file uses it", source)
+	}
+	for service, image := range overlay {
+		if _, ok := literal[service]; ok {
+			continue
+		}
+		// `extends` is resolved per file, so one-off services that reuse another
+		// service's image need their own override pointing at the same mirror.
+		target, ok := strings.CutPrefix(image, overlayPrefix)
+		require.True(t, ok, "docker-compose.registry.yml must use the ACR prefix for %s", service)
+		require.True(t, targets[target],
+			"docker-compose.registry.yml mirrors %s to %q, which deploy/mirror-images.txt does not list", service, target)
+	}
+}
+
+type mirrorEntry struct{ source, target string }
+
+func readMirrorList(t *testing.T) map[string]mirrorEntry {
+	t.Helper()
+	raw, err := os.ReadFile("mirror-images.txt")
+	require.NoError(t, err)
+	mirrors := map[string]mirrorEntry{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		require.Len(t, fields, 2, "unexpected mirror entry: %q", line)
+		source, target := fields[0], fields[1]
+		require.Regexp(t, `^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+$`, source)
+		require.Regexp(t, `^[a-z0-9]+(-[a-z0-9]+)*:[A-Za-z0-9._-]+$`, target)
+		require.NotContains(t, mirrors, source, "duplicate mirror entry: %s", source)
+		mirrors[source] = mirrorEntry{source: source, target: target}
+	}
+	require.NotEmpty(t, mirrors)
+	return mirrors
+}
+
+func readServiceImages(t *testing.T, file string) map[string]string {
+	t.Helper()
+	raw, err := os.ReadFile(file)
+	require.NoError(t, err)
+	var compose struct {
+		Services map[string]struct {
+			Image string `yaml:"image"`
+		} `yaml:"services"`
+	}
+	require.NoError(t, yaml.Unmarshal(raw, &compose))
+	images := map[string]string{}
+	for service, svc := range compose.Services {
+		if svc.Image != "" {
+			images[service] = svc.Image
+		}
+	}
+	return images
+}
+
+// Docker treats "postgres:16-alpine" and "docker.io/library/postgres:16-alpine"
+// as the same image; normalise Compose shorthand so the mirror list can use the
+// explicit form without depending on Compose interpolation rules.
+func normalizeDockerHubReference(image string) string {
+	if strings.HasPrefix(image, "docker.io/") {
+		return image
+	}
+	first, _, found := strings.Cut(image, "/")
+	if !found {
+		return "docker.io/library/" + image
+	}
+	if !strings.ContainsAny(first, ".:") && first != "localhost" {
+		return "docker.io/" + image
+	}
+	return image
+}
+
+// Run the real Compose merger with the registry overlay and confirm the merged
+// stack pulls every dependency from ACR, while the CI-built digests survive.
+func TestRegistryOverlayResolvesToACR(t *testing.T) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("Docker CLI is not installed")
+	}
+	if err := exec.Command("docker", "compose", "version").Run(); err != nil {
+		t.Skip("Docker Compose plugin is not installed")
+	}
+	example, err := os.ReadFile("test.env.example")
+	require.NoError(t, err)
+	envFile := filepath.Join(t.TempDir(), "test.env")
+	require.NoError(t, os.WriteFile(envFile, example, 0600))
+
+	const registry = "registry.example.com/example"
+	mall := "registry.example.com/example/aiyoung@sha256:" + strings.Repeat("a", 64)
+	minio := "registry.example.com/example/aiyoung@sha256:" + strings.Repeat("b", 64)
+	cmd := exec.Command("docker", "compose", "--project-name", "ecommerce-test",
+		"--env-file", envFile,
+		"-f", "../docker-compose.yml", "-f", "../docker-compose.test.yml",
+		"-f", "../docker-compose.caddy.yml", "-f", "../docker-compose.registry.yml",
+		"config", "--format", "json")
+	cmd.Env = append(os.Environ(),
+		"DEPENDENCY_REGISTRY="+registry,
+		"MALL_IMAGE="+mall, "MINIO_IMAGE="+minio,
+		"POSTGRES_PASSWORD=test-only", "REDIS_PASSWORD=test-only",
+		"GRAFANA_ADMIN_PASSWORD=test-only",
+		"AUTH_ACCESS_TOKEN_SECRET="+strings.Repeat("a", 32),
+		"AUTH_REFRESH_TOKEN_SECRET="+strings.Repeat("b", 32),
+		"AUTH_PHONE_SECRET="+strings.Repeat("c", 32),
+		"MINIO_ROOT_USER=test-admin", "MINIO_ROOT_PASSWORD=test-admin-only",
+		"STORAGE_ACCESS_KEY=test-app", "STORAGE_SECRET_KEY=test-only")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+
+	var compose struct {
+		Services map[string]struct{ Image string }
+	}
+	require.NoError(t, json.Unmarshal(output, &compose))
+	require.NotEmpty(t, compose.Services)
+	for service, svc := range compose.Services {
+		switch service {
+		case "mall":
+			require.Equal(t, mall, svc.Image)
+		case "minio":
+			require.Equal(t, minio, svc.Image)
+		default:
+			require.True(t, strings.HasPrefix(svc.Image, registry+"/mirror-"),
+				"%s must resolve to an ACR mirror, got %q", service, svc.Image)
+		}
+	}
+	require.Contains(t, compose.Services["caddy"].Image, "/mirror-caddy:")
+}

@@ -56,7 +56,7 @@ esac
 			image := "registry.example.com/example/aiyoung@sha256:" + strings.Repeat("a", 64)
 			minioImage := "registry.example.com/example/aiyoung@sha256:" + strings.Repeat("b", 64)
 			logFile := filepath.Join(root, "docker.log")
-			cmd := exec.Command("bash", scriptPath, root, image, minioImage)
+			cmd := exec.Command("bash", scriptPath, root, image, minioImage, "registry.example.com/example")
 			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 				"MOCK_LOG="+logFile, "MINIO_IMAGE=stale-local-minio:old",
 				"MOCK_PULL_RC="+zeroDefault(tc.pullRC),
@@ -90,6 +90,7 @@ esac
 			require.Contains(t, string(log), " pull mall minio caddy")
 			require.Contains(t, string(log), "images="+image+" "+minioImage)
 			require.Contains(t, string(log), "docker-compose.caddy.yml")
+			require.Contains(t, string(log), "docker-compose.registry.yml")
 			if tc.configRC != "" || tc.pullRC != "" {
 				require.NotContains(t, string(log), " up -d", "preflight failure must not replace services")
 			}
@@ -112,16 +113,33 @@ esac
 
 func TestServerDeploymentRequiresBothDigests(t *testing.T) {
 	image := "registry.example.com/example/aiyoung@sha256:" + strings.Repeat("a", 64)
+	const registry = "registry.example.com/example"
 	for _, args := range [][]string{
 		{"/unused", image},
-		{"/unused", image, "registry.example.com/example/aiyoung:minio-12345678"},
-		{"/unused", "registry.example.com/example/aiyoung:mall-12345678", image},
-		{"/unused", image, image + "'; echo injected"},
+		{"/unused", image, "registry.example.com/example/aiyoung:minio-12345678", registry},
+		{"/unused", "registry.example.com/example/aiyoung:mall-12345678", image, registry},
+		{"/unused", image, image + "'; echo injected", registry},
 	} {
 		cmd := exec.Command("bash", append([]string{"deploy-test.sh"}, args...)...)
 		output, err := cmd.CombinedOutput()
 		require.Error(t, err, "%s", output)
 		require.Contains(t, string(output), "immutable")
+	}
+}
+
+func TestServerDeploymentRequiresDependencyRegistry(t *testing.T) {
+	image := "registry.example.com/example/aiyoung@sha256:" + strings.Repeat("a", 64)
+	for _, registry := range []string{
+		"",
+		"registry.example.com",
+		"registry.example.com/../other",
+		"https://registry.example.com/example",
+		"registry.example.com/example'; echo injected",
+	} {
+		cmd := exec.Command("bash", "deploy-test.sh", "/unused", image, image, registry)
+		output, err := cmd.CombinedOutput()
+		require.Error(t, err, "%s", output)
+		require.Contains(t, string(output), "dependency registry")
 	}
 }
 

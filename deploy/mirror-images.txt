@@ -1,0 +1,23 @@
+# Third-party images the test stack needs, and the repository each one is
+# mirrored to under <ACR_REGISTRY>/<ACR_NAMESPACE>. The test server cannot reach
+# Docker Hub; CI copies every entry into ACR before deploying
+# (.github/scripts/mirror-images.sh), and docker-compose.registry.yml points the
+# stack at these repositories instead of the public originals.
+#
+# Keep the source tag identical to the one in docker-compose.yml,
+# docker-compose.caddy.yml or docker-compose.dev.yml; deploy tests enforce it.
+# Sources are Docker Hub references. Keep them free of a registry port so the
+# script can drop the tag by removing everything after the last colon.
+#
+# A mirrored tag is never refreshed automatically. Bump the version here (and in
+# Compose) to publish a new ACR tag; upstream floating tags such as
+# postgres:16-alpine intentionally stay at the first mirrored content.
+docker.io/library/postgres:16-alpine                     mirror-postgres:16-alpine
+docker.io/library/redis:7-alpine                         mirror-redis:7-alpine
+docker.io/jaegertracing/all-in-one:1.60                  mirror-jaeger:1.60
+docker.io/otel/opentelemetry-collector-contrib:0.132.0   mirror-otel-collector:0.132.0
+docker.io/prom/prometheus:v3.5.0                         mirror-prometheus:v3.5.0
+docker.io/grafana/loki:2.9.0                             mirror-loki:2.9.0
+docker.io/grafana/promtail:2.9.0                         mirror-promtail:2.9.0
+docker.io/grafana/grafana:10.2.0                         mirror-grafana:10.2.0
+docker.io/library/caddy:2.11.7-alpine                    mirror-caddy:2.11.7-alpine

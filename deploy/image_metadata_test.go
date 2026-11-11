@@ -28,7 +28,8 @@ func TestACRImageMetadata(t *testing.T) {
 			data, err := os.ReadFile(output)
 			require.NoError(t, err)
 			repo := "registry.example.com/" + tc.want + "/aiyoung"
-			require.Equal(t, "name="+repo+"\nregistry=registry.example.com\nmall_tag="+repo+":mall-deadbeef\nminio_tag="+repo+":minio-deadbeef\n", string(data))
+			require.Equal(t, "name="+repo+"\nregistry=registry.example.com\ndependency_registry=registry.example.com/"+tc.want+
+				"\nmall_tag="+repo+":mall-deadbeef\nminio_tag="+repo+":minio-deadbeef\n", string(data))
 		})
 	}
 	for _, tc := range []struct{ registry, namespace, sha string }{
@@ -70,6 +71,7 @@ esac
 		cmd := exec.Command("bash", "../.github/scripts/deploy-test.sh")
 		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 			"MOCK_SSH_LOG="+logFile, "MALL_IMAGE="+mall, "MINIO_IMAGE="+image,
+			"DEPENDENCY_REGISTRY=registry.example.com/example",
 			"TEST_SSH_HOST=server.example.com", "TEST_SSH_USER=deploy", "TEST_SSH_PORT=22",
 			"TEST_SSH_PRIVATE_KEY=fake-key", "TEST_SSH_KNOWN_HOSTS=fake-host-key",
 			"TEST_DEPLOY_PATH=/opt/ecommerce-test", "RELEASE_ID=release-test")
@@ -82,8 +84,38 @@ esac
 		require.NoError(t, err, "%s", out)
 		data, err := os.ReadFile(logFile)
 		require.NoError(t, err)
-		require.Contains(t, string(data), "'"+mall+"' '"+minio+"'")
+		require.Contains(t, string(data), "'"+mall+"' '"+minio+"' 'registry.example.com/example'")
 		require.Contains(t, string(data), "StrictHostKeyChecking=yes")
 		require.NotContains(t, string(data), "fake-key")
+	}
+}
+
+func TestSSHDeploymentRejectsInvalidDependencyRegistry(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	require.NoError(t, os.Mkdir(bin, 0700))
+	logFile := filepath.Join(root, "ssh.log")
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "ssh"), []byte(`#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$MOCK_SSH_LOG"
+`), 0700))
+	image := "registry.example.com/example/aiyoung@sha256:" + strings.Repeat("a", 64)
+	for _, dependencyRegistry := range []string{
+		"",
+		"registry.example.com",
+		"registry.example.com/../other",
+		"https://registry.example.com/example",
+		"registry.example.com/example'; touch injected",
+	} {
+		_ = os.Remove(logFile)
+		cmd := exec.Command("bash", "../.github/scripts/deploy-test.sh")
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"MOCK_SSH_LOG="+logFile, "MALL_IMAGE="+image, "MINIO_IMAGE="+image,
+			"DEPENDENCY_REGISTRY="+dependencyRegistry,
+			"TEST_SSH_HOST=server.example.com", "TEST_SSH_USER=deploy", "TEST_SSH_PORT=22",
+			"TEST_SSH_PRIVATE_KEY=fake-key", "TEST_SSH_KNOWN_HOSTS=fake-host-key",
+			"TEST_DEPLOY_PATH=/opt/ecommerce-test", "RELEASE_ID=release-test")
+		out, err := cmd.CombinedOutput()
+		require.Error(t, err, "%s", out)
+		require.NoFileExists(t, logFile, "invalid dependency registry must fail before SSH")
 	}
 }

@@ -17,5 +17,7 @@ namespace="${ACR_NAMESPACE:-${NAMESPACE:-}}"
 # Different component prefixes are essential when sharing a single repository.
 short_sha="${GITHUB_SHA: -8}"
 repository="$ACR_REGISTRY/$namespace/aiyoung"
-printf 'name=%s\nregistry=%s\nmall_tag=%s:mall-%s\nminio_tag=%s:minio-%s\n' \
-  "$repository" "$ACR_REGISTRY" "$repository" "$short_sha" "$repository" "$short_sha" >> "$GITHUB_OUTPUT"
+# Dependency mirrors live beside mall and MinIO in the same ACR namespace.
+printf 'name=%s\nregistry=%s\ndependency_registry=%s/%s\nmall_tag=%s:mall-%s\nminio_tag=%s:minio-%s\n' \
+  "$repository" "$ACR_REGISTRY" "$ACR_REGISTRY" "$namespace" \
+  "$repository" "$short_sha" "$repository" "$short_sha" >> "$GITHUB_OUTPUT"

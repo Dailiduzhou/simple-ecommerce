@@ -2,11 +2,13 @@
 
 ## 拓扑与域名
 
-部署使用三份配置，顺序不能改变：
+部署使用四份配置，顺序不能改变：
 
 ```text
-docker-compose.yml + docker-compose.test.yml + docker-compose.caddy.yml
+docker-compose.yml + docker-compose.test.yml + docker-compose.caddy.yml + docker-compose.registry.yml
 ```
+
+`docker-compose.registry.yml` 把 PostgreSQL、Redis、Jaeger、OTel、Prometheus、Loki、Promtail、Grafana、Caddy 换成 ACR 中的镜像副本（`deploy/mirror-images.txt` 是唯一清单）。测试服务器无法访问 Docker Hub，CI 在部署前把这些镜像复制进 ACR，服务器只从 ACR 拉取。该 overlay 要求 `DEPENDENCY_REGISTRY=<ACR_REGISTRY>/<ACR_NAMESPACE>`，由 workflow 传入，不写进服务器 `.env`，也没有任何公网兜底默认值。
 
 本栈只部署**后端、存储和监控**。前端由自己的发布流程独立部署，可以放在任意静态托管/CDN，与本栈不共享域名、容器或发布目录，因此这里没有前端站点、静态根目录或 `WEB_DOMAIN`。
 
@@ -44,7 +46,7 @@ Console 除 MinIO 自身登录外还受 **Caddy 来源 IP 白名单**限制。�
 
 需要 Linux `x86_64`（发布镜像是 `linux/amd64`）、Bash、Docker Engine、Docker Compose **>= 2.24.4**、`flock`（util-linux）、tar、gzip。SSH 专用部署用户须有 Docker 权限并能写部署目录；Docker 权限相当于高权限。
 
-为三个域名添加 A 记录。只有 IPv6 完全可用时才添加 AAAA。开放 80/443，确保没有 Nginx/其他服务占用。服务器须能访问公网 ACME 服务及阿里云 ACR/依赖镜像仓库。
+为三个域名添加 A 记录。只有 IPv6 完全可用时才添加 AAAA。开放 80/443，确保没有 Nginx/其他服务占用。服务器须能访问公网 ACME 服务与阿里云 ACR；**不需要**能访问 Docker Hub，第三方镜像全部由 CI 镜像到 ACR。
 
 ```bash
 sudo install -d -m 700 -o "$USER" -g "$(id -gn)" /opt/simple-ecommerce-test
@@ -81,14 +83,16 @@ chmod 600 /opt/simple-ecommerce-test/.env
 
 先完成第 4 节的 ACR 凭据配置。首次可以直接运行 workflow，启动全部服务后再按第 3 节创建 bucket/IAM；初始化完成前不要开放媒体业务。部署探测不要求 bucket 已存在。
 
-如果已有发布的 MinIO 镜像，也可以从临时 checkout 单独启动入口和存储。将下面镜像引用替换为实际已发布的标签或 digest；始终使用固定项目名 `ecommerce-test` 复用已有数据卷：
+如果已有发布的 MinIO 镜像，也可以从临时 checkout 单独启动入口和存储。将下面镜像引用替换为实际已发布的标签或 digest；始终使用固定项目名 `ecommerce-test` 复用已有数据卷。该命令虽然只启动 `caddy` 和 `minio`，但仍要从 ACR 拉取 `mirror-caddy`，因此需要先让 workflow 完成一次镜像同步，或手工把 `mirror-caddy` 推送到 ACR：
 
 ```bash
+DEPENDENCY_REGISTRY='<ACR_REGISTRY>/<ACR_NAMESPACE>' \
 MINIO_IMAGE='<ACR_REGISTRY>/<ACR_NAMESPACE>/aiyoung:minio-<SHA后8位>' \
 MALL_IMAGE=bootstrap-only docker compose \
   --project-name ecommerce-test \
   --env-file /opt/simple-ecommerce-test/.env \
   -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.caddy.yml \
+  -f docker-compose.registry.yml \
   up -d --no-deps caddy minio
 ```
 
@@ -160,15 +164,19 @@ unset ACR_PASSWORD
 
 CI 使用 GitHub Secrets 中的 ACR 推送凭据；不向服务器传递推送密码。`GITHUB_TOKEN` 不再用于镜像发布，已移除 `packages: write`。ACR 密码不能与 MinIO 管理员或应用密码混用。若服务器使用临时 ACR 凭据，需另行配置续期。
 
-只有后端和 MinIO 改为 ACR 镜像；Caddy、PostgreSQL、Redis 和监控组件仍使用原镜像源。这不会自动解决所有 Docker Hub 拉取问题。
+服务器拉取账号必须能读取同一命名空间下的 `mirror-*` 仓库（与 `aiyoung` 同级）。首次发布时 CI 会自动创建这些仓库并推送镜像，因此 ACR 需要允许推送时自动建仓库；若关闭了该选项，请预先手工创建 `mirror-postgres`、`mirror-redis`、`mirror-jaeger`、`mirror-otel-collector`、`mirror-prometheus`、`mirror-loki`、`mirror-promtail`、`mirror-grafana`、`mirror-caddy`。
+
+后端、MinIO 以及全部第三方依赖都走 ACR。workflow 在构建镜像前先执行 `.github/scripts/mirror-images.sh`：按 `deploy/mirror-images.txt` 把 Docker Hub 镜像复制到 `<ACR_REGISTRY>/<ACR_NAMESPACE>/mirror-*`，只复制 `linux/amd64` 清单，已存在的目标标签直接跳过。因此首次发布需要 runner 能访问 Docker Hub，之后即使 Docker Hub 不可用也不影响部署。
+
+镜像标签不会自动跟随上游浮动标签（例如 `postgres:16-alpine` 在 ACR 中固定为首次复制的内容）。升级依赖时同时修改 Compose 和 `deploy/mirror-images.txt` 中的版本，再删除或改用新的 ACR 标签；`deploy` 包的测试会校验三份 Compose 的字面镜像与清单、overlay 保持一致。
 
 运行顺序：
 
 1. 单元/竞态测试和一次性 PostgreSQL、Redis、MinIO 集成测试。
-2. 独立 deployment-config job 检查脚本、三份 Compose 合并结果，并用实际部署版本的 Caddy 验证配置、执行回环 HTTP 路由/CORS 透传/Console ACL 测试。只使用临时假凭据，不申请证书。
-3. 仅默认分支、非 PR、显式启用后，分别构建 `linux/amd64` 后端及 MinIO 镜像（测试服务器只有 amd64；不启用 QEMU、不做多架构），推送到同一 ACR 仓库的 `mall-<末8位>` / `minio-<末8位>` 标签。两者均成功后才部署。服务器若是 arm64，需同时修改 workflow 的 `platforms` 并接受 MinIO 源码构建的耗时。
+2. 独立 deployment-config job 检查脚本、四份 Compose 合并结果（含 ACR overlay），并用实际部署版本的 Caddy 验证配置、执行回环 HTTP 路由/CORS 透传/Console ACL 测试。只使用临时假凭据，不申请证书。
+3. 仅默认分支、非 PR、显式启用后，先把 `deploy/mirror-images.txt` 列出的依赖镜像同步到 ACR（已存在则跳过），再分别构建 `linux/amd64` 后端及 MinIO 镜像（测试服务器只有 amd64；不启用 QEMU、不做多架构），推送到同一 ACR 仓库的 `mall-<末8位>` / `minio-<末8位>` 标签。镜像全部就绪后才部署。服务器若是 arm64，需同时修改 workflow 的 `platforms`、镜像同步的平台选择，并接受 MinIO 源码构建的耗时。
 4. 校验 SSH host key，仅打包 Git 中已跟踪的部署文件，上传到独立 release 目录；服务器密钥、前端产物不打包。
-5. 通过 SSH 传入两个独立 digest，按 digest 拉取后端和 MinIO，并拉取固定版本 Caddy；检查 Caddy 配置后替换服务。任一镜像拉取失败都不会进入服务替换阶段。
+5. 通过 SSH 传入两个独立 digest 和 `DEPENDENCY_REGISTRY`，按 digest 拉取后端、MinIO，并从 ACR 拉取 Caddy 及其余依赖镜像；检查 Caddy 配置后替换服务。任一镜像拉取失败都不会进入服务替换阶段。
 6. 等待容器就绪，先验证 Caddy 对三个域名的 HTTPS 与 Console 上游（首次签发证书最多等约 2 分钟，失败时打印 Caddy 日志），再验证后端能否经 Caddy 访问存储 API。Console 允许预期的 403；全部通过后更新 `current`。
 
 CI 的 MinIO 不连接服务器，不删除服务器对象；部署过程不建桶、不写入测试对象、不清理镜像或数据卷。workflow 与服务器 `flock` 都串行化部署。
@@ -187,6 +195,7 @@ CI 的 MinIO 不连接服务器，不删除服务器对象；部署过程不建�
     docker-compose.yml
     docker-compose.test.yml
     docker-compose.caddy.yml
+    docker-compose.registry.yml
     deploy/
     app/mall/configs/
 ```
@@ -214,7 +223,8 @@ release=/opt/simple-ecommerce-test/releases/CHOSEN_RELEASE
 bash "$release/deploy/deploy-test.sh" \
   /opt/simple-ecommerce-test \
   "$(head -n 1 "$release/image")" \
-  "$(head -n 1 "$release/minio-image")"
+  "$(head -n 1 "$release/minio-image")" \
+  '<ACR_REGISTRY>/<ACR_NAMESPACE>'
 ```
 
 回退复用当前服务器 `.env`，不恢复旧配置或数据。前端由独立流程发布和回退。上线支付仍受项目约束：微信是桩实现，支付宝仅支持沙箱。

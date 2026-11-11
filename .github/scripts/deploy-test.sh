@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-for name in MALL_IMAGE MINIO_IMAGE TEST_SSH_HOST TEST_SSH_USER TEST_SSH_PRIVATE_KEY TEST_SSH_KNOWN_HOSTS TEST_SSH_PORT TEST_DEPLOY_PATH RELEASE_ID; do
+for name in MALL_IMAGE MINIO_IMAGE DEPENDENCY_REGISTRY TEST_SSH_HOST TEST_SSH_USER TEST_SSH_PRIVATE_KEY TEST_SSH_KNOWN_HOSTS TEST_SSH_PORT TEST_DEPLOY_PATH RELEASE_ID; do
   [[ -n "${!name:-}" ]] || { echo "Required deployment variable missing: $name" >&2; exit 1; }
 done
 # These values become remote shell arguments. Restrict them before interpolation.
@@ -18,6 +18,10 @@ TEST_DEPLOY_PATH="${TEST_DEPLOY_PATH%/}"
 for name in MALL_IMAGE MINIO_IMAGE; do
   [[ "${!name}" =~ ^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$ ]] || { echo "An immutable image digest is required: $name" >&2; exit 1; }
 done
+# The dependency mirrors live in the same ACR namespace as mall and MinIO. The
+# value is derived from ACR_REGISTRY/ACR_NAMESPACE, never from the server .env.
+[[ "$DEPENDENCY_REGISTRY" =~ ^[a-z0-9][a-z0-9.-]*(:[0-9]{1,5})?/[a-z0-9]+([_-][a-z0-9]+)*$ ]] ||
+  { echo 'Invalid dependency registry' >&2; exit 1; }
 
 ssh_dir="$(mktemp -d)"
 trap 'rm -rf "$ssh_dir"' EXIT
@@ -40,9 +44,9 @@ ssh "${ssh_options[@]}" "$target" "umask 077; mkdir -p '$release_dir'"
 # committed with the workflow that ships it. Runtime secrets remain in
 # TEST_DEPLOY_PATH/.env, outside these release directories.
 # shellcheck disable=SC2029
-git archive --format=tar HEAD docker-compose.yml docker-compose.test.yml docker-compose.caddy.yml deploy app/mall/configs |
+git archive --format=tar HEAD docker-compose.yml docker-compose.test.yml docker-compose.caddy.yml docker-compose.registry.yml deploy app/mall/configs |
   gzip |
   ssh "${ssh_options[@]}" "$target" "tar -xzf - -C '$release_dir'"
 # shellcheck disable=SC2029
 ssh "${ssh_options[@]}" "$target" \
-  "bash '$release_dir/deploy/deploy-test.sh' '$TEST_DEPLOY_PATH' '$MALL_IMAGE' '$MINIO_IMAGE'"
+  "bash '$release_dir/deploy/deploy-test.sh' '$TEST_DEPLOY_PATH' '$MALL_IMAGE' '$MINIO_IMAGE' '$DEPENDENCY_REGISTRY'"

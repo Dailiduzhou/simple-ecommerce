@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-deploy_path="${1:?usage: deploy-test.sh DEPLOY_PATH MALL_IMAGE_DIGEST MINIO_IMAGE_DIGEST}"
+deploy_path="${1:?usage: deploy-test.sh DEPLOY_PATH MALL_IMAGE_DIGEST MINIO_IMAGE_DIGEST DEPENDENCY_REGISTRY}"
 export MALL_IMAGE="${2:?an immutable mall image digest is required}"
 export MINIO_IMAGE="${3:?an immutable MinIO image digest is required}"
+# <ACR_REGISTRY>/<ACR_NAMESPACE>: the mirrors of Docker Hub images referenced by
+# docker-compose.registry.yml. Passed by CI so the server never has to reach a
+# public registry; there is deliberately no default.
+export DEPENDENCY_REGISTRY="${4:?the dependency registry (ACR registry and namespace) is required}"
 for name in MALL_IMAGE MINIO_IMAGE; do
   [[ "${!name}" =~ ^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$ ]] || { echo "An immutable image digest is required: $name" >&2; exit 1; }
 done
+[[ "$DEPENDENCY_REGISTRY" =~ ^[a-z0-9][a-z0-9.-]*(:[0-9]{1,5})?/[a-z0-9]+([_-][a-z0-9]+)*$ ]] ||
+  { echo 'Invalid dependency registry' >&2; exit 1; }
 release_dir="$(cd "$(dirname "$0")/.." && pwd)"
 env_file="$deploy_path/.env"
 [[ -f "$env_file" ]] || { echo "Create $env_file from deploy/test.env.example before deploying" >&2; exit 1; }
@@ -19,13 +25,14 @@ compose=(
   docker compose --project-name ecommerce-test
   --project-directory "$release_dir" --env-file "$env_file"
   -f "$release_dir/docker-compose.yml" -f "$release_dir/docker-compose.test.yml"
-  -f "$release_dir/docker-compose.caddy.yml"
+  -f "$release_dir/docker-compose.caddy.yml" -f "$release_dir/docker-compose.registry.yml"
 )
 # !override in the overlay requires Compose >= 2.24.4. Fail before replacing
 # any running service if configuration, registry access or either image is invalid.
 "${compose[@]}" config --quiet
 # Provision read-only ACR docker login as the SSH deployment user beforehand.
-# Never forward CI push credentials to the server or build images here.
+# Never forward CI push credentials to the server or build images here. The
+# dependency mirrors are copied into ACR by CI before this script runs.
 "${compose[@]}" pull mall minio caddy
 # Validate the gateway BEFORE replacing running services. The frontend is deployed
 # separately, so there is no local static root to check here. Do not print the
