@@ -1,0 +1,94 @@
+# Public HTTPS overlay. Use after docker-compose.yml and docker-compose.test.yml.
+# Requires Compose >= 2.24.4. Keep project name ecommerce-test to retain data volumes.
+# The three domains have no defaults on purpose: they are deployment configuration,
+# not repository content, and an empty value must stop the stack before Caddy can
+# request a certificate for the wrong hostname. The frontend is deployed separately,
+# so there is no web virtual host, static root or WEB_DOMAIN here.
+services:
+  mall:
+    ports: !reset []
+    environment:
+      HTTP_TRUSTED_PROXY: 172.30.50.10/32
+      # Frontend and backend are not deployed together, so the browser origin is
+      # not known here. Default to allowing every origin; set an explicit
+      # comma-separated allowlist when the frontend origins are fixed.
+      HTTP_CORS_ALLOWED_ORIGINS: ${HTTP_CORS_ALLOWED_ORIGINS:-*}
+      STORAGE_ENDPOINT: ${MINIO_DOMAIN:?set MINIO_DOMAIN (public S3 API DNS name)}
+      STORAGE_PUBLIC_ENDPOINT: ${MINIO_DOMAIN:?set MINIO_DOMAIN (public S3 API DNS name)}
+      STORAGE_USE_TLS: "true"
+      STORAGE_PUBLIC_USE_TLS: "true"
+      STORAGE_ALLOW_INSECURE: "false"
+    networks: [default, edge]
+
+  minio:
+    # CI publishes MinIO and mall to the same ACR repository with separate tags.
+    # Deployment passes the exact MinIO digest and pulls it before replacing services.
+    image: ${MINIO_IMAGE:?set the MinIO image reference from ACR}
+    pull_policy: missing
+    profiles: !reset []
+    ports: !reset []
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set separate MinIO administrator credentials}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set separate MinIO administrator credentials}
+      MINIO_BROWSER_REDIRECT_URL: https://${CONSOLE_DOMAIN:?set CONSOLE_DOMAIN (public console DNS name)}
+      # Browser uploads use presigned URLs, so any separately deployed frontend
+      # origin must be accepted. Narrow this if the frontend origins are known.
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_API_CORS_ALLOW_ORIGIN:-*}
+    networks: [default, edge]
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      GOMEMLIMIT: 96MiB
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN (public backend DNS name)}
+      MINIO_DOMAIN: ${MINIO_DOMAIN:?set MINIO_DOMAIN (public S3 API DNS name)}
+      CONSOLE_DOMAIN: ${CONSOLE_DOMAIN:?set CONSOLE_DOMAIN (public console DNS name)}
+      # Fail closed: explicitly allow administrator public IPs/CIDRs to use Console.
+      CONSOLE_ALLOWED_CIDRS: ${CONSOLE_ALLOWED_CIDRS:-127.0.0.1/32 ::1/128}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null -T 5 http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 10s
+    networks:
+      edge:
+        ipv4_address: 172.30.50.10
+        aliases:
+          - ${API_DOMAIN:?set API_DOMAIN (public backend DNS name)}
+          - ${MINIO_DOMAIN:?set MINIO_DOMAIN (public S3 API DNS name)}
+          - ${CONSOLE_DOMAIN:?set CONSOLE_DOMAIN (public console DNS name)}
+
+  # Validation must not claim the running gateway's static IP or published ports.
+  # Explicit one-off invocation activates this profile; normal up never starts it.
+  caddy-check:
+    extends: caddy
+    profiles: [validation]
+    restart: "no"
+    ports: !reset []
+    networks: !reset {}
+    network_mode: none
+    healthcheck:
+      disable: true
+
+networks:
+  # Dedicated network avoids changing the existing database/Redis network.
+  # Check for host/VPN subnet conflicts before first deployment.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.50.0/24
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,36 @@
+# Domain names come from the deployment .env (via Compose). These are config-time
+# {$VAR} substitutions without defaults: Compose refuses to start without them and
+# an empty value leaves the site block unusable, so Caddy fails to load instead of
+# serving an unintended hostname. Never commit real domains or point these at IPs.
+# No access logs here: presigned S3 query strings contain temporary credentials.
+#
+# The frontend is built and published separately from this backend stack, so there
+# is no web virtual host or static root. API CORS is configured on the backend via
+# HTTP_CORS_ALLOWED_ORIGINS; adding headers here would duplicate them and break
+# browsers. The frontend's public origin therefore needs no DNS entry on this host.
+
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# Caddy is the public edge. Its default (no trusted_proxies configured) is to
+	# set X-Forwarded-For to this hop's client address, so a spoofed incoming chain
+	# never reaches the backend, which trusts only 172.30.50.10.
+	reverse_proxy mall:8000
+}
+
+{$MINIO_DOMAIN} {
+	# Preserve Host, path and query: changing them breaks S3 signatures.
+	# CORS is handled by MinIO (MINIO_API_CORS_ALLOW_ORIGIN), not duplicated here.
+	request_body {
+		max_size 20MB
+	}
+	reverse_proxy minio:9000
+}
+
+{$CONSOLE_DOMAIN} {
+	# Independent of MinIO's own login. Never trust a forwarded IP for this ACL.
+	# The default is loopback-only, so a missing setting denies public access.
+	@blocked not remote_ip {$CONSOLE_ALLOWED_CIDRS:127.0.0.1/32 ::1/128}
+	respond @blocked "Forbidden" 403
+	reverse_proxy minio:9001
+}

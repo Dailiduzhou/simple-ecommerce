@@ -42,6 +42,13 @@ message Server {
     // CIDRs of reverse proxies whose X-Forwarded-For may be trusted. Empty
     // means no proxy is trusted and the transport peer address is used.
     repeated string trusted_proxies = 4;
+    // Comma-separated browser origins allowed to call the HTTP API (CORS).
+    // Empty disables CORS. "*" reflects every request origin, including
+    // credentialed requests. Entries are exact scheme://host[:port] values;
+    // never put paths or wildcard patterns here. The frontend is deployed
+    // separately, so this is the only place the API's cross-origin policy is
+    // configured: Caddy must not add competing CORS headers.
+    string cors_allowed_origins = 5;
   }
   message GRPC {
     string network = 1;
@@ -50,9 +57,10 @@ message Server {
   }
   HTTP http = 1;
   GRPC grpc = 2;
-  // Only explicit false enables permissive development CORS. Unset is treated
-  // as production to keep existing deployments restrictive.
-  optional bool is_production = 3;
+  // Replaced by server.http.cors_allowed_origins; CORS is no longer tied to a
+  // production flag. Reserved so the number is not silently reused.
+  reserved 3;
+  reserved "is_production";
 }
 
 message Data {

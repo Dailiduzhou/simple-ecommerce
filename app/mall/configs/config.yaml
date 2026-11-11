@@ -1,14 +1,14 @@
 server:
-  # Explicit false allows all CORS origins, methods, headers and credentials.
-  # Keep true in production; this is independent of payment sandbox settings.
-  is_production: "${APP_IS_PRODUCTION:true}"
+  # Separate frontends call this API cross-origin. The HTTP CORS filter reads a
+  # comma-separated origin list; empty disables CORS and "*" allows every
+  # origin (with credentials). Caddy must not add a second CORS policy.
   http:
     addr: 0.0.0.0:8000
     timeout: 10s
-    # CIDRs of reverse proxies whose X-Forwarded-For may be trusted for rate
-    # limiting. Leave empty when the service is exposed directly; every entry
-    # lets that hop decide the client address.
-    trusted_proxies: []
+    cors_allowed_origins: "${HTTP_CORS_ALLOWED_ORIGINS:}"
+    # Trust only the deployment's Caddy address; local configs default to loopback.
+    # Never use 0.0.0.0/0. Each entry lets that hop decide the client address.
+    trusted_proxies: ["${HTTP_TRUSTED_PROXY:127.0.0.1/32}"]
   grpc:
     addr: 0.0.0.0:9000
     timeout: 10s

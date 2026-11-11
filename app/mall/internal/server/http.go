@@ -54,10 +54,12 @@ func NewHTTPServer(c *conf.Server, ac *conf.Auth, authUc biz.AuthUsecase, mall *
 	}
 
 	filters := []http.FilterFunc{custommid.RequestBodyLimit}
-	if c.IsProduction != nil && !c.GetIsProduction() {
+	if origins := c.Http.GetCorsAllowedOrigins(); origins != "" {
 		// CORS must wrap body limits, routing and authentication so preflights
-		// short-circuit them and error responses also carry CORS headers.
-		filters = append([]http.FilterFunc{custommid.DevelopmentCORS}, filters...)
+		// short-circuit them and error responses also carry CORS headers. The
+		// frontend is deployed separately, so the policy lives in configuration
+		// (HTTP_CORS_ALLOWED_ORIGINS) rather than in the reverse proxy.
+		filters = append([]http.FilterFunc{custommid.CORS(origins)}, filters...)
 	}
 	opts := []http.ServerOption{
 		http.Filter(filters...),

@@ -1,0 +1,44 @@
+# ACR mirrors of the Docker Hub images used by the test stack. The test server
+# cannot reach registry-1.docker.io, so the deploy workflow copies these images
+# into the deployment ACR repository before every release (see
+# deploy/mirror-images.txt and .github/scripts/mirror-images.sh). Apply this
+# overlay AFTER docker-compose.yml, docker-compose.test.yml and
+# docker-compose.caddy.yml; keep deploy/mirror-images.txt in sync (deploy tests
+# enforce it).
+#
+# DEPENDENCY_REGISTRY is <ACR_REGISTRY>/<ACR_NAMESPACE>, the same repository
+# namespace that already holds the mall and MinIO images. It is supplied by the
+# deploy workflow and has no default: a deployment must never silently fall back
+# to a public registry this server cannot reach.
+services:
+  postgres:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-postgres:16-alpine
+
+  redis:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-redis:7-alpine
+
+  jaeger:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-jaeger:1.60
+
+  otel-collector:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-otel-collector:0.132.0
+
+  prometheus:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-prometheus:v3.5.0
+
+  loki:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-loki:2.9.0
+
+  promtail:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-promtail:2.9.0
+
+  grafana:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-grafana:10.2.0
+
+  caddy:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-caddy:2.11.7-alpine
+
+  # `extends: caddy` is resolved per-file, so the one-off validation service does
+  # not inherit the override above and must be pointed at the mirror explicitly.
+  caddy-check:
+    image: ${DEPENDENCY_REGISTRY:?set DEPENDENCY_REGISTRY to <ACR_REGISTRY>/<ACR_NAMESPACE>}/mirror-caddy:2.11.7-alpine
