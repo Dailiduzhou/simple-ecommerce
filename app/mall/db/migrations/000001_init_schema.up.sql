@@ -546,7 +546,9 @@ BEGIN
       END IF;
     WHEN 'orders' THEN
       targets := ARRAY['order:user:' || current_row.user_id || ':gen',
-                       'order:user:ongoing:' || current_row.user_id || ':gen'];
+                       'order:user:ongoing:' || current_row.user_id || ':gen',
+                       'order:merchant:' || current_row.merchant_id || ':gen',
+                       'order:all:gen'];
     WHEN 'payments' THEN
       targets := ARRAY['payment:' || current_row.id || ':gen',
                        'payment:order:' || current_row.order_id || ':gen',
