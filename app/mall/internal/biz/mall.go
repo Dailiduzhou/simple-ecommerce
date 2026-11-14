@@ -14,6 +14,9 @@ import (
 // ProductPriceMinor validates before converting: decimal.IntPart truncates
 // overflowing big integers instead of reporting an error.
 func ProductPriceMinor(price decimal.Decimal) (int64, error) {
+	if !productDecimalComplexityOK(price) {
+		return 0, invalidProductPrice()
+	}
 	minor := price.Shift(2)
 	if minor.IsNegative() || !minor.Equal(minor.Truncate(0)) || minor.GreaterThan(decimal.NewFromInt(math.MaxInt64)) {
 		return 0, errors.BadRequest("PRODUCT_PRICE_INVALID", "price must be non-negative, use at most two decimal places and fit int64 minor units")
@@ -25,7 +28,7 @@ func ProductPriceMinor(price decimal.Decimal) (int64, error) {
 // either raise the charged price above the list price or zero it out, so
 // both are rejected instead of silently mischarging.
 func ProductDiscount(discount decimal.Decimal) error {
-	if !discount.IsPositive() || discount.GreaterThan(decimal.NewFromInt(1)) || !discount.Equal(discount.Round(2)) {
+	if !productDecimalComplexityOK(discount) || !discount.IsPositive() || discount.GreaterThan(decimal.NewFromInt(1)) || !discount.Equal(discount.Round(2)) {
 		return errors.BadRequest("PRODUCT_DISCOUNT_INVALID", "discount must be in (0,1] with at most two decimal places")
 	}
 	return nil
@@ -152,23 +155,22 @@ func (uc *productUsecase) CreateProduct(ctx context.Context, actor Actor, mercha
 	if err := ValidateProductStatus(int32(status)); err != nil {
 		return nil, err
 	}
-	price, err := decimal.NewFromString(priceStr)
+	if stock < 0 {
+		return nil, errors.BadRequest("PRODUCT_STOCK_INVALID", "initial stock must be non-negative")
+	}
+	price, err := ParseProductPrice(priceStr)
 	if err != nil {
-		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
 		return nil, err
 	}
-	if _, err := ProductPriceMinor(price); err != nil {
-		return nil, err
-	}
-	discount, err := decimal.NewFromString(discountStr)
+	discount, err := ParseProductDiscount(discountStr)
 	if err != nil {
-		uc.log.WithContext(ctx).Errorf("invalid discount: %v", err)
-		return nil, err
-	}
-	if err := ProductDiscount(discount); err != nil {
 		return nil, err
 	}
 	cover := mediaFromCoverURL(coverImage)
+	name, err = ValidateProductInput(categoryID, name, descrption, cover, mediaAssets)
+	if err != nil {
+		return nil, err
+	}
 	return uc.repo.CreateProduct(ctx, merchantID, categoryID, name, price, discount, stock, status, cover, mediaAssets, descrption)
 }
 
@@ -196,26 +198,22 @@ func (uc *productUsecase) ListProducts(ctx context.Context, merchantID, category
 func (uc *productUsecase) UpdateProduct(ctx context.Context, actor Actor, id int64, categoryID int64, name string, priceStr string, discountStr string, coverImage string, mediaAssets []MediaInfo, descrption string) (*Product, error) {
 	// Reject malformed client input before loading the row: a 400 about the
 	// caller's own payload cannot leak another merchant's product existence.
-	price, err := decimal.NewFromString(priceStr)
+	price, err := ParseProductPrice(priceStr)
 	if err != nil {
-		uc.log.WithContext(ctx).Errorf("invalid price: %v", err)
 		return nil, err
 	}
-	if _, err := ProductPriceMinor(price); err != nil {
-		return nil, err
-	}
-	discount, err := decimal.NewFromString(discountStr)
+	discount, err := ParseProductDiscount(discountStr)
 	if err != nil {
-		uc.log.WithContext(ctx).Errorf("invalid discount: %v", err)
 		return nil, err
 	}
-	if err := ProductDiscount(discount); err != nil {
+	cover := mediaFromCoverURL(coverImage)
+	name, err = ValidateProductInput(categoryID, name, descrption, cover, mediaAssets)
+	if err != nil {
 		return nil, err
 	}
 	if _, err := uc.requireProductManager(ctx, actor, id); err != nil {
 		return nil, err
 	}
-	cover := mediaFromCoverURL(coverImage)
 	return uc.repo.UpdateProduct(ctx, id, categoryID, name, price, discount, cover, mediaAssets, descrption)
 }
 

@@ -65,7 +65,7 @@ func (r *ProductRepo) CreateProduct(ctx context.Context, merchantID, categoryID 
 		Description: pgtype.Text{String: descrption, Valid: descrption != ""},
 	})
 	if err != nil {
-		return nil, err
+		return nil, productWriteError(err)
 	}
 	bizProduct := toBizProduct(p)
 	r.invalidateProduct(ctx, bizProduct.ID, bizProduct.MerchantID, categoryID)
@@ -136,7 +136,7 @@ func (r *ProductRepo) GetProductForManagement(ctx context.Context, id int64) (*b
 		return nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, productWriteError(err)
 	}
 	value := toBizProduct(row)
 	return &value, nil
@@ -175,7 +175,7 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 	q := querierFromContext(ctx, r.data.q)
 	existing, err := q.GetProduct(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, productWriteError(err)
 	}
 	p, err := q.UpdateProduct(ctx, db.UpdateProductParams{
 		ID:          id,
@@ -188,7 +188,7 @@ func (r *ProductRepo) UpdateProduct(ctx context.Context, id int64, categoryID in
 		Description: pgtype.Text{String: descrption, Valid: descrption != ""},
 	})
 	if err != nil {
-		return nil, err
+		return nil, productWriteError(err)
 	}
 	bizProduct := toBizProduct(p)
 	r.invalidateProduct(ctx, id, bizProduct.MerchantID, existing.CategoryID, categoryID)
