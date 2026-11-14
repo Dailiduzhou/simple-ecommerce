@@ -26,6 +26,15 @@ type PostInput struct {
 	// ImageIDs is optional (0-9). On update, nil/empty removes all images.
 	ImageIDs        []int64
 	ExpectedVersion int64
+	// PreparedImages is internal response preparation, not a client authority.
+	// Repositories compare these stable references under media row locks and
+	// still recheck ownership, readiness, expiry and exclusive binding.
+	PreparedImages []PostImageRef
+}
+
+type PostImageRef struct {
+	ID     int64
+	Object ObjectRef
 }
 
 func (i PostInput) Validate() (PostInput, error) {
@@ -52,6 +61,7 @@ func (i PostInput) Validate() (PostInput, error) {
 }
 
 type PostRepo interface {
+	PrepareImages(context.Context, Actor, int64, PostInput) ([]MediaAsset, error)
 	Create(context.Context, Actor, PostInput) (*Post, error)
 	Get(context.Context, int64, int64) (*Post, error)
 	List(context.Context, int64, int64, Page) ([]Post, string, error)
@@ -88,12 +98,16 @@ func (u *PostUsecase) Create(ctx context.Context, a Actor, i PostInput) (*Post, 
 	if e != nil {
 		return nil, e
 	}
+	prepared, e := u.prepareImages(ctx, a, 0, &i)
+	if e != nil {
+		return nil, e
+	}
 	p, e := u.repo.Create(ctx, a, i)
 	if e != nil {
 		return nil, e
 	}
-	e = u.images(ctx, p)
-	return p, e
+	applyPreparedPostURLs(p, prepared)
+	return p, nil
 }
 
 func (u *PostUsecase) Get(ctx context.Context, a Actor, id int64) (*Post, error) {
@@ -145,12 +159,16 @@ func (u *PostUsecase) Update(ctx context.Context, a Actor, id int64, i PostInput
 	if e != nil {
 		return nil, e
 	}
+	prepared, e := u.prepareImages(ctx, a, id, &i)
+	if e != nil {
+		return nil, e
+	}
 	p, e := u.repo.Update(ctx, a, id, i)
 	if e != nil {
 		return nil, e
 	}
-	e = u.images(ctx, p)
-	return p, e
+	applyPreparedPostURLs(p, prepared)
+	return p, nil
 }
 
 func (u *PostUsecase) Delete(ctx context.Context, a Actor, id int64) error {

@@ -1122,6 +1122,21 @@ func (mr *MockQuerierMockRecorder) GetPaymentNotificationByPayload(ctx, arg inte
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPaymentNotificationByPayload", reflect.TypeOf((*MockQuerier)(nil).GetPaymentNotificationByPayload), ctx, arg)
 }
 
+// GetPostImageCandidates mocks base method.
+func (m *MockQuerier) GetPostImageCandidates(ctx context.Context, arg db.GetPostImageCandidatesParams) ([]db.MediaAsset, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPostImageCandidates", ctx, arg)
+	ret0, _ := ret[0].([]db.MediaAsset)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPostImageCandidates indicates an expected call of GetPostImageCandidates.
+func (mr *MockQuerierMockRecorder) GetPostImageCandidates(ctx, arg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPostImageCandidates", reflect.TypeOf((*MockQuerier)(nil).GetPostImageCandidates), ctx, arg)
+}
+
 // GetPostImages mocks base method.
 func (m *MockQuerier) GetPostImages(ctx context.Context, postIds []int64) ([]db.GetPostImagesRow, error) {
 	m.ctrl.T.Helper()

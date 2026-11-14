@@ -29,7 +29,7 @@ func (r *PostRepo) Create(ctx context.Context, a biz.Actor, i biz.PostInput) (ou
 		if e != nil {
 			return e
 		}
-		if e = r.replaceImages(ctx, a.ID, p.ID, i.ImageIDs); e != nil {
+		if e = r.replaceImages(ctx, a.ID, p.ID, i.ImageIDs, i.PreparedImages); e != nil {
 			return e
 		}
 		out, e = r.Get(ctx, a.ID, p.ID)
@@ -139,7 +139,7 @@ func (r *PostRepo) Update(ctx context.Context, a biz.Actor, id int64, i biz.Post
 		if p.Version != i.ExpectedVersion {
 			return communityv1.ErrorPostVersionConflict("refresh the post before editing")
 		}
-		if e = r.replaceImages(ctx, a.ID, id, i.ImageIDs); e != nil {
+		if e = r.replaceImages(ctx, a.ID, id, i.ImageIDs, i.PreparedImages); e != nil {
 			return e
 		}
 		_, e = q.UpdatePost(ctx, db.UpdatePostParams{ID: id, AuthorID: communityID(a.ID), Title: i.Title, Content: i.Content, ExpectedVersion: i.ExpectedVersion})
@@ -157,7 +157,7 @@ func (r *PostRepo) Update(ctx context.Context, a biz.Actor, id int64, i biz.Post
 
 // Post lock is held. Lock the union of old/new media IDs in database ID order,
 // not in client display order (including on reorder and partial replacement).
-func (r *PostRepo) replaceImages(ctx context.Context, uid, postID int64, ids []int64) error {
+func (r *PostRepo) replaceImages(ctx context.Context, uid, postID int64, ids []int64, prepared []biz.PostImageRef) error {
 	q := r.data.DB(ctx)
 	old, e := q.GetPostImages(ctx, []int64{postID})
 	if e != nil {
@@ -174,6 +174,17 @@ func (r *PostRepo) replaceImages(ctx context.Context, uid, postID int64, ids []i
 	byID := map[int64]db.MediaAsset{}
 	for _, m := range assets {
 		byID[m.ID] = m
+	}
+	if prepared != nil {
+		if len(prepared) != len(ids) {
+			return mediav1.ErrorMediaNotReady("image preparation changed")
+		}
+		for index, ref := range prepared {
+			m, ok := byID[ref.ID]
+			if !ok || ref.ID != ids[index] || ref.Object != (biz.ObjectRef{Provider: m.Provider, Bucket: m.BucketName, Key: m.ObjectKey}) {
+				return mediav1.ErrorMediaNotReady("image reference changed")
+			}
+		}
 	}
 	keep := map[int64]bool{}
 	for _, id := range ids {

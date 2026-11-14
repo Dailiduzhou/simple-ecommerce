@@ -100,6 +100,8 @@ type Querier interface {
 	GetPaymentNotification(ctx context.Context, id int64) (PaymentNotification, error)
 	GetPaymentNotificationByEvent(ctx context.Context, arg GetPaymentNotificationByEventParams) (PaymentNotification, error)
 	GetPaymentNotificationByPayload(ctx context.Context, arg GetPaymentNotificationByPayloadParams) (PaymentNotification, error)
+	// Advisory pre-read only. Binding must recheck these rows under LockMediaAssets.
+	GetPostImageCandidates(ctx context.Context, arg GetPostImageCandidatesParams) ([]MediaAsset, error)
 	GetPostImages(ctx context.Context, postIds []int64) ([]GetPostImagesRow, error)
 	GetPostStats(ctx context.Context, arg GetPostStatsParams) ([]GetPostStatsRow, error)
 	GetProduct(ctx context.Context, id int64) (Product, error)
