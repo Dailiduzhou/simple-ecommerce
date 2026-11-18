@@ -85,6 +85,10 @@ CREATE TABLE products (
     FOREIGN KEY (merchant_id) REFERENCES users(id),
   CONSTRAINT fk_product_category
     FOREIGN KEY (category_id) REFERENCES categories(id),
+  -- Match Go's Unicode TrimSpace set, including NBSP and ideographic space.
+  CONSTRAINT products_name_check CHECK (char_length(name) BETWEEN 1 AND 255 AND
+    btrim(name, E' \t\n\r\f' || chr(11) || U&'\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000') <> ''),
+  CONSTRAINT products_description_check CHECK (description IS NULL OR char_length(description) <= 10000),
   CONSTRAINT products_discount_check CHECK (discount > 0 AND discount <= 1 AND discount = round(discount, 2)),
   -- 库存与价格不允许为负：扣减/回补逻辑一旦出错，这里直接拒绝而不是让脏数据落库。
   CONSTRAINT products_stock_check CHECK (stock >= 0),
@@ -542,7 +546,9 @@ BEGIN
       END IF;
     WHEN 'orders' THEN
       targets := ARRAY['order:user:' || current_row.user_id || ':gen',
-                       'order:user:ongoing:' || current_row.user_id || ':gen'];
+                       'order:user:ongoing:' || current_row.user_id || ':gen',
+                       'order:merchant:' || current_row.merchant_id || ':gen',
+                       'order:all:gen'];
     WHEN 'payments' THEN
       targets := ARRAY['payment:' || current_row.id || ':gen',
                        'payment:order:' || current_row.order_id || ':gen',

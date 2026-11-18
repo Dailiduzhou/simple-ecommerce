@@ -3183,6 +3183,7 @@ paths:
                   schema:
                     type: string
                     format: int64
+                    x-exclusiveMinimum: 0
             requestBody:
                 content:
                     application/json:
@@ -5098,26 +5099,43 @@ components:
                         Administrators must name the owning merchant. Merchants omit it (or repeat
                          their own id); any other value is rejected.
                     format: int64
+                    x-minimum: 0
                 categoryId:
                     type: string
                     format: int64
+                    x-exclusiveMinimum: 0
                 name:
                     type: string
+                    minLength: 1
+                    maxLength: 255
                 price:
                     type: string
+                    minLength: 1
+                    maxLength: 64
                 discount:
                     type: string
+                    minLength: 1
+                    maxLength: 64
                 stock:
                     type: integer
                     format: int32
+                    minimum: 0
                 coverImage:
                     type: string
+                    maxLength: 4096
                 mediaAssets:
                     type: array
                     items:
                         $ref: '#/components/schemas/api.mall.v1.MediaInfo'
+                    maxItems: 9
                 description:
                     type: string
+                    maxLength: 10000
+            required:
+                - categoryId
+                - name
+                - price
+                - discount
         api.mall.v1.DeleteCategoryReply:
             type: object
             properties: {}
@@ -5328,23 +5346,39 @@ components:
                 id:
                     type: string
                     format: int64
+                    x-exclusiveMinimum: 0
                 categoryId:
                     type: string
                     format: int64
+                    x-exclusiveMinimum: 0
                 name:
                     type: string
+                    minLength: 1
+                    maxLength: 255
                 price:
                     type: string
+                    minLength: 1
+                    maxLength: 64
                 discount:
                     type: string
+                    minLength: 1
+                    maxLength: 64
                 coverImage:
                     type: string
+                    maxLength: 4096
                 mediaAssets:
                     type: array
                     items:
                         $ref: '#/components/schemas/api.mall.v1.MediaInfo'
+                    maxItems: 9
                 description:
                     type: string
+                    maxLength: 10000
+            required:
+                - categoryId
+                - name
+                - price
+                - discount
         api.mall.v1.UpdateProductStatusReply:
             type: object
             properties: {}

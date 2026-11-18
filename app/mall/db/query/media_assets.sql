@@ -18,6 +18,18 @@ SELECT *
 FROM media_assets
 WHERE id = $1;
 
+-- name: GetPostImageCandidates :many
+-- Advisory pre-read only. Binding must recheck these rows under LockMediaAssets.
+SELECT m.*
+FROM media_assets m
+LEFT JOIN post_images i ON i.media_id = m.id
+WHERE m.id = ANY(sqlc.arg(ids)::bigint[])
+  AND m.owner_id = sqlc.arg(owner_id)
+  AND m.status = 'ready'
+  AND ((i.media_id IS NULL AND m.expires_at > clock_timestamp())
+       OR i.post_id = sqlc.arg(post_id))
+ORDER BY m.id;
+
 -- name: LockMediaAssets :many
 SELECT *
 FROM media_assets

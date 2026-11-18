@@ -89,6 +89,11 @@ func (r *transportHistory) Clear(ctx context.Context, uid int64) error { r.uid.S
 
 type transportPosts struct{ biz.PostRepo }
 
+func (r *transportPosts) PrepareImages(ctx context.Context, a biz.Actor, id int64, i biz.PostInput) ([]biz.MediaAsset, error) {
+	_, err := r.Update(ctx, a, id, i)
+	return nil, err
+}
+
 func (*transportPosts) List(context.Context, int64, int64, biz.Page) ([]biz.Post, string, error) {
 	return nil, "", nil
 }

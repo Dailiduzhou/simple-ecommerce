@@ -28,8 +28,12 @@ func TestReviewCacheInvalidationRecoveryIntegration(t *testing.T) {
 	require.NoError(t, err)
 	_, err = products.ListProductsByCategory(f.ctx, 0, f.categoryID, 20, 0)
 	require.NoError(t, err)
-	_, err = orders.ListOngoingOrdersByUser(f.ctx, f.userID, 20, 0)
-	require.NoError(t, err)
+	loaders := orderProjectionLoaders(orders, f.userID, f.merchantID)
+	for _, load := range loaders {
+		rows, err := load(f.ctx)
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+	}
 	_, err = payments.GetPayment(f.ctx, paymentID)
 	require.NoError(t, err)
 	// Isolate this mutation from seed events; the suite uses a dedicated DB.
@@ -44,6 +48,12 @@ func TestReviewCacheInvalidationRecoveryIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, stale, 1, "the warmed projection demonstrates the failed Redis write")
 	require.Equal(t, orderID, stale[0].ID)
+	for _, load := range loaders {
+		rows, err := load(f.ctx)
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		require.Equal(t, biz.OrderStatusPaid, rows[0].Status, "all six cached projections remain stale until recovery")
+	}
 	var pending int
 	require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT count(*) FROM cache_invalidations`).Scan(&pending))
 	require.GreaterOrEqual(t, pending, 3, "payment/order/stock changes have durable targets")
@@ -60,6 +70,16 @@ func TestReviewCacheInvalidationRecoveryIntegration(t *testing.T) {
 	page, err := orders.ListOngoingOrdersByUser(f.ctx, f.userID, 20, 0)
 	require.NoError(t, err)
 	require.Empty(t, page)
+	for name, load := range loaders {
+		rows, err := load(f.ctx)
+		require.NoError(t, err)
+		if name == "buyer ongoing" || name == "merchant ongoing" || name == "admin ongoing" {
+			require.Empty(t, rows, name)
+		} else {
+			require.Len(t, rows, 1, name)
+			require.Equal(t, biz.OrderStatusRefunded, rows[0].Status, name)
+		}
+	}
 	product, err := products.GetProduct(f.ctx, f.productID)
 	require.NoError(t, err)
 	require.EqualValues(t, 100, product.Stock)

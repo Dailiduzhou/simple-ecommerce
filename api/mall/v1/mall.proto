@@ -184,15 +184,15 @@ message Product {
 message CreateProductRequest {
   // Administrators must name the owning merchant. Merchants omit it (or repeat
   // their own id); any other value is rejected.
-  int64  merchant_id  = 9;
-  int64  category_id  = 1;
-  string name         = 2;
-  string price        = 3;
-  string discount     = 4;
-  int32  stock        = 5;
-  string cover_image  = 6;
-  repeated MediaInfo media_assets = 7;
-  string description  = 8;
+  int64  merchant_id  = 9 [(buf.validate.field).int64.gte = 0];
+  int64  category_id  = 1 [(buf.validate.field).int64.gt = 0];
+  string name         = 2 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  string price        = 3 [(buf.validate.field).string = {min_len: 1, max_bytes: 64}];
+  string discount     = 4 [(buf.validate.field).string = {min_len: 1, max_bytes: 64}];
+  int32  stock        = 5 [(buf.validate.field).int32.gte = 0];
+  string cover_image  = 6 [(buf.validate.field).string.max_bytes = 4096];
+  repeated MediaInfo media_assets = 7 [(buf.validate.field).repeated.max_items = 9];
+  string description  = 8 [(buf.validate.field).string.max_len = 10000];
 }
 
 message GetProductRequest {
@@ -212,16 +212,16 @@ message ListProductsReply {
 }
 
 message UpdateProductRequest {
-  int64  id           = 1;
-  int64  category_id  = 2;
-  string name         = 3;
-  string price        = 4;
-  string discount     = 5;
+  int64  id           = 1 [(buf.validate.field).int64.gt = 0];
+  int64  category_id  = 2 [(buf.validate.field).int64.gt = 0];
+  string name         = 3 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+  string price        = 4 [(buf.validate.field).string = {min_len: 1, max_bytes: 64}];
+  string discount     = 5 [(buf.validate.field).string = {min_len: 1, max_bytes: 64}];
   reserved 6;
   reserved "stock";
-  string cover_image  = 7;
-  repeated MediaInfo media_assets = 8;
-  string description  = 9;
+  string cover_image  = 7 [(buf.validate.field).string.max_bytes = 4096];
+  repeated MediaInfo media_assets = 8 [(buf.validate.field).repeated.max_items = 9];
+  string description  = 9 [(buf.validate.field).string.max_len = 10000];
 }
 
 message UpdateProductStatusRequest {

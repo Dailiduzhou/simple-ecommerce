@@ -158,6 +158,63 @@ func (q *Queries) GetMediaAsset(ctx context.Context, id int64) (MediaAsset, erro
 	return i, err
 }
 
+const getPostImageCandidates = `-- name: GetPostImageCandidates :many
+SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at
+FROM media_assets m
+LEFT JOIN post_images i ON i.media_id = m.id
+WHERE m.id = ANY($1::bigint[])
+  AND m.owner_id = $2
+  AND m.status = 'ready'
+  AND ((i.media_id IS NULL AND m.expires_at > clock_timestamp())
+       OR i.post_id = $3)
+ORDER BY m.id
+`
+
+type GetPostImageCandidatesParams struct {
+	Ids     []int64
+	OwnerID pgtype.Int8
+	PostID  int64
+}
+
+// Advisory pre-read only. Binding must recheck these rows under LockMediaAssets.
+func (q *Queries) GetPostImageCandidates(ctx context.Context, arg GetPostImageCandidatesParams) ([]MediaAsset, error) {
+	rows, err := q.db.Query(ctx, getPostImageCandidates, arg.Ids, arg.OwnerID, arg.PostID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MediaAsset
+	for rows.Next() {
+		var i MediaAsset
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Provider,
+			&i.BucketName,
+			&i.ObjectKey,
+			&i.StagingKey,
+			&i.StagingCleaned,
+			&i.StagingCleanupAt,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.Width,
+			&i.Height,
+			&i.Status,
+			&i.ExpiresAt,
+			&i.UploadExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockExpiredMedia = `-- name: LockExpiredMedia :many
 WITH fresh AS (
   SELECT m.id, m.owner_id, m.provider, m.bucket_name, m.object_key, m.staging_key, m.staging_cleaned, m.staging_cleanup_at, m.content_type, m.size_bytes, m.width, m.height, m.status, m.expires_at, m.upload_expires_at, m.created_at, m.updated_at
